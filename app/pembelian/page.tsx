@@ -33,7 +33,7 @@ export default function PembelianPage() {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-4">
           <h3 className="text-xl font-bold text-gray-800">Riwayat Pembelian</h3>
-          <button className="bg-[#B8860B] hover:bg-[#9A7209] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors whitespace-nowrap">
+          <button className="bg-[#6F5333] hover:bg-[#5A4228] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors whitespace-nowrap">
             + Buat Pesanan Baru
           </button>
         </div>

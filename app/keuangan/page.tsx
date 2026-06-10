@@ -12,7 +12,7 @@ const transactions = [
 const summaryCards = [
   { label: "Pemasukan Bulan Ini", value: "Rp 24.500.000", icon: "📈", color: "border-l-green-500" },
   { label: "Pengeluaran Bulan Ini", value: "Rp 17.500.000", icon: "📉", color: "border-l-red-500" },
-  { label: "Laba Bersih", value: "Rp 7.000.000", icon: "💹", color: "border-l-[#B8860B]" },
+  { label: "Laba Bersih", value: "Rp 7.000.000", icon: "💹", color: "border-l-[#6F5333]" },
   { label: "Saldo Kas", value: "Rp 35.200.000", icon: "🏦", color: "border-l-blue-500" },
 ];
 
@@ -37,17 +37,17 @@ export default function KeuanganPage() {
         <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-4">
           <h3 className="text-xl font-bold text-gray-800">Riwayat Transaksi</h3>
           <div className="flex gap-3 flex-wrap">
-            <select className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#B8860B]">
+            <select className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#6F5333]">
               <option>Semua Jenis</option>
               <option>Pemasukan</option>
               <option>Pengeluaran</option>
             </select>
-            <select className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#B8860B]">
+            <select className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#6F5333]">
               <option>Juni 2025</option>
               <option>Mei 2025</option>
               <option>April 2025</option>
             </select>
-            <button className="bg-[#B8860B] hover:bg-[#9A7209] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors">
+            <button className="bg-[#6F5333] hover:bg-[#5A4228] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors">
               📊 Ekspor Laporan
             </button>
           </div>

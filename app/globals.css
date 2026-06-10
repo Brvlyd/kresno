@@ -3,9 +3,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --gold: #B8860B;
-  --gold-light: #D4A017;
-  --gold-dark: #8B6508;
+  --gold: #6F5333;
+  --gold-light: #8A6840;
+  --gold-dark: #5A4228;
   --sidebar-bg: #1C1C2E;
   --sidebar-text: #E2E8F0;
 }
@@ -24,6 +24,6 @@ body {
   background: #f1f1f1;
 }
 ::-webkit-scrollbar-thumb {
-  background: #B8860B;
+  background: #6F5333;
   border-radius: 4px;
 }

@@ -32,26 +32,26 @@ export default function POSPage() {
               <input
                 type="search"
                 placeholder="Cari barang..."
-                className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#B8860B] w-64"
+                className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#6F5333] w-64"
               />
             </div>
             <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
               {produkTersedia.map((p) => (
                 <button
                   key={p.id}
-                  className="text-left p-5 border-2 border-gray-200 rounded-2xl hover:border-[#B8860B] hover:bg-amber-50 transition-all group"
+                  className="text-left p-5 border-2 border-gray-200 rounded-2xl hover:border-[#6F5333] hover:bg-amber-50 transition-all group"
                 >
                   <div className="flex items-start gap-4">
                     <div className="w-14 h-14 bg-amber-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">
                       💍
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-lg font-semibold text-gray-800 group-hover:text-[#B8860B] leading-tight">
+                      <p className="text-lg font-semibold text-gray-800 group-hover:text-[#6F5333] leading-tight">
                         {p.nama}
                       </p>
-                      <p className="text-xl font-bold text-[#B8860B] mt-1">{formatRp(p.harga)}</p>
+                      <p className="text-xl font-bold text-[#6F5333] mt-1">{formatRp(p.harga)}</p>
                     </div>
-                    <span className="text-2xl text-gray-300 group-hover:text-[#B8860B]">+</span>
+                    <span className="text-2xl text-gray-300 group-hover:text-[#6F5333]">+</span>
                   </div>
                 </button>
               ))}
@@ -72,7 +72,7 @@ export default function POSPage() {
                 <div key={i} className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl">
                   <div className="flex-1 min-w-0">
                     <p className="text-base font-semibold text-gray-800 truncate">{item.nama}</p>
-                    <p className="text-[#B8860B] font-bold">{formatRp(item.harga)}</p>
+                    <p className="text-[#6F5333] font-bold">{formatRp(item.harga)}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <button className="w-9 h-9 bg-gray-200 rounded-lg text-lg font-bold hover:bg-gray-300 transition-colors">−</button>
@@ -95,7 +95,7 @@ export default function POSPage() {
               </div>
               <div className="flex justify-between text-2xl font-bold text-gray-800 pt-3 border-t border-gray-200">
                 <span>Total</span>
-                <span className="text-[#B8860B]">{formatRp(subtotal)}</span>
+                <span className="text-[#6F5333]">{formatRp(subtotal)}</span>
               </div>
             </div>
 
@@ -104,12 +104,12 @@ export default function POSPage() {
               <p className="text-base font-semibold text-gray-700 mb-3">Metode Pembayaran</p>
               <div className="grid grid-cols-3 gap-2 mb-5">
                 {["Tunai", "Transfer", "QRIS"].map((m) => (
-                  <button key={m} className="py-3 border-2 border-gray-200 rounded-xl text-base font-medium hover:border-[#B8860B] hover:bg-amber-50 transition-all">
+                  <button key={m} className="py-3 border-2 border-gray-200 rounded-xl text-base font-medium hover:border-[#6F5333] hover:bg-amber-50 transition-all">
                     {m}
                   </button>
                 ))}
               </div>
-              <button className="w-full bg-[#B8860B] hover:bg-[#9A7209] text-white text-xl font-bold py-5 rounded-2xl transition-colors shadow-lg">
+              <button className="w-full bg-[#6F5333] hover:bg-[#5A4228] text-white text-xl font-bold py-5 rounded-2xl transition-colors shadow-lg">
                 💳 Proses Pembayaran
               </button>
             </div>

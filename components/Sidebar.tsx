@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 const menuItems = [
@@ -18,18 +19,36 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-64 bg-[#1C1C2E] min-h-screen flex flex-col shadow-xl">
+    <aside
+      className="w-64 min-h-screen flex flex-col shadow-xl"
+      style={{ backgroundColor: "#6F5333" }}
+    >
       {/* Logo */}
-      <div className="px-6 py-6 border-b border-white/10">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#B8860B] rounded-lg flex items-center justify-center text-white font-bold text-lg">
-            💍
-          </div>
+      <div
+        className="px-5 py-5 border-b"
+        style={{ borderColor: "rgba(255,255,255,0.15)" }}
+      >
+        <Link href="/dashboard" className="flex items-center gap-3">
+          <Image
+            src="/logo-kresno.png"
+            alt="Logo Kresno"
+            width={48}
+            height={56}
+            className="object-contain flex-shrink-0"
+          />
           <div>
-            <h1 className="text-white font-bold text-xl leading-tight">SITOMAS</h1>
-            <p className="text-gray-400 text-sm">Sistem Toko Mas</p>
+            <p className="text-amber-100 text-xs font-medium tracking-widest uppercase">
+              Toko Mas
+            </p>
+            <p
+              className="text-white font-extrabold text-xl leading-tight tracking-wide"
+              style={{ fontFamily: "serif" }}
+            >
+              KRESNO
+            </p>
+            <p className="text-amber-200 text-xs">SITOMAS</p>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Navigation */}
@@ -40,11 +59,24 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-4 py-3 rounded-xl text-lg font-medium transition-all duration-200 ${
+              className="flex items-center gap-3 px-4 py-3 rounded-xl text-lg font-medium transition-all duration-200"
+              style={
                 isActive
-                  ? "bg-[#B8860B] text-white shadow-lg"
-                  : "text-gray-300 hover:bg-white/10 hover:text-white"
-              }`}
+                  ? { backgroundColor: "#FFFBE9", color: "#6F5333" }
+                  : { color: "#F5E6C8" }
+              }
+              onMouseEnter={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLElement).style.backgroundColor =
+                    "rgba(255,255,255,0.15)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isActive) {
+                  (e.currentTarget as HTMLElement).style.backgroundColor =
+                    "transparent";
+                }
+              }}
             >
               <span className="text-xl w-7 text-center">{item.icon}</span>
               <span>{item.label}</span>
@@ -54,10 +86,13 @@ export default function Sidebar() {
       </nav>
 
       {/* Logout */}
-      <div className="px-3 py-4 border-t border-white/10">
+      <div
+        className="px-3 py-4 border-t"
+        style={{ borderColor: "rgba(255,255,255,0.15)" }}
+      >
         <Link
           href="/login"
-          className="flex items-center gap-3 px-4 py-3 rounded-xl text-lg font-medium text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200 w-full"
+          className="flex items-center gap-3 px-4 py-3 rounded-xl text-lg font-medium text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-all duration-200 w-full"
         >
           <span className="text-xl w-7 text-center">🚪</span>
           <span>Keluar</span>

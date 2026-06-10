@@ -39,7 +39,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Harga Emas Banner */}
-      <div className="bg-gradient-to-r from-[#B8860B] to-[#D4A017] rounded-2xl p-6 mb-8 flex items-center justify-between shadow-lg">
+      <div className="rounded-2xl p-6 mb-8 flex items-center justify-between shadow-lg" style={{ background: "linear-gradient(135deg, #6F5333 0%, #8A6840 100%)" }}>
         <div>
           <p className="text-amber-100 text-lg font-medium">Harga Emas Hari Ini</p>
           <p className="text-white text-4xl font-bold mt-1">Rp 2.800.000 <span className="text-2xl font-normal">/gram</span></p>
@@ -52,7 +52,7 @@ export default function DashboardPage() {
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between">
           <h3 className="text-xl font-bold text-gray-800">Inventori Terbaru</h3>
-          <a href="/inventori" className="text-[#B8860B] text-base font-semibold hover:underline">
+          <a href="/inventori" className="text-[#6F5333] text-base font-semibold hover:underline">
             Lihat Semua →
           </a>
         </div>

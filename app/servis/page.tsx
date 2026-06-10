@@ -34,13 +34,13 @@ export default function ServisPage() {
         <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-4">
           <h3 className="text-xl font-bold text-gray-800">Daftar Servis</h3>
           <div className="flex gap-3 flex-wrap">
-            <select className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#B8860B]">
+            <select className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#6F5333]">
               <option>Semua Status</option>
               <option>Dalam Proses</option>
               <option>Selesai</option>
               <option>Menunggu</option>
             </select>
-            <button className="bg-[#B8860B] hover:bg-[#9A7209] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors whitespace-nowrap">
+            <button className="bg-[#6F5333] hover:bg-[#5A4228] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors whitespace-nowrap">
               + Terima Servis Baru
             </button>
           </div>

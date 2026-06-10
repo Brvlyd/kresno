@@ -37,9 +37,9 @@ export default function PegadaianPage() {
             <input
               type="search"
               placeholder="Cari pelanggan..."
-              className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#B8860B] w-56"
+              className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#6F5333] w-56"
             />
-            <button className="bg-[#B8860B] hover:bg-[#9A7209] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors whitespace-nowrap">
+            <button className="bg-[#6F5333] hover:bg-[#5A4228] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors whitespace-nowrap">
               + Pengajuan Baru
             </button>
           </div>
