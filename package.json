@@ -2,11 +2,19 @@
   "name": "kresno",
   "version": "0.1.0",
   "private": true,
+  "bin": {
+    "figma-import": "dist/figma-import/cli/bin.js"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "build:cli": "tsc --project tsconfig.cli.json",
+    "figma-import": "npm run build:cli && node dist/figma-import/cli/bin.js"
   },
   "dependencies": {
     "next": "16.2.7",
@@ -15,11 +23,13 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
+    "fast-check": "^4.8.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

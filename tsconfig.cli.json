@@ -1,0 +1,33 @@
+{
+  // Isolated TypeScript build for the Figma Import CLI distribution.
+  //
+  // This config is intentionally SEPARATE from the root tsconfig.json (which is
+  // owned by Next.js and runs with "noEmit": true). It compiles ONLY the
+  // figma-import library to plain Node-compatible CommonJS in ./dist so the
+  // `figma-import` bin can be executed with `node`. Running `npm run build:cli`
+  // does not affect `next build` or `tsc --noEmit`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "rootDir": "./lib",
+    "declaration": false,
+    "sourceMap": false,
+    "incremental": false,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "isolatedModules": false,
+    "jsx": "react-jsx",
+    // The "next" tsserver plugin from the base config is editor-only and not
+    // needed for a Node CLI build.
+    "plugins": []
+  },
+  "include": ["lib/figma-import/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
+}
