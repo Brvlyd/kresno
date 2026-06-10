@@ -366,7 +366,7 @@ The implementation follows a bottom-up approach: core infrastructure → data fe
     - Generate image nodes and verify Next.js Image component usage
     - _Requirements: 7.3_
 
-  - [~] 10.5 Implement component hierarchy preservation
+  - [-] 10.5 Implement component hierarchy preservation
     - Generate nested JSX elements or component imports for nested structures
     - Preserve node tree hierarchy in generated component code
     - _Requirements: 7.6_
@@ -525,7 +525,7 @@ The implementation follows a bottom-up approach: core infrastructure → data fe
     - Verify summary report accuracy
     - _Requirements: All requirements_
 
-- [ ] 17. Wire everything together and test end-to-end
+- [x] 17. Wire everything together and test end-to-end
   - [x] 17.1 Create CLI executable and package configuration
     - Set up package.json bin field for CLI command
     - Configure TypeScript compilation for CLI distribution
@@ -539,7 +539,7 @@ The implementation follows a bottom-up approach: core infrastructure → data fe
     - Ensure Next.js Image components work correctly
     - Validate TypeScript compilation of generated components
 
-  - [-] 17.3 Write end-to-end test suite
+  - [x] 17.3 Write end-to-end test suite
     - Test complete CLI workflow from command to output
     - Test various configuration combinations
     - Test error scenarios (invalid token, missing file)

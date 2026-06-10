@@ -27,7 +27,9 @@ describe('bin entry point', () => {
   });
 
   it('forwards process arguments to main() exactly once', () => {
-    const mainMock = jest.fn();
+    // `main` is async and returns a Promise; `bin.ts` chains `.catch()` onto
+    // the result, so the mock must resolve to a Promise to match the contract.
+    const mainMock = jest.fn().mockResolvedValue(undefined);
 
     jest.isolateModules(() => {
       jest.doMock('@/lib/figma-import/cli/cli', () => ({ main: mainMock }));

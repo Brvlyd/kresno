@@ -284,11 +284,16 @@ function erroredOutput(): string {
   return errorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 }
 
-/** Recover the content written to a given (component/stylesheet) file path. */
-function writtenContent(filePath: string): string | undefined {
+/**
+ * Recover the content written to the file whose path ends with `suffix`.
+ * Suffix matching keeps assertions independent of OS path separators (the
+ * default output dir is built with path.join while the generator appends
+ * "/<file>", so a written path can mix "\" and "/").
+ */
+function writtenContent(suffix: string): string | undefined {
   // Last write wins, mirroring real fs semantics.
-  const calls = mockFs.writeFileSync.mock.calls.filter(
-    ([p]) => String(p) === filePath
+  const calls = mockFs.writeFileSync.mock.calls.filter(([p]) =>
+    String(p).endsWith(suffix)
   );
   if (calls.length === 0) return undefined;
   return String(calls[calls.length - 1][1]);
@@ -590,8 +595,8 @@ describe('CLI end-to-end — generated code validity', () => {
       'pascal',
     ]);
 
-    const heroPath = 'components/figma/HeroCard.tsx';
-    const buttonPath = 'components/figma/PrimaryButton.tsx';
+    const heroPath = 'HeroCard.tsx';
+    const buttonPath = 'PrimaryButton.tsx';
 
     for (const tsxPath of [heroPath, buttonPath]) {
       const content = writtenContent(tsxPath);
