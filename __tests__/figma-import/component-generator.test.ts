@@ -945,4 +945,102 @@ describe('ComponentGenerator', () => {
       expect(camel.content).toContain('export const classComponent');
     });
   });
+
+  describe('component hierarchy preservation (Task 10.5 / Requirement 7.6)', () => {
+    const options: GeneratorOptions = {
+      namingConvention: 'pascal',
+      useTailwind: false,
+      outputDir: './components',
+    };
+
+    it('should emit nested JSX that preserves a 3-level node tree and sibling order', () => {
+      // Tree:
+      // Root (frame)
+      //  └─ Outer (section)
+      //       ├─ text "MIDDLE_TEXT"
+      //       └─ Inner (article)
+      //            └─ text "DEEPEST_TEXT"
+      const deepestText: ParsedNode = {
+        id: '4:1',
+        name: 'Deepest',
+        sanitizedName: 'Deepest',
+        nodeType: 'text',
+        htmlTag: 'span',
+        content: 'DEEPEST_TEXT',
+        layout: { display: 'block' },
+        styles: { className: 'deepest', cssProperties: {} },
+      };
+      const inner: ParsedNode = {
+        id: '3:1',
+        name: 'Inner',
+        sanitizedName: 'Inner',
+        nodeType: 'container',
+        htmlTag: 'article',
+        layout: { display: 'block' },
+        styles: { className: 'inner', cssProperties: {} },
+        children: [deepestText],
+      };
+      const middleText: ParsedNode = {
+        id: '2:2',
+        name: 'Middle',
+        sanitizedName: 'Middle',
+        nodeType: 'text',
+        htmlTag: 'span',
+        content: 'MIDDLE_TEXT',
+        layout: { display: 'block' },
+        styles: { className: 'middle', cssProperties: {} },
+      };
+      const outer: ParsedNode = {
+        id: '2:1',
+        name: 'Outer',
+        sanitizedName: 'Outer',
+        nodeType: 'container',
+        htmlTag: 'section',
+        layout: { display: 'block' },
+        styles: { className: 'outer', cssProperties: {} },
+        children: [middleText, inner],
+      };
+      const frame: ParsedFrame = {
+        id: '1:1',
+        name: 'Root',
+        sanitizedName: 'Root',
+        nodeType: 'frame',
+        layout: { display: 'block' },
+        styles: { className: 'root', cssProperties: {} },
+        children: [outer],
+      };
+
+      const { content } = generator.generate(frame, options);
+
+      // Each container in the tree is represented by its own opening/closing tag
+      // (no flattening or dropped nodes).
+      const count = (needle: string) => content.split(needle).length - 1;
+      expect(count('<section')).toBe(1);
+      expect(count('</section>')).toBe(1);
+      expect(count('<article')).toBe(1);
+      expect(count('</article>')).toBe(1);
+
+      // Pre-order ordering: Outer opens, then its first child (MIDDLE_TEXT),
+      // then the nested Inner container, then Inner's child (DEEPEST_TEXT).
+      const outerOpen = content.indexOf('<section');
+      const middleIdx = content.indexOf('MIDDLE_TEXT');
+      const innerOpen = content.indexOf('<article');
+      const deepestIdx = content.indexOf('DEEPEST_TEXT');
+      const innerClose = content.indexOf('</article>');
+      const outerClose = content.indexOf('</section>');
+
+      [outerOpen, middleIdx, innerOpen, deepestIdx, innerClose, outerClose].forEach((i) =>
+        expect(i).toBeGreaterThanOrEqual(0)
+      );
+
+      // Sibling order: MIDDLE_TEXT precedes the nested Inner container.
+      expect(middleIdx).toBeGreaterThan(outerOpen);
+      expect(innerOpen).toBeGreaterThan(middleIdx);
+
+      // Deepest text is nested inside Inner, which is nested inside Outer.
+      expect(deepestIdx).toBeGreaterThan(innerOpen);
+      expect(deepestIdx).toBeLessThan(innerClose);
+      expect(innerClose).toBeLessThan(outerClose);
+    });
+  });
 });
