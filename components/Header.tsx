@@ -4,45 +4,32 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle }: HeaderProps) {
-  const now = new Date();
-  const dateStr = now.toLocaleDateString("id-ID", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
   return (
-    <header className="bg-white border-b border-gray-200 px-8 py-5 flex items-center justify-between">
+    <div className="flex items-start justify-between px-8 pt-7 pb-4">
+      {/* Page title — red as in Figma */}
       <div>
-        <h2 className="text-2xl font-bold text-gray-800">{title}</h2>
+        <h1 className="text-[28px] font-bold leading-tight" style={{ color: "#CA4A28" }}>
+          {title}
+        </h1>
         {subtitle && (
-          <p className="text-gray-500 text-base mt-0.5">{subtitle}</p>
+          <p className="text-[17px] mt-0.5" style={{ color: "#CA4A28" }}>
+            {subtitle}
+          </p>
         )}
       </div>
-      <div className="flex items-center gap-5">
-        <div className="text-right">
-          <p className="text-base text-gray-500">{dateStr}</p>
-          <div className="flex items-center gap-2 justify-end mt-1">
-            <span
-              className="w-2.5 h-2.5 rounded-full inline-block"
-              style={{ backgroundColor: "#6F5333" }}
-            />
-            <span
-              className="text-base font-semibold"
-              style={{ color: "#6F5333" }}
-            >
-              Harga Emas: Rp 2.800.000/gram
-            </span>
-          </div>
-        </div>
-        <div
-          className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-xl shadow"
-          style={{ backgroundColor: "#6F5333" }}
-        >
-          A
-        </div>
+
+      {/* Harga Emas box — white bg with brown border, as in Figma */}
+      <div
+        className="border-2 rounded-lg px-5 py-3 bg-white"
+        style={{ borderColor: "#6F5333" }}
+      >
+        <p className="text-sm font-medium" style={{ color: "#6F5333" }}>
+          Harga emas sekarang
+        </p>
+        <p className="text-lg font-bold mt-0.5" style={{ color: "#6F5333" }}>
+          Rp. 2.800.000 /gram
+        </p>
       </div>
-    </header>
+    </div>
   );
 }

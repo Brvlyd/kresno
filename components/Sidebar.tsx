@@ -5,14 +5,14 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 
 const menuItems = [
-  { href: "/dashboard", label: "Dashboard", icon: "🏠" },
-  { href: "/inventori", label: "Inventori", icon: "📦" },
-  { href: "/keuangan", label: "Keuangan", icon: "💰" },
-  { href: "/pos", label: "Point of Sale", icon: "🛒" },
-  { href: "/pegadaian", label: "Pegadaian", icon: "💎" },
-  { href: "/servis", label: "Servis", icon: "🔧" },
-  { href: "/pembelian", label: "Pembelian", icon: "🛍️" },
-  { href: "/hutang-piutang", label: "Hutang & Piutang", icon: "📋" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/hutang-piutang", label: "Hutang Piutang" },
+  { href: "/inventori", label: "Inventori" },
+  { href: "/keuangan", label: "Keuangan" },
+  { href: "/pos", label: "Point of Sale" },
+  { href: "/pegadaian", label: "Pegadaian" },
+  { href: "/servis", label: "Servis" },
+  { href: "/pembelian", label: "Pembelian" },
 ];
 
 export default function Sidebar() {
@@ -20,84 +20,55 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="w-64 min-h-screen flex flex-col shadow-xl"
+      className="w-[250px] min-h-screen flex flex-col relative flex-shrink-0"
       style={{ backgroundColor: "#6F5333" }}
     >
-      {/* Logo */}
-      <div
-        className="px-5 py-5 border-b"
-        style={{ borderColor: "rgba(255,255,255,0.15)" }}
-      >
-        <Link href="/dashboard" className="flex items-center gap-3">
-          <Image
-            src="/logo-kresno.png"
-            alt="Logo Kresno"
-            width={48}
-            height={56}
-            className="object-contain flex-shrink-0"
-          />
-          <div>
-            <p className="text-amber-100 text-xs font-medium tracking-widest uppercase">
-              Toko Mas
-            </p>
-            <p
-              className="text-white font-extrabold text-xl leading-tight tracking-wide"
-              style={{ fontFamily: "serif" }}
-            >
-              KRESNO
-            </p>
-            <p className="text-amber-200 text-xs">SITOMAS</p>
-          </div>
-        </Link>
+      {/* Thin white divider line on the right */}
+      <div className="absolute right-0 top-0 bottom-0 w-px" style={{ backgroundColor: "#ECECEC" }} />
+
+      {/* Logo area */}
+      <div className="flex flex-col items-center pt-8 pb-6">
+        <Image
+          src="/logo-kresno.png"
+          alt="Logo Toko Mas Kresno"
+          width={160}
+          height={190}
+          className="object-contain"
+          priority
+        />
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      {/* Nav items */}
+      <nav className="flex-1 flex flex-col">
         {menuItems.map((item) => {
-          const isActive = pathname === item.href;
+          const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
           return (
             <Link
               key={item.href}
               href={item.href}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl text-lg font-medium transition-all duration-200"
+              className="block px-6 py-[14px] text-[17px] font-medium transition-colors"
               style={
                 isActive
-                  ? { backgroundColor: "#FFFBE9", color: "#6F5333" }
-                  : { color: "#F5E6C8" }
+                  ? { backgroundColor: "#C99A36", color: "#FEFEFE" }
+                  : { color: "#FEFEFE" }
               }
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.backgroundColor =
-                    "rgba(255,255,255,0.15)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  (e.currentTarget as HTMLElement).style.backgroundColor =
-                    "transparent";
-                }
-              }}
             >
-              <span className="text-xl w-7 text-center">{item.icon}</span>
-              <span>{item.label}</span>
+              {item.label}
             </Link>
           );
         })}
-      </nav>
 
-      {/* Logout */}
-      <div
-        className="px-3 py-4 border-t"
-        style={{ borderColor: "rgba(255,255,255,0.15)" }}
-      >
+        {/* Divider */}
+        <div className="mx-6 my-2" style={{ height: "1px", backgroundColor: "#E1E1E1" }} />
+
         <Link
           href="/login"
-          className="flex items-center gap-3 px-4 py-3 rounded-xl text-lg font-medium text-red-300 hover:bg-red-500/20 hover:text-red-200 transition-all duration-200 w-full"
+          className="block px-6 py-[14px] text-[17px] font-medium transition-colors"
+          style={{ color: "#FEFEFE" }}
         >
-          <span className="text-xl w-7 text-center">🚪</span>
-          <span>Keluar</span>
+          Logout
         </Link>
-      </div>
+      </nav>
     </aside>
   );
 }
