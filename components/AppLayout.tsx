@@ -1,21 +1,18 @@
 import Sidebar from "./Sidebar";
-import Header from "./Header";
 
 interface AppLayoutProps {
   children: React.ReactNode;
-  title: string;
+  title?: string;
   subtitle?: string;
 }
 
-export default function AppLayout({ children, title, subtitle }: AppLayoutProps) {
+export default function AppLayout({ children }: AppLayoutProps) {
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header title={title} subtitle={subtitle} />
-        <main className="flex-1 px-8 pb-8 overflow-auto bg-white">
-          {children}
-        </main>
+      {/* Main content — pushed right by the sidebar spacer inside Sidebar */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+        {children}
       </div>
     </div>
   );

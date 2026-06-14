@@ -1,94 +1,717 @@
+"use client";
+
+import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import AppLayout from "@/components/AppLayout";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
-const statsCards = [
-  { label: "Total Pendapatan Hari Ini", value: "Rp 8.450.000", icon: "💰", change: "+12%", positive: true },
-  { label: "Total Penjualan", value: "23 Transaksi", icon: "🛒", change: "+5%", positive: true },
-  { label: "Stok Emas", value: "1.250 gram", icon: "💎", change: "-2%", positive: false },
-  { label: "Servis Dalam Proses", value: "7 Item", icon: "🔧", change: "+3", positive: true },
-];
+/* ─── Types ─── */
+interface HargaEmas {
+  id?: string;
+  karat: number;
+  harga_beli: number;
+  harga_jual: number;
+  tanggal?: string;
+}
+interface InventoriRow {
+  id: string;
+  id_item: string;
+  nama_produk: string;
+  kategori: string;
+  kadar: string;
+  berat_gram: number;
+  jumlah: number;
+  status_laporan: string;
+  tanggal_masuk: string;
+}
+interface Stats {
+  totalItem: number;
+  stokMenipis: number;
+}
 
-const recentInventory = [
-  { no: 1, nama: "Gelang 22K – 10gr", harga: "Rp 2.800.000", stok: 5, status: "Tersedia" },
-  { no: 2, nama: "Kalung 18K – 8gr", harga: "Rp 2.240.000", stok: 3, status: "Tersedia" },
-  { no: 3, nama: "Cincin 24K – 3gr", harga: "Rp 840.000", stok: 12, status: "Tersedia" },
-  { no: 4, nama: "Anting 22K – 2gr", harga: "Rp 560.000", stok: 1, status: "Menipis" },
-  { no: 5, nama: "Liontin 18K – 5gr", harga: "Rp 1.400.000", stok: 0, status: "Habis" },
-];
+interface QuickMenuItem {
+  label: string;
+  href: string;
+  icon: ReactNode;
+}
 
-export default function DashboardPage() {
+const fmt = (n: number) => new Intl.NumberFormat("id-ID").format(n);
+
+const STATUS_STYLE: Record<string, string> = {
+  "Draft":            "bg-orange-100 text-orange-600 border border-orange-200",
+  "Approval Checker": "bg-blue-100 text-blue-600 border border-blue-200",
+  "Approval Signer":  "bg-stone-700 text-white",
+  "Approved":         "bg-green-100 text-green-600 border border-green-200",
+  "Rejected":         "bg-red-100 text-red-600 border border-red-200",
+};
+
+function Badge({ status }: { status: string }) {
   return (
-    <AppLayout title="Dashboard" subtitle="Selamat datang di Panel Manajer">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6 mb-8">
-        {statsCards.map((card, i) => (
-          <div key={i} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <div className="flex items-start justify-between mb-4">
-              <div className="w-14 h-14 bg-amber-50 rounded-xl flex items-center justify-center text-3xl">
-                {card.icon}
-              </div>
-              <span className={`text-base font-semibold px-3 py-1 rounded-full ${
-                card.positive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"
-              }`}>
-                {card.change}
-              </span>
-            </div>
-            <p className="text-4xl font-bold text-gray-800 mb-2">{card.value}</p>
-            <p className="text-gray-500 text-base">{card.label}</p>
+    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${STATUS_STYLE[status] ?? "bg-gray-100 text-gray-600"}`}>
+      {status}
+    </span>
+  );
+}
+
+/* ═══ Popup: Harga Emas ═══ */
+function HargaPopup({
+  open, onClose, existing, onSaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  existing: HargaEmas[];
+  onSaved: () => void;
+}) {
+  const supabase = createClient();
+  const today = new Date().toISOString().split("T")[0];
+
+  const defaultRows: HargaEmas[] = [
+    { karat: 24, harga_beli: 0, harga_jual: 0 },
+    { karat: 22, harga_beli: 0, harga_jual: 0 },
+    { karat: 18, harga_beli: 0, harga_jual: 0 },
+  ];
+
+  const [rows, setRows] = useState<HargaEmas[]>(defaultRows);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  // Pre-fill with DB values when popup opens
+  useEffect(() => {
+    if (!open) return;
+    setRows(defaultRows.map((r) => {
+      const found = existing.find((e) => e.karat === r.karat);
+      return found ? { ...r, harga_beli: found.harga_beli, harga_jual: found.harga_jual } : r;
+    }));
+    setMsg("");
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateRow = (i: number, field: keyof HargaEmas, val: string) => {
+    const nr = [...rows];
+    nr[i] = { ...nr[i], [field]: Number(val) || 0 };
+    setRows(nr);
+  };
+
+  const save = async () => {
+    const valid = rows.filter((r) => r.karat > 0);
+    if (valid.length === 0) { setMsg("Isi minimal satu baris karat."); return; }
+    setSaving(true);
+    setMsg("");
+    for (const row of valid) {
+      const { error } = await supabase
+        .from("harga_emas")
+        .upsert(
+          { tanggal: today, karat: row.karat, harga_beli: row.harga_beli, harga_jual: row.harga_jual },
+          { onConflict: "tanggal,karat" }
+        );
+      if (error) { setMsg("Gagal menyimpan: " + error.message); setSaving(false); return; }
+    }
+    setSaving(false);
+    setMsg("✓ Harga berhasil disimpan!");
+    setTimeout(() => { onSaved(); onClose(); }, 900);
+  };
+
+  const reset = () => setRows(defaultRows);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+              Biaya Emas Hari Ini
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {new Date().toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+            </p>
           </div>
-        ))}
-      </div>
-
-      {/* Harga Emas Banner */}
-      <div className="rounded-2xl p-6 mb-8 flex items-center justify-between shadow-lg" style={{ background: "linear-gradient(135deg, #6F5333 0%, #8A6840 100%)" }}>
-        <div>
-          <p className="text-amber-100 text-lg font-medium">Harga Emas Hari Ini</p>
-          <p className="text-white text-4xl font-bold mt-1">Rp 2.800.000 <span className="text-2xl font-normal">/gram</span></p>
-          <p className="text-amber-200 text-base mt-1">Diperbarui: Hari ini, 08:00 WIB</p>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg p-1.5 transition-colors"
+            aria-label="Tutup"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
-        <div className="text-6xl opacity-30">💍</div>
-      </div>
 
-      {/* Inventori Terbaru */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-xl font-bold text-gray-800">Inventori Terbaru</h3>
-          <a href="/inventori" className="text-[#6F5333] text-base font-semibold hover:underline">
-            Lihat Semua →
-          </a>
+        {/* Body */}
+        <div className="px-6 py-5">
+          {/* Column headers */}
+          <div className="grid grid-cols-3 gap-3 mb-3">
+            {["Karat", "Harga Beli (Rp/gram)", "Harga Jual (Rp/gram)"].map((h) => (
+              <span key={h} className="text-sm font-semibold text-gray-600">{h}</span>
+            ))}
+          </div>
+
+          {/* Input rows */}
+          <div className="space-y-3">
+            {rows.map((row, i) => (
+              <div key={i} className="grid grid-cols-3 gap-3">
+                <div className="relative">
+                  <input
+                    type="number"
+                    value={row.karat || ""}
+                    onChange={(e) => updateRow(i, "karat", e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl py-3 pl-4 pr-9 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                    placeholder="24"
+                    min={1}
+                    max={24}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold select-none">K</span>
+                </div>
+                <input
+                  type="number"
+                  value={row.harga_beli || ""}
+                  onChange={(e) => updateRow(i, "harga_beli", e.target.value)}
+                  className="border border-gray-300 rounded-xl py-3 px-4 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                  placeholder="1.050.000"
+                  min={0}
+                />
+                <input
+                  type="number"
+                  value={row.harga_jual || ""}
+                  onChange={(e) => updateRow(i, "harga_jual", e.target.value)}
+                  className="border border-gray-300 rounded-xl py-3 px-4 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                  placeholder="1.100.000"
+                  min={0}
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Add row */}
+          <button
+            onClick={() => setRows([...rows, { karat: 0, harga_beli: 0, harga_jual: 0 }])}
+            className="mt-3 text-sm font-medium transition-colors"
+            style={{ color: "#C99A36" }}
+          >
+            + Tambah baris
+          </button>
+
+          {/* Feedback */}
+          {msg && (
+            <p className={`mt-3 text-sm font-semibold py-2 px-3 rounded-lg ${
+              msg.startsWith("✓")
+                ? "bg-green-50 text-green-700"
+                : "bg-red-50 text-red-600"
+            }`}>
+              {msg}
+            </p>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 mt-5 pt-4 border-t border-gray-100">
+            <button
+              onClick={save}
+              disabled={saving}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-base transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#C99A36" }}
+            >
+              {saving ? (
+                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                </svg>
+              )}
+              {saving ? "Menyimpan..." : "Simpan Harga"}
+            </button>
+            <button
+              onClick={reset}
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-base border border-gray-300 text-gray-700 hover:bg-gray-50 bg-white transition-colors active:scale-[0.98]"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reset
+            </button>
+            <button
+              onClick={onClose}
+              className="ml-auto px-5 py-3 rounded-xl font-semibold text-base text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+            >
+              Batal
+            </button>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                {["No", "Nama Barang", "Harga", "Stok", "Status"].map((h) => (
-                  <th key={h} className="px-8 py-4 text-left text-base font-semibold text-gray-600 whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {recentInventory.map((item) => (
-                <tr key={item.no} className="hover:bg-amber-50 transition-colors">
-                  <td className="px-8 py-4 text-lg text-gray-600">{item.no}</td>
-                  <td className="px-8 py-4 text-lg font-medium text-gray-800">{item.nama}</td>
-                  <td className="px-8 py-4 text-lg text-gray-700">{item.harga}</td>
-                  <td className="px-8 py-4 text-lg text-gray-700">{item.stok}</td>
-                  <td className="px-8 py-4">
-                    <span className={`px-4 py-1.5 rounded-full text-base font-semibold ${
-                      item.status === "Tersedia" ? "bg-green-100 text-green-700" :
-                      item.status === "Menipis" ? "bg-yellow-100 text-yellow-700" :
-                      "bg-red-100 text-red-700"
-                    }`}>
-                      {item.status}
-                    </span>
-                  </td>
-                </tr>
+      </div>
+    </div>
+  );
+}
+
+/* ═══ Main Dashboard Page ═══ */
+export default function DashboardPage() {
+  const supabase = createClient();
+  const router = useRouter();
+
+  const [stats, setStats] = useState<Stats>({ totalItem: 0, stokMenipis: 0 });
+  const [hargaEmas, setHargaEmas] = useState<HargaEmas[]>([]);
+  const [inventori, setInventori] = useState<InventoriRow[]>([]);
+  const [allInventori, setAllInventori] = useState<InventoriRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showHargaPopup, setShowHargaPopup] = useState(false);
+  const [search, setSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month">("today");
+  const [showDateMenu, setShowDateMenu] = useState(false);
+  const dateMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close date menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (dateMenuRef.current && !dateMenuRef.current.contains(e.target as Node)) {
+        setShowDateMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const now = new Date();
+      const todayStr = now.toISOString().split("T")[0];
+
+      // Compute date range based on filter
+      let fromDate: string;
+      if (dateFilter === "today") {
+        fromDate = todayStr;
+      } else if (dateFilter === "week") {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 6);
+        fromDate = d.toISOString().split("T")[0];
+      } else {
+        // month
+        fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+      }
+
+      const [invRes, hargaRes] = await Promise.all([
+        supabase
+          .from("inventori")
+          .select("id,id_item,nama_produk,kategori,kadar,berat_gram,jumlah,status_laporan,tanggal_masuk")
+          .gte("tanggal_masuk", fromDate)
+          .lte("tanggal_masuk", todayStr)
+          .order("tanggal_masuk", { ascending: false })
+          .limit(50),
+        supabase
+          .from("harga_emas")
+          .select("id,karat,harga_beli,harga_jual,tanggal")
+          .eq("tanggal", todayStr)
+          .order("karat", { ascending: false }),
+      ]);
+
+      const inventoriData = invRes.data ?? [];
+      setAllInventori(inventoriData);
+      setStats({
+        totalItem:   inventoriData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
+        stokMenipis: inventoriData.filter((r) => (r.jumlah ?? 0) <= 5).length,
+      });
+      setInventori(inventoriData.slice(0, 10));
+      setHargaEmas(hargaRes.data ?? []);
+    } catch (e) {
+      console.error("Load error:", e);
+    }
+    setLoading(false);
+  }, [dateFilter]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Search filter on inventori
+  const filteredInventori = search.trim()
+    ? allInventori.filter((r) =>
+        r.id_item.toLowerCase().includes(search.toLowerCase()) ||
+        r.nama_produk.toLowerCase().includes(search.toLowerCase()) ||
+        r.kadar.toLowerCase().includes(search.toLowerCase())
+      )
+    : inventori;
+
+  const dateLabels: Record<string, string> = {
+    today: "Hari ini",
+    week:  "Minggu ini",
+    month: "Bulan ini",
+  };
+
+  const quickMenu: QuickMenuItem[] = [
+    {
+      label: "Kasir / Penjualan", href: "/pos",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><path d="M3 6h18l-1.5 9h-15L3 6z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round"/><circle cx="9" cy="20" r="1.3" fill="#C99A36"/><circle cx="17" cy="20" r="1.3" fill="#C99A36"/><path d="M3 6L2 3" stroke="#C99A36" strokeWidth="2" strokeLinecap="round"/></svg>,
+    },
+    {
+      label: "Inventori Barang", href: "/inventori",
+      icon: <svg viewBox="0 0 32 32" fill="none" className="w-8 h-8"><path d="M16 3L29 10v12L16 29 3 22V10L16 3z" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M3 10l13 7M16 29V17M29 10l-13 7" stroke="#C99A36" strokeWidth="2"/></svg>,
+    },
+    {
+      label: "Pembelian", href: "/pembelian",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><path d="M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round"/><path d="M8 7V5a4 4 0 018 0v2" stroke="#C99A36" strokeWidth="2" fill="none"/></svg>,
+    },
+    {
+      label: "Servis", href: "/servis",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2-2 2.5-2.5z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round"/></svg>,
+    },
+    {
+      label: "Pegadaian", href: "/pegadaian",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><rect x="3" y="10" width="18" height="10" rx="2" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M7 10V7a5 5 0 0110 0v3" stroke="#C99A36" strokeWidth="2" fill="none"/><circle cx="12" cy="15" r="1.5" fill="#C99A36"/></svg>,
+    },
+    {
+      label: "Hutang Piutang", href: "/hutang-piutang",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M7 9h10M7 13h10M7 17h6" stroke="#C99A36" strokeWidth="2" strokeLinecap="round"/></svg>,
+    },
+    {
+      label: "Keuangan", href: "/keuangan",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><path d="M3 20V10M9 20V4M15 20v-7M21 20V8" stroke="#C99A36" strokeWidth="2.5" strokeLinecap="round"/></svg>,
+    },
+  ];
+
+  return (
+    <AppLayout>
+      <div className="flex-1 flex flex-col bg-white min-h-screen">
+
+        {/* ── Top spacer (no search bar here anymore) ── */}
+        <div className="h-1" />
+
+        <div className="px-6 pb-8 space-y-6 pt-4">
+
+          {/* ── Title + date filter ── */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+                Dashboard
+              </h1>
+              {dateFilter !== "today" && !loading && (
+                <p className="text-sm text-[#C99A36] font-medium mt-0.5">
+                  Menampilkan data: {dateLabels[dateFilter]}
+                </p>
+              )}
+            </div>
+            <div ref={dateMenuRef} className="relative">
+              <button
+                onClick={() => setShowDateMenu(!showDateMenu)}
+                className="flex items-center gap-2 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 bg-white hover:border-[#C99A36] transition-colors"
+              >
+                {dateLabels[dateFilter]}
+                <svg className={`w-4 h-4 transition-transform ${showDateMenu ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                </svg>
+              </button>
+              {showDateMenu && (
+                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 py-1 min-w-[140px]">
+                  {(["today","week","month"] as const).map((key) => (
+                    <button
+                      key={key}
+                      onClick={() => { setDateFilter(key); setShowDateMenu(false); }}
+                      className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${
+                        dateFilter === key
+                          ? "bg-amber-50 text-[#C99A36]"
+                          : "text-gray-700 hover:bg-gray-50"
+                      }`}
+                    >
+                      {dateLabels[key]}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Ringkasan singkat: jumlah barang & peringatan stok ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Link
+              href="/inventori"
+              className="bg-white rounded-xl border border-gray-200 px-6 py-5 flex items-center gap-4 shadow-sm hover:shadow-md hover:border-[#C99A36]/40 transition-all"
+            >
+              <div className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: "#FDF6E3" }}>
+                <svg viewBox="0 0 32 32" fill="none" className="w-7 h-7"><path d="M16 3L29 10v12L16 29 3 22V10L16 3z" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M3 10l13 7M16 29V17M29 10l-13 7" stroke="#C99A36" strokeWidth="2"/></svg>
+              </div>
+              <div>
+                <p className="text-gray-500 text-base font-medium mb-1">Jumlah Barang di Toko</p>
+                {loading
+                  ? <div className="h-9 w-20 bg-gray-200 animate-pulse rounded" />
+                  : <p className="text-3xl font-bold leading-none" style={{ color: "#C99A36" }}>
+                      {fmt(stats.totalItem)} <span className="text-base text-gray-500 font-medium">item</span>
+                    </p>
+                }
+              </div>
+            </Link>
+
+            <Link
+              href="/inventori?filter=menipis"
+              className={`rounded-xl border px-6 py-5 flex items-center gap-4 shadow-sm transition-all hover:shadow-md ${
+                stats.stokMenipis > 0
+                  ? "bg-red-50 border-red-200 hover:border-red-300"
+                  : "bg-white border-gray-200 hover:border-[#C99A36]/40"
+              }`}
+            >
+              <div className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${stats.stokMenipis > 0 ? "bg-red-100" : "bg-green-50"}`}>
+                {stats.stokMenipis > 0
+                  ? <svg viewBox="0 0 32 32" fill="none" className="w-7 h-7"><path d="M16 4L30 28H2L16 4z" fill="#EF4444" opacity="0.15" stroke="#EF4444" strokeWidth="2"/><path d="M16 14v6M16 23v1" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round"/></svg>
+                  : <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7"><path d="M5 13l4 4L19 7" stroke="#16A34A" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                }
+              </div>
+              <div>
+                <p className="text-gray-500 text-base font-medium mb-1">Barang yang Perlu Ditambah Stok</p>
+                {loading
+                  ? <div className="h-9 w-24 bg-gray-200 animate-pulse rounded" />
+                  : stats.stokMenipis > 0
+                    ? <p className="text-3xl font-bold leading-none text-red-500">
+                        {stats.stokMenipis} <span className="text-base text-gray-500 font-medium">item — perlu restock</span>
+                      </p>
+                    : <p className="text-3xl font-bold leading-none text-green-600">
+                        Aman <span className="text-base text-gray-500 font-medium">— stok cukup</span>
+                      </p>
+                }
+              </div>
+            </Link>
+          </div>
+
+          {/* ── Menu Utama: akses cepat ke menu yang sering dipakai ── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4" style={{ fontFamily: "var(--font-playfair)" }}>
+              Menu Utama
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+              {quickMenu.map((item) => (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className="flex flex-col items-center gap-2.5 rounded-xl border border-gray-200 px-4 py-6 text-center shadow-sm transition-all hover:shadow-md hover:border-[#C99A36]/40 active:scale-[0.98]"
+                >
+                  <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ backgroundColor: "#FDF6E3" }}>
+                    {item.icon}
+                  </div>
+                  <span className="text-base font-semibold text-gray-800">{item.label}</span>
+                </Link>
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
+
+          {/* ── Biaya Emas Hari Ini ── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="flex items-start justify-between px-6 pt-5 pb-3">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+                  Biaya Emas Hari Ini
+                </h2>
+                <p className="text-sm text-gray-500 mt-0.5">Input manual harga emas, bisa diganti kapan saja.</p>
+              </div>
+              <button
+                onClick={() => setShowHargaPopup(true)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-amber-50 active:scale-95"
+                style={{ borderColor: "#C99A36", color: "#C99A36" }}
+              >
+                <span className="text-base leading-none font-bold">+</span> Add Data
+              </button>
+            </div>
+
+            {/* Column headers */}
+            <div className="mx-6 mb-2">
+              <div className="grid grid-cols-3 gap-4 px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-700" style={{ backgroundColor: "#FDF6E3" }}>
+                <span>Karat</span>
+                <span>Harga Beli</span>
+                <span>Harga Jual</span>
+              </div>
+            </div>
+
+            {/* Rows */}
+            <div className="mx-6 pb-5 space-y-2.5">
+              {loading ? (
+                [1,2,3].map((i) => (
+                  <div key={i} className="grid grid-cols-3 gap-4">
+                    {[1,2,3].map((j) => <div key={j} className="h-12 bg-gray-100 animate-pulse rounded-lg"/>)}
+                  </div>
+                ))
+              ) : hargaEmas.length > 0 ? (
+                hargaEmas.map((row) => (
+                  <div key={row.karat} className="grid grid-cols-3 gap-4">
+                    <div className="relative border border-gray-200 rounded-lg px-4 py-3 bg-gray-50 flex items-center">
+                      <span className="text-gray-700 font-semibold">{row.karat}</span>
+                      <span className="absolute right-3 text-gray-400 text-sm font-bold">K</span>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg px-4 py-3 bg-gray-50 text-gray-700 text-sm">
+                      Rp {fmt(row.harga_beli)}
+                    </div>
+                    <div className="border border-gray-200 rounded-lg px-4 py-3 bg-gray-50 text-gray-700 text-sm">
+                      Rp {fmt(row.harga_jual)}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-6 text-center">
+                  <p className="text-gray-400 text-sm mb-3">Belum ada harga emas hari ini.</p>
+                  <button
+                    onClick={() => setShowHargaPopup(true)}
+                    className="text-sm font-semibold transition-colors"
+                    style={{ color: "#C99A36" }}
+                  >
+                    + Tambah harga sekarang
+                  </button>
+                </div>
+              )}
+
+              {hargaEmas.length > 0 && (
+                <div className="flex gap-3 pt-2">
+                  {/* "Simpan Harga" opens the edit popup */}
+                  <button
+                    onClick={() => setShowHargaPopup(true)}
+                    className="flex items-center gap-2 px-6 py-3 rounded-xl text-white font-semibold text-base transition-all hover:opacity-90 active:scale-[0.98]"
+                    style={{ backgroundColor: "#C99A36" }}
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                    </svg>
+                    Ubah Harga
+                  </button>
+                  {/* "Reset" reloads from DB (discards unsaved local state) */}
+                  <button
+                    onClick={load}
+                    className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-base border border-gray-300 text-gray-700 hover:bg-gray-50 bg-white transition-colors active:scale-[0.98]"
+                  >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Inventori Terbaru ── */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            {/* Section header */}
+            <div className="px-6 py-4 border-b border-gray-100">
+              {/* Top row: title + link */}
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
+                    <path d="M12 2L22 7v10L12 22 2 17V7L12 2z" stroke="#C99A36" strokeWidth="1.5" fill="none"/>
+                    <path d="M2 7l10 5M12 22V12M22 7l-10 5" stroke="#C99A36" strokeWidth="1.5"/>
+                  </svg>
+                  <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+                    {search ? `Hasil pencarian "${search}"` : "Inventori Terbaru"}
+                  </h2>
+                  {!loading && (
+                    <span className="text-sm text-gray-400 font-normal">
+                      ({filteredInventori.length} item
+                      {dateFilter !== "today" ? ` – ${dateLabels[dateFilter].toLowerCase()}` : " hari ini"})
+                    </span>
+                  )}
+                </div>
+                <Link
+                  href="/inventori"
+                  className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-amber-50 active:scale-95"
+                  style={{ borderColor: "#C99A36", color: "#C99A36" }}
+                >
+                  Lihat Semua
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+                  </svg>
+                </Link>
+              </div>
+
+              {/* Search bar — placed here near the table */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 max-w-sm">
+                  <input
+                    type="search"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Cari nama produk, ID item, atau kadar..."
+                    className="w-full border border-gray-300 rounded-lg pl-4 pr-10 py-2.5 text-base bg-white focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20 transition-colors"
+                  />
+                  <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+                  </svg>
+                </div>
+                {search && (
+                  <button
+                    onClick={() => setSearch("")}
+                    className="text-sm font-medium text-gray-500 hover:text-gray-700 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
+                    Hapus
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px]">
+                <thead>
+                  <tr style={{ backgroundColor: "#FDF6E3" }}>
+                    {["No","ID Item","Nama Produk","Kadar","Berat","Jumlah","Tanggal","Status Laporan"].map((h) => (
+                      <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <tr key={i} className="border-t border-gray-100">
+                        {Array.from({ length: 8 }).map((_, j) => (
+                          <td key={j} className="px-4 py-3.5">
+                            <div className="h-4 bg-gray-200 animate-pulse rounded w-full"/>
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : filteredInventori.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="px-6 py-10 text-center">
+                        <p className="text-gray-400 text-base">
+                          {search ? `Tidak ada hasil untuk "${search}"` : "Belum ada data inventori"}
+                        </p>
+                        {search && (
+                          <button onClick={() => setSearch("")} className="mt-2 text-sm font-medium" style={{ color: "#C99A36" }}>
+                            Hapus pencarian
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredInventori.map((item, idx) => (
+                      <tr
+                        key={item.id}
+                        className="border-t border-gray-100 hover:bg-amber-50/60 transition-colors cursor-pointer"
+                        onClick={() => router.push(`/inventori?id=${item.id}`)}
+                        title="Klik untuk lihat detail"
+                      >
+                        <td className="px-4 py-3.5 text-sm text-gray-500">{idx + 1}</td>
+                        <td className="px-4 py-3.5 text-sm font-semibold text-gray-800">{item.id_item}</td>
+                        <td className="px-4 py-3.5 text-sm text-gray-800 whitespace-nowrap">{item.nama_produk}</td>
+                        <td className="px-4 py-3.5 text-sm text-gray-700">{item.kadar}</td>
+                        <td className="px-4 py-3.5 text-sm text-gray-700">{item.berat_gram} gr</td>
+                        <td className="px-4 py-3.5 text-sm text-gray-700">{item.jumlah}</td>
+                        <td className="px-4 py-3.5 text-sm text-gray-500 whitespace-nowrap">
+                          {new Date(item.tanggal_masuk).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <Badge status={item.status_laporan}/>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Harga Emas Popup */}
+      <HargaPopup
+        open={showHargaPopup}
+        onClose={() => setShowHargaPopup(false)}
+        existing={hargaEmas}
+        onSaved={load}
+      />
     </AppLayout>
   );
 }

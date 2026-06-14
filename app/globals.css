@@ -1,29 +1,35 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --gold: #6F5333;
-  --gold-light: #8A6840;
-  --gold-dark: #5A4228;
-  --sidebar-bg: #1C1C2E;
-  --sidebar-text: #E2E8F0;
+  --color-primary: #6F5333;
+  --color-primary-light: #8A6840;
+  --color-primary-dark: #5A4228;
+  --color-gold-active: #C99A36;
+  --color-title-red: #CA4A28;
+  --font-body: var(--font-lato), "Lato", system-ui, sans-serif;
+  --font-heading: var(--font-playfair), "Playfair Display", Georgia, serif;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-body);
+  color: #1a1a1a;
+  font-size: 16px;
+  line-height: 1.6;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 8px;
+/* Heading font for h1-h3 */
+h1, h2, h3 {
+  font-family: var(--font-heading);
 }
-::-webkit-scrollbar-track {
-  background: #f1f1f1;
-}
-::-webkit-scrollbar-thumb {
-  background: #6F5333;
-  border-radius: 4px;
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f5f0e8; }
+::-webkit-scrollbar-thumb { background: #C99A36; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #6F5333; }
+
+/* Focus ring with brand color */
+*:focus-visible {
+  outline: 2px solid #C99A36;
+  outline-offset: 2px;
 }
