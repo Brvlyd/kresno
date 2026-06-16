@@ -258,7 +258,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showHargaPopup, setShowHargaPopup] = useState(false);
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month">("today");
+  const [dateFilter, setDateFilter] = useState<"today" | "week" | "month" | "quarter" | "all">("today");
   const [showDateMenu, setShowDateMenu] = useState(false);
   const dateMenuRef = useRef<HTMLDivElement>(null);
 
@@ -279,27 +279,35 @@ export default function DashboardPage() {
       const now = new Date();
       const todayStr = now.toISOString().split("T")[0];
 
-      // Compute date range based on filter
-      let fromDate: string;
+      // Date range for inventori table only
+      let fromDate: string | null = null;
       if (dateFilter === "today") {
         fromDate = todayStr;
       } else if (dateFilter === "week") {
-        const d = new Date(now);
-        d.setDate(d.getDate() - 6);
+        const d = new Date(now); d.setDate(d.getDate() - 6);
         fromDate = d.toISOString().split("T")[0];
-      } else {
-        // month
-        fromDate = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split("T")[0];
+      } else if (dateFilter === "month") {
+        const d = new Date(now); d.setDate(d.getDate() - 29);
+        fromDate = d.toISOString().split("T")[0];
+      } else if (dateFilter === "quarter") {
+        const d = new Date(now); d.setMonth(d.getMonth() - 3);
+        fromDate = d.toISOString().split("T")[0];
+      }
+      // "all": fromDate stays null
+
+      let invQuery = supabase
+        .from("inventori")
+        .select("id,id_item,nama_produk,kategori,kadar,berat_gram,jumlah,status_laporan,tanggal_masuk")
+        .order("tanggal_masuk", { ascending: false })
+        .limit(100);
+      if (fromDate) {
+        invQuery = invQuery.gte("tanggal_masuk", fromDate).lte("tanggal_masuk", todayStr);
       }
 
-      const [invRes, hargaRes] = await Promise.all([
-        supabase
-          .from("inventori")
-          .select("id,id_item,nama_produk,kategori,kadar,berat_gram,jumlah,status_laporan,tanggal_masuk")
-          .gte("tanggal_masuk", fromDate)
-          .lte("tanggal_masuk", todayStr)
-          .order("tanggal_masuk", { ascending: false })
-          .limit(50),
+      const [statsRes, invRes, hargaRes] = await Promise.all([
+        // Stats selalu dari SEMUA data, tidak terpengaruh filter tanggal
+        supabase.from("inventori").select("id,jumlah"),
+        invQuery,
         supabase
           .from("harga_emas")
           .select("id,karat,harga_beli,harga_jual,tanggal")
@@ -307,12 +315,14 @@ export default function DashboardPage() {
           .order("karat", { ascending: false }),
       ]);
 
+      const allData = statsRes.data ?? [];
+      setStats({
+        totalItem:   allData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
+        stokMenipis: allData.filter((r) => (r.jumlah ?? 0) <= 5).length,
+      });
+
       const inventoriData = invRes.data ?? [];
       setAllInventori(inventoriData);
-      setStats({
-        totalItem:   inventoriData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
-        stokMenipis: inventoriData.filter((r) => (r.jumlah ?? 0) <= 5).length,
-      });
       setInventori(inventoriData.slice(0, 10));
       setHargaEmas(hargaRes.data ?? []);
     } catch (e) {
@@ -333,9 +343,11 @@ export default function DashboardPage() {
     : inventori;
 
   const dateLabels: Record<string, string> = {
-    today: "Hari ini",
-    week:  "Minggu ini",
-    month: "Bulan ini",
+    today:   "Hari Ini",
+    week:    "7 Hari Terakhir",
+    month:   "30 Hari Terakhir",
+    quarter: "3 Bulan Terakhir",
+    all:     "Semua Data",
   };
 
   const quickMenu: QuickMenuItem[] = [
@@ -376,48 +388,13 @@ export default function DashboardPage() {
         {/* ── Top spacer (no search bar here anymore) ── */}
         <div className="h-1" />
 
-        <div className="px-6 pb-8 space-y-6 pt-4">
+        <div className="px-4 sm:px-6 pb-8 space-y-6 pt-4">
 
-          {/* ── Title + date filter ── */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
-                Dashboard
-              </h1>
-              {dateFilter !== "today" && !loading && (
-                <p className="text-sm text-[#C99A36] font-medium mt-0.5">
-                  Menampilkan data: {dateLabels[dateFilter]}
-                </p>
-              )}
-            </div>
-            <div ref={dateMenuRef} className="relative">
-              <button
-                onClick={() => setShowDateMenu(!showDateMenu)}
-                className="flex items-center gap-2 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium text-gray-700 bg-white hover:border-[#C99A36] transition-colors"
-              >
-                {dateLabels[dateFilter]}
-                <svg className={`w-4 h-4 transition-transform ${showDateMenu ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
-                </svg>
-              </button>
-              {showDateMenu && (
-                <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 py-1 min-w-[140px]">
-                  {(["today","week","month"] as const).map((key) => (
-                    <button
-                      key={key}
-                      onClick={() => { setDateFilter(key); setShowDateMenu(false); }}
-                      className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${
-                        dateFilter === key
-                          ? "bg-amber-50 text-[#C99A36]"
-                          : "text-gray-700 hover:bg-gray-50"
-                      }`}
-                    >
-                      {dateLabels[key]}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          {/* ── Title ── */}
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+              Dashboard
+            </h1>
           </div>
 
           {/* ── Ringkasan singkat: jumlah barang & peringatan stok ── */}
@@ -586,33 +563,69 @@ export default function DashboardPage() {
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             {/* Section header */}
             <div className="px-6 py-4 border-b border-gray-100">
-              {/* Top row: title + link */}
-              <div className="flex items-center justify-between mb-3">
+              {/* Top row: title + date filter + link */}
+              <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
                 <div className="flex items-center gap-2.5">
                   <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6">
                     <path d="M12 2L22 7v10L12 22 2 17V7L12 2z" stroke="#C99A36" strokeWidth="1.5" fill="none"/>
                     <path d="M2 7l10 5M12 22V12M22 7l-10 5" stroke="#C99A36" strokeWidth="1.5"/>
                   </svg>
-                  <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
-                    {search ? `Hasil pencarian "${search}"` : "Inventori Terbaru"}
-                  </h2>
-                  {!loading && (
-                    <span className="text-sm text-gray-400 font-normal">
-                      ({filteredInventori.length} item
-                      {dateFilter !== "today" ? ` – ${dateLabels[dateFilter].toLowerCase()}` : " hari ini"})
-                    </span>
-                  )}
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+                      {search ? `Hasil pencarian "${search}"` : "Inventori Terbaru"}
+                    </h2>
+                    {!loading && (
+                      <p className="text-sm text-gray-400 font-normal mt-0.5">
+                        {filteredInventori.length} item ditemukan
+                        {dateFilter !== "all" ? ` — ${dateLabels[dateFilter].toLowerCase()}` : " — semua waktu"}
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <Link
-                  href="/inventori"
-                  className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-amber-50 active:scale-95"
-                  style={{ borderColor: "#C99A36", color: "#C99A36" }}
-                >
-                  Lihat Semua
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
-                  </svg>
-                </Link>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Date range filter */}
+                  <div ref={dateMenuRef} className="relative">
+                    <button
+                      onClick={() => setShowDateMenu(!showDateMenu)}
+                      className="flex items-center gap-1.5 border border-gray-300 rounded-lg px-3 py-2 text-sm font-medium text-gray-700 bg-white hover:border-[#C99A36] transition-colors"
+                    >
+                      <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                      </svg>
+                      {dateLabels[dateFilter]}
+                      <svg className={`w-4 h-4 transition-transform ${showDateMenu ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
+                      </svg>
+                    </button>
+                    {showDateMenu && (
+                      <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-10 py-1 min-w-[180px]">
+                        {(["today","week","month","quarter","all"] as const).map((key) => (
+                          <button
+                            key={key}
+                            onClick={() => { setDateFilter(key); setShowDateMenu(false); }}
+                            className={`w-full text-left px-4 py-2.5 text-sm font-medium transition-colors ${
+                              dateFilter === key
+                                ? "bg-amber-50 text-[#C99A36]"
+                                : "text-gray-700 hover:bg-gray-50"
+                            }`}
+                          >
+                            {dateLabels[key]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Link
+                    href="/inventori"
+                    className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-amber-50 active:scale-95"
+                    style={{ borderColor: "#C99A36", color: "#C99A36" }}
+                  >
+                    Lihat Semua
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7"/>
+                    </svg>
+                  </Link>
+                </div>
               </div>
 
               {/* Search bar — placed here near the table */}

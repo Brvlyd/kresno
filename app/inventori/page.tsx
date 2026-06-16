@@ -27,6 +27,8 @@ interface BarangRow {
   supplier?: string;
   keterangan?: string;
   gambar_url?: string;
+  jenis_inventori: string;
+  sub_jenis_aset?: string | null;
 }
 
 interface FormData {
@@ -44,6 +46,8 @@ interface FormData {
   supplier: string;
   keterangan: string;
   gambar_url: string;
+  jenis_inventori: string;
+  sub_jenis_aset: string;
 }
 
 const emptyForm: FormData = {
@@ -53,11 +57,14 @@ const emptyForm: FormData = {
   status_laporan: "Draft", kategori: "Gelang",
   harga_beli: "", harga_jual: "", supplier: "",
   keterangan: "", gambar_url: "",
+  jenis_inventori: "Stock Dalam", sub_jenis_aset: "",
 };
 
 const JENIS = ["Gelang", "Kalung", "Cincin", "Anting", "Liontin", "Gelang Kaki", "Tusuk Konde", "Lainnya"];
 const STATUS_INVENTORI = ["Tersedia", "Terjual", "Dalam Servis", "Retur", "Tidak Laku", "Mati Laku", "Habis Dijual", "Hilang"];
 const STATUS_LAPORAN = ["Draft", "Approval Checker", "Approval Signer", "Approved", "Rejected"];
+const JENIS_INVENTORI = ["Stock Dalam", "Stock Display", "Aset"] as const;
+const SUB_JENIS_ASET = ["Cukim", "Emas Rosok"] as const;
 
 const STATUS_BADGE: Record<string, string> = {
   "Tersedia":         "bg-green-100 text-green-700",
@@ -93,8 +100,6 @@ function AddJenisModal({
     if (!trimmed) { setError("Nama jenis barang wajib diisi."); return; }
     setSaving(true);
     setError("");
-    // Jika nama mirip dengan jenis yang sudah ada (typo/beda huruf besar-kecil),
-    // otomatis dikelompokkan ke jenis yang sudah ada — tidak membuat jenis baru.
     const result = await onAdd(trimmed);
     setSaving(false);
     if (!result) { setError("Gagal menyimpan jenis barang baru. Coba lagi."); return; }
@@ -140,9 +145,212 @@ function AddJenisModal({
   );
 }
 
+/* ─── Input harga format Rp ─── */
+function RpInput({
+  value,
+  onChange,
+  className = "",
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  className?: string;
+}) {
+  const numVal = parseInt(value.replace(/\D/g, "")) || 0;
+  const formatted = numVal > 0 ? numVal.toLocaleString("id-ID") : "";
+  return (
+    <div className={`flex items-center border border-gray-300 rounded-xl overflow-hidden focus-within:border-[#C99A36] focus-within:ring-1 focus-within:ring-[#C99A36]/20 ${className}`}>
+      <span className="px-3 py-3 text-base font-semibold text-gray-500 bg-gray-50 border-r border-gray-200 select-none shrink-0">Rp</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={formatted}
+        onChange={(e) => {
+          const raw = e.target.value.replace(/\D/g, "");
+          onChange(raw);
+        }}
+        placeholder="0"
+        className="flex-1 px-3 py-3 text-base focus:outline-none bg-white min-w-0"
+      />
+    </div>
+  );
+}
+
+/* ─── Preview & Pilih Barcode sebelum Print ─── */
+function BarcodePreviewModal({
+  open, onClose, idItem, namaProduk, kadar, beratGram, jumlah, startOffset,
+}: {
+  open: boolean;
+  onClose: () => void;
+  idItem: string;
+  namaProduk: string;
+  kadar: string;
+  beratGram: string;
+  jumlah: number;
+  startOffset: number;
+}) {
+  const [checked, setChecked] = useState<boolean[]>([]);
+  const svgRefs = useRef<(SVGSVGElement | null)[]>([]);
+
+  const unitCode = (i: number) =>
+    `${idItem}-${String(startOffset + i + 1).padStart(3, "0")}`;
+
+  useEffect(() => {
+    if (!open) return;
+    setChecked(Array(jumlah).fill(true));
+  }, [open, jumlah]);
+
+  useEffect(() => {
+    if (!open || !idItem) return;
+    const timer = setTimeout(() => {
+      svgRefs.current.forEach((el, i) => {
+        if (!el) return;
+        try {
+          JsBarcode(el, unitCode(i), { format: "CODE128", displayValue: false, height: 35, margin: 0 });
+        } catch { /* ignore */ }
+      });
+    }, 40);
+    return () => clearTimeout(timer);
+  }, [open, idItem, jumlah, startOffset]);
+
+  const selectedCount = checked.filter(Boolean).length;
+
+  const doPrint = () => {
+    const labels: string[] = [];
+    checked.forEach((on, i) => {
+      if (!on) return;
+      const el = svgRefs.current[i];
+      if (!el) return;
+      const code = unitCode(i);
+      labels.push(`
+        <div class="label">
+          <div class="toko">Toko Mas Kresno</div>
+          ${el.outerHTML}
+          <div class="kode">${code}</div>
+          <div class="nama">${namaProduk}</div>
+          <div class="info">${kadar} • ${beratGram} gr</div>
+        </div>`);
+    });
+    if (!labels.length) return;
+    const w = window.open("", "_blank", "width=500,height=400");
+    if (!w) return;
+    w.document.write(`<html><head><title>Barcode ${idItem}</title>
+      <style>
+        @page { size: auto; margin: 4mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: Arial, sans-serif; }
+        .sheet { display: grid; grid-template-columns: repeat(3, 30mm); gap: 1.5mm; }
+        .label { width: 30mm; height: 20mm; overflow: hidden; border: 1px dashed #bbb; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 1mm; }
+        .label .toko { font-size: 6px; font-weight: bold; }
+        .label svg { width: 26mm; height: 8mm; }
+        .label .kode { font-size: 7px; font-weight: bold; letter-spacing: 1px; }
+        .label .nama { font-size: 5.5px; max-width: 28mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .label .info { font-size: 5.5px; color: #555; }
+        @media print { .label { border: none; } }
+      </style></head>
+      <body><div class="sheet">${labels.join("")}</div>
+      <script>window.onload = function () { window.print(); };<\/script>
+      </body></html>`);
+    w.document.close();
+  };
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+              Preview Barcode
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">{idItem} &bull; {jumlah} unit</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-200 transition-colors font-bold text-xl"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Select all toggle */}
+        <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm text-gray-600 font-medium">
+            {selectedCount} dari {jumlah} dipilih
+          </p>
+          <button
+            onClick={() => setChecked(Array(jumlah).fill(!checked.every(Boolean)))}
+            className="text-sm font-semibold hover:underline"
+            style={{ color: "#C99A36" }}
+          >
+            {checked.every(Boolean) ? "Batalkan Semua" : "Pilih Semua"}
+          </button>
+        </div>
+
+        {/* Grid barcode preview */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="grid grid-cols-3 gap-3">
+            {Array.from({ length: jumlah }, (_, i) => (
+              <div
+                key={i}
+                onClick={() => setChecked((prev) => prev.map((v, j) => j === i ? !v : v))}
+                className={`cursor-pointer rounded-xl border-2 p-2 flex flex-col items-center gap-1 transition-all select-none ${
+                  checked[i] ? "border-[#C99A36] bg-amber-50" : "border-gray-200 bg-white opacity-50"
+                }`}
+              >
+                <div className="flex items-center justify-between w-full mb-0.5">
+                  <span className="text-[10px] text-gray-400 font-medium">#{i + 1}</span>
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${
+                    checked[i] ? "bg-[#C99A36] border-[#C99A36]" : "border-gray-300"
+                  }`}>
+                    {checked[i] && (
+                      <svg className="w-2.5 h-2.5 text-white" viewBox="0 0 10 10" fill="none" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M1.5 5l2.5 2.5 4.5-4.5" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                <svg
+                  ref={(el) => { svgRefs.current[i] = el; }}
+                  className="w-full"
+                  style={{ height: 36 }}
+                />
+                <p className="text-[10px] font-bold text-gray-800 tracking-wide">{unitCode(i)}</p>
+                <p className="text-[9px] text-gray-400 truncate w-full text-center">{namaProduk}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+          >
+            Batal
+          </button>
+          <button
+            onClick={doPrint}
+            disabled={selectedCount === 0}
+            className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-40"
+            style={{ backgroundColor: "#C99A36" }}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+            </svg>
+            Print {selectedCount > 0 ? `(${selectedCount})` : ""}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Popup Detail Barang ─── */
 function DetailBarangPopup({
-  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis,
+  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori,
 }: {
   open: boolean;
   onClose: () => void;
@@ -153,6 +361,7 @@ function DetailBarangPopup({
   existingIds: string[];
   onAddJenis: (nama: string) => Promise<string | null>;
   onDeleteJenis: (nama: string) => void;
+  defaultJenisInventori?: string;
 }) {
   const supabase = createClient();
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -160,12 +369,14 @@ function DetailBarangPopup({
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState("");
   const [showAddJenis, setShowAddJenis] = useState(false);
-  const idTouchedRef = useRef(false);
+  const [showBarcodePreview, setShowBarcodePreview] = useState(false);
+  const [barcodeOffset, setBarcodeOffset] = useState(0);
+  const jenisTouchedRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
+    jenisTouchedRef.current = false;
     if (editData) {
-      idTouchedRef.current = true;
       setForm({
         id_item:           editData.id_item,
         jenis_barang:      editData.jenis_barang,
@@ -176,37 +387,32 @@ function DetailBarangPopup({
         status_inventori:  editData.status_inventori,
         status_laporan:    editData.status_laporan,
         kategori:          editData.kategori,
-        harga_beli:        editData.harga_beli != null ? String(editData.harga_beli) : "",
-        harga_jual:        editData.harga_jual != null ? String(editData.harga_jual) : "",
+        harga_beli:        editData.harga_beli != null ? String(Math.round(editData.harga_beli)) : "",
+        harga_jual:        editData.harga_jual != null ? String(Math.round(editData.harga_jual)) : "",
         supplier:          editData.supplier ?? "",
         keterangan:        editData.keterangan ?? "",
         gambar_url:        editData.gambar_url ?? "",
+        jenis_inventori:   editData.jenis_inventori ?? "Stock Dalam",
+        sub_jenis_aset:    editData.sub_jenis_aset ?? "",
       });
     } else {
-      idTouchedRef.current = false;
-      setForm(emptyForm);
+      setForm({ ...emptyForm, jenis_inventori: defaultJenisInventori ?? "Stock Dalam", sub_jenis_aset: "" });
     }
     setMsg("");
-  }, [open, editData]);
+    setShowBarcodePreview(false);
+  }, [open, editData, defaultJenisInventori]);
 
-  // Buat Kode Barang otomatis untuk barang baru, ikut menyesuaikan saat Jenis Barang dipilih
+  // Kode otomatis: selalu untuk barang baru; untuk edit hanya jika user ganti jenis
   useEffect(() => {
-    if (!open || editData || idTouchedRef.current) return;
+    if (!open) return;
+    if (editData && !jenisTouchedRef.current) return;
     const prefix = prefixForKategori(form.jenis_barang);
     const counters = buildPrefixCounters(existingIds.map((id_item) => ({ id_item })));
-    const id = nextId(prefix, counters);
-    setForm((f) => ({ ...f, id_item: id }));
+    setForm((f) => ({ ...f, id_item: nextId(prefix, counters) }));
   }, [open, editData, form.jenis_barang, existingIds]);
 
   const set = (key: keyof FormData, val: string) =>
     setForm((f) => ({ ...f, [key]: val }));
-
-  const generateNewId = () => {
-    idTouchedRef.current = false;
-    const prefix = prefixForKategori(form.jenis_barang);
-    const counters = buildPrefixCounters(existingIds.map((id_item) => ({ id_item })));
-    set("id_item", nextId(prefix, counters));
-  };
 
   const uploadGambar = async (file: File) => {
     setUploading(true);
@@ -227,18 +433,20 @@ function DetailBarangPopup({
     setUploading(false);
   };
 
-  // Cek semua keterangan wajib sudah diisi. Mengembalikan daftar nama field yang masih kosong.
   const missingFields = (): string[] => {
     const missing: string[] = [];
     if (!form.id_item.trim()) missing.push("Kode Barang");
-    if (!form.nama_produk.trim()) missing.push("Nama Barang");
-    if (!form.kadar.trim()) missing.push("Kadar");
+    if (!form.nama_produk.trim()) missing.push("Item / Nama Barang");
+    const kadarTrimmed = form.kadar.trim();
+    if (!kadarTrimmed || !/^\d+(\.\d+)?K$/.test(kadarTrimmed)) {
+      missing.push("Karat (contoh: 24K atau 18K — angka diikuti huruf K)");
+    }
     if (!form.berat_gram.trim() || (parseFloat(form.berat_gram) || 0) <= 0) missing.push("Berat (gram)");
     if (!form.jumlah.trim() || (parseInt(form.jumlah) || 0) < 1) missing.push("Jumlah");
     if (!form.harga_beli.trim() || (parseFloat(form.harga_beli) || 0) <= 0) missing.push("Harga Modal");
     if (!form.harga_jual.trim() || (parseFloat(form.harga_jual) || 0) <= 0) missing.push("Harga Jual");
     if (!form.supplier.trim()) missing.push("Supplier");
-    if (!form.keterangan.trim()) missing.push("Keterangan");
+    if (form.jenis_inventori === "Aset" && !form.sub_jenis_aset) missing.push("Jenis Aset (Cukim / Emas Rosok)");
     return missing;
   };
 
@@ -267,6 +475,8 @@ function DetailBarangPopup({
       gambar_url:        form.gambar_url.trim() || null,
       tanggal_masuk:     new Date().toISOString().split("T")[0],
       updated_at:        new Date().toISOString(),
+      jenis_inventori:   form.jenis_inventori,
+      sub_jenis_aset:    form.jenis_inventori === "Aset" ? (form.sub_jenis_aset || null) : null,
     };
 
     const { error } = editData
@@ -279,76 +489,23 @@ function DetailBarangPopup({
     setTimeout(() => { onSaved(); onClose(); }, 700);
   };
 
-  const cetakBarcode = () => {
+  const openBarcodePreview = async () => {
     const missing = missingFields();
     if (missing.length > 0) {
       setMsg(`Lengkapi dulu: ${missing.join(", ")}.`);
       return;
     }
-
-    // Buat barcode Code128 sebagai SVG untuk label cetak
-    const svgEl = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    JsBarcode(svgEl, form.id_item, {
-      format: "CODE128",
-      displayValue: false,
-      height: 35,
-      margin: 0,
-    });
-    const barcodeSvg = svgEl.outerHTML;
-
-    const jumlahLabel = Math.max(1, parseInt(form.jumlah) || 1);
-    const labelHtml = `
-      <div class="label">
-        <div class="toko">Toko Mas Kresno</div>
-        ${barcodeSvg}
-        <div class="kode">${form.id_item}</div>
-        <div class="nama">${form.nama_produk}</div>
-        <div class="info">${form.kadar} • ${form.berat_gram} gr</div>
-      </div>`;
-
-    const w = window.open("", "_blank", "width=500,height=400");
-    if (!w) return;
-    w.document.write(`
-      <html><head><title>Barcode ${form.id_item}</title>
-      <style>
-        @page { size: auto; margin: 4mm; }
-        * { box-sizing: border-box; }
-        body { margin: 0; font-family: Arial, sans-serif; }
-        .sheet {
-          display: grid;
-          grid-template-columns: repeat(3, 30mm);
-          gap: 1.5mm;
-        }
-        .label {
-          width: 30mm;
-          height: 20mm;
-          overflow: hidden;
-          border: 1px dashed #bbb;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          text-align: center;
-          padding: 1mm;
-        }
-        .label .toko { font-size: 6px; font-weight: bold; }
-        .label svg { width: 26mm; height: 8mm; }
-        .label .kode { font-size: 7px; font-weight: bold; letter-spacing: 1px; }
-        .label .nama {
-          font-size: 5.5px; max-width: 28mm;
-          overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-        }
-        .label .info { font-size: 5.5px; color: #555; }
-        @media print {
-          .label { border: none; }
-        }
-      </style></head>
-      <body>
-        <div class="sheet">${labelHtml.repeat(jumlahLabel)}</div>
-        <script>window.onload = function () { window.print(); };</script>
-      </body></html>
-    `);
-    w.document.close();
+    // Hitung berapa unit dengan kode yang sama sudah ada di DB (untuk urutan nomor barcode)
+    const idItemFinal = form.id_item.trim().toUpperCase();
+    let offset = 0;
+    if (idItemFinal) {
+      let q = supabase.from("inventori").select("jumlah").eq("id_item", idItemFinal);
+      if (editData?.id) q = q.neq("id", editData.id);
+      const { data } = await q;
+      offset = (data ?? []).reduce((s: number, r: { jumlah: number }) => s + (r.jumlah || 0), 0);
+    }
+    setBarcodeOffset(offset);
+    setShowBarcodePreview(true);
   };
 
   if (!open) return null;
@@ -371,31 +528,19 @@ function DetailBarangPopup({
 
         {/* Body */}
         <div className="px-6 py-5 space-y-4">
-          {/* ID Barang */}
+          {/* Kode Barang — tampil saja, tidak bisa diubah */}
           <div>
-            <label className="block text-base font-semibold text-gray-700 mb-1.5">Kode Barang (dibuat otomatis)</label>
+            <label className="block text-base font-semibold text-gray-700 mb-1.5">Kode Barang</label>
             <p className="text-sm text-gray-400 mb-1.5">
-              Kode ini dibuat otomatis sesuai Jenis Barang yang dipilih. Tidak perlu diubah,
-              kecuali toko sudah punya sistem kode sendiri.
+              Kode ini dibuat otomatis sesuai Jenis Barang yang dipilih dan tidak dapat diubah.
             </p>
-            <div className="flex gap-2">
-              <input
-                value={form.id_item}
-                onChange={(e) => { idTouchedRef.current = true; set("id_item", e.target.value); }}
-                placeholder="Contoh: GL0001"
-                className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20 uppercase"
-              />
-              {!editData && (
-                <button
-                  type="button"
-                  onClick={generateNewId}
-                  title="Buat kode otomatis ulang"
-                  className="px-4 rounded-xl border-2 font-semibold text-sm transition-colors hover:bg-amber-50"
-                  style={{ borderColor: "#C99A36", color: "#C99A36" }}
-                >
-                  Buat Otomatis
-                </button>
-              )}
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <svg className="w-4 h-4 text-amber-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span className="text-base font-mono font-bold text-gray-900 tracking-widest">
+                {form.id_item || "—"}
+              </span>
             </div>
           </div>
 
@@ -408,7 +553,7 @@ function DetailBarangPopup({
                 <div key={j} className="relative">
                   <button
                     type="button"
-                    onClick={() => set("jenis_barang", j)}
+                    onClick={() => { jenisTouchedRef.current = true; set("jenis_barang", j); }}
                     className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
                       form.jenis_barang === j
                         ? "bg-[#C99A36] border-[#C99A36] text-white"
@@ -444,14 +589,65 @@ function DetailBarangPopup({
             onClose={() => setShowAddJenis(false)}
             onAdd={async (nama) => {
               const result = await onAddJenis(nama);
-              if (result) set("jenis_barang", result);
+              if (result) { jenisTouchedRef.current = true; set("jenis_barang", result); }
               return result;
             }}
           />
 
-          {/* Nama Barang */}
+          {/* Jenis Inventori */}
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
+            <label className="block text-base font-semibold text-gray-700 mb-2">Jenis Inventori</label>
+            <div className="flex gap-2 flex-wrap">
+              {JENIS_INVENTORI.map((j) => (
+                <button
+                  key={j}
+                  type="button"
+                  onClick={() => { set("jenis_inventori", j); if (j !== "Aset") set("sub_jenis_aset", ""); }}
+                  className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
+                    form.jenis_inventori === j
+                      ? "bg-[#C99A36] border-[#C99A36] text-white"
+                      : "border-gray-300 text-gray-600 bg-white hover:border-[#C99A36]"
+                  }`}
+                >
+                  {j}
+                </button>
+              ))}
+            </div>
+
+            {/* Sub Jenis Aset */}
+            {form.jenis_inventori === "Aset" && (
+              <div className="mt-3">
+                <label className="block text-sm font-semibold text-gray-600 mb-2">Jenis Aset</label>
+                <div className="flex gap-2 flex-wrap">
+                  {SUB_JENIS_ASET.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => set("sub_jenis_aset", s)}
+                      className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
+                        form.sub_jenis_aset === s
+                          ? "bg-stone-700 border-stone-700 text-white"
+                          : "border-gray-300 text-gray-600 bg-white hover:border-stone-500"
+                      }`}
+                    >
+                      {s === "Emas Rosok" ? "Emas Rosok (Buyback)" : s}
+                    </button>
+                  ))}
+                </div>
+                {form.sub_jenis_aset === "Emas Rosok" && (
+                  <p className="text-sm text-amber-700 font-medium mt-2">
+                    Pembelian emas rosok ini akan dicatat sebagai <strong>Buyback Emas</strong>.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Nama Barang / Item */}
           <div>
-            <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Barang</label>
+            <label className="block text-base font-semibold text-gray-700 mb-1.5">
+              {form.jenis_inventori === "Aset" ? "Item / Deskripsi Aset" : "Nama Barang"}
+            </label>
             <input
               value={form.nama_produk}
               onChange={(e) => set("nama_produk", e.target.value)}
@@ -501,20 +697,23 @@ function DetailBarangPopup({
             </div>
           </div>
 
-          {/* Kadar / Berat / Jumlah */}
+          {/* Karat / Berat / Jumlah */}
           <div>
             <div className="grid grid-cols-3 gap-2 mb-1.5">
-              {["Kadar", "Berat (gram)", "Jumlah"].map((h) => (
+              {["Karat", "Berat (gram)", "Jumlah"].map((h) => (
                 <label key={h} className="text-sm font-semibold text-gray-600">{h}</label>
               ))}
             </div>
             <div className="grid grid-cols-3 gap-2">
-              <input
-                value={form.kadar}
-                onChange={(e) => set("kadar", e.target.value)}
-                placeholder="24K"
-                className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-              />
+              <div className="flex flex-col gap-1">
+                <input
+                  value={form.kadar}
+                  onChange={(e) => set("kadar", e.target.value.toUpperCase())}
+                  placeholder="24K"
+                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                />
+                <span className="text-xs text-gray-400">Angka + K (contoh: 24K)</span>
+              </div>
               <input
                 type="number"
                 value={form.berat_gram}
@@ -535,7 +734,7 @@ function DetailBarangPopup({
             </div>
           </div>
 
-          {/* Harga Modal / Harga Jual */}
+          {/* Harga Modal / Harga Jual — format Rp saat input */}
           <div>
             <div className="grid grid-cols-2 gap-2 mb-1.5">
               {["Harga Modal (beli)", "Harga Jual"].map((h) => (
@@ -543,22 +742,8 @@ function DetailBarangPopup({
               ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <input
-                type="number"
-                value={form.harga_beli}
-                onChange={(e) => set("harga_beli", e.target.value)}
-                placeholder="0"
-                min="0"
-                className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-              />
-              <input
-                type="number"
-                value={form.harga_jual}
-                onChange={(e) => set("harga_jual", e.target.value)}
-                placeholder="0"
-                min="0"
-                className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-              />
+              <RpInput value={form.harga_beli} onChange={(v) => set("harga_beli", v)} />
+              <RpInput value={form.harga_jual} onChange={(v) => set("harga_jual", v)} />
             </div>
           </div>
 
@@ -573,9 +758,11 @@ function DetailBarangPopup({
             />
           </div>
 
-          {/* Keterangan */}
+          {/* Keterangan — opsional */}
           <div>
-            <label className="block text-base font-semibold text-gray-700 mb-1.5">Keterangan</label>
+            <label className="block text-base font-semibold text-gray-700 mb-1.5">
+              Keterangan <span className="text-gray-400 font-normal">(opsional)</span>
+            </label>
             <textarea
               value={form.keterangan}
               onChange={(e) => set("keterangan", e.target.value)}
@@ -659,7 +846,7 @@ function DetailBarangPopup({
             {saving ? "Menyimpan..." : "Simpan Barang Ini"}
           </button>
           <button
-            onClick={cetakBarcode}
+            onClick={openBarcodePreview}
             className="flex-1 flex items-center justify-center gap-2 py-3.5 rounded-xl font-semibold text-base border-2 transition-all hover:opacity-80 active:scale-[0.98]"
             style={{ borderColor: "#C99A36", color: "#C99A36" }}
           >
@@ -670,6 +857,18 @@ function DetailBarangPopup({
           </button>
         </div>
       </div>
+
+      {/* Barcode preview modal (muncul di atas popup ini) */}
+      <BarcodePreviewModal
+        open={showBarcodePreview}
+        onClose={() => setShowBarcodePreview(false)}
+        idItem={form.id_item}
+        namaProduk={form.nama_produk}
+        kadar={form.kadar}
+        beratGram={form.berat_gram}
+        jumlah={Math.max(1, parseInt(form.jumlah) || 1)}
+        startOffset={barcodeOffset}
+      />
     </div>
   );
 }
@@ -719,12 +918,17 @@ function InventoriContent() {
   const [filtered, setFiltered] = useState<BarangRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BarangRow | null>(null);
+  const [activeTab, setActiveTab] = useState<typeof JENIS_INVENTORI[number]>("Stock Dalam");
+  const [filterSubJenis, setFilterSubJenis] = useState("Semua");
   const [filterJenis, setFilterJenis] = useState("Pilih Jenis Inventori");
+  const [filterStatus, setFilterStatus] = useState("Semua");
+  const [sortBy, setSortBy] = useState<"terbaru" | "terlama" | "nama_az" | "stok_banyak" | "stok_sedikit">("terbaru");
   const [showPopup, setShowPopup] = useState(false);
   const [showImportPopup, setShowImportPopup] = useState(false);
   const [editItem, setEditItem] = useState<BarangRow | null>(null);
   const [hapusItem, setHapusItem] = useState<BarangRow | null>(null);
   const [search, setSearch] = useState("");
+  const [searchAllTabs, setSearchAllTabs] = useState(false);
   const [customJenis, setCustomJenis] = useState<string[]>([]);
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
 
@@ -757,8 +961,6 @@ function InventoriContent() {
   const addCustomJenis = useCallback(async (nama: string): Promise<string | null> => {
     const trimmed = nama.trim();
     if (!trimmed) return null;
-    // Jika sudah ada jenis dengan nama yang sama (tidak peduli besar/kecil huruf atau spasi),
-    // gunakan nama yang sudah ada agar tidak terbentuk jenis ganda akibat typo (mis. "Gelang" vs "gelang")
     const existingMatch = allJenis.find((j) => j.toLowerCase() === trimmed.toLowerCase());
     if (existingMatch) return existingMatch;
     const { error } = await supabase.from("jenis_barang_custom").insert({ nama: trimmed });
@@ -780,12 +982,21 @@ function InventoriContent() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadCustomJenis(); }, [loadCustomJenis]);
 
-  // Apply filters
+  // Apply filters + sort, and keep selected in sync with latest DB data
   useEffect(() => {
     let result = items;
+    if (!searchAllTabs) {
+      result = result.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === activeTab);
+      if (activeTab === "Aset" && filterSubJenis !== "Semua") {
+        result = result.filter((r) => r.sub_jenis_aset === filterSubJenis);
+      }
+    }
     if (filterJenis !== "Pilih Jenis Inventori") {
       const f = filterJenis.toLowerCase();
       result = result.filter((r) => r.jenis_barang.toLowerCase() === f || r.kategori.toLowerCase() === f);
+    }
+    if (filterStatus !== "Semua") {
+      result = result.filter((r) => r.status_inventori === filterStatus);
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -795,16 +1006,29 @@ function InventoriContent() {
         r.kadar.toLowerCase().includes(q)
       );
     }
-    // Filter menipis from URL
     if (searchParams.get("filter") === "menipis") {
       result = result.filter((r) => r.jumlah <= 5);
     }
-    setFiltered(result);
-    // Reset selected if no longer in filtered
-    if (selected && !result.find((r) => r.id === selected.id)) {
-      setSelected(result[0] ?? null);
+    // Sort
+    if (sortBy === "terlama") {
+      result = [...result].sort((a, b) => new Date(a.tanggal_masuk).getTime() - new Date(b.tanggal_masuk).getTime());
+    } else if (sortBy === "nama_az") {
+      result = [...result].sort((a, b) => a.nama_produk.localeCompare(b.nama_produk, "id"));
+    } else if (sortBy === "stok_banyak") {
+      result = [...result].sort((a, b) => b.jumlah - a.jumlah);
+    } else if (sortBy === "stok_sedikit") {
+      result = [...result].sort((a, b) => a.jumlah - b.jumlah);
     }
-  }, [items, filterJenis, search, searchParams]);
+    // default "terbaru": sudah urut dari DB (tanggal_masuk desc)
+    setFiltered(result);
+
+    // Refresh selected so the detail panel shows up-to-date data after edit/save
+    if (selected) {
+      const updated = result.find((r) => r.id === selected.id);
+      if (!updated) setSelected(result[0] ?? null);
+      else if (updated !== selected) setSelected(updated);
+    }
+  }, [items, activeTab, filterSubJenis, filterJenis, filterStatus, sortBy, search, searchParams, searchAllTabs]);
 
   const hapus = async () => {
     if (!hapusItem) return;
@@ -820,7 +1044,7 @@ function InventoriContent() {
   return (
     <AppLayout>
       <div className="flex-1 flex flex-col bg-white min-h-screen">
-        <div className="px-6 pt-6 pb-8 flex flex-col gap-5">
+        <div className="px-4 sm:px-6 pt-6 pb-8 flex flex-col gap-5">
           {/* Title */}
           <div>
             <h1 className="text-3xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
@@ -831,18 +1055,90 @@ function InventoriContent() {
             </p>
           </div>
 
-          {/* Help banner */}
-          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
-            <div className="w-9 h-9 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
-              <svg className="w-5 h-5" style={{ color: "#C99A36" }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-              </svg>
+          {/* 3 Tab Jenis Inventori */}
+          <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-2xl">
+            {JENIS_INVENTORI.map((tab) => {
+              const count = items.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === tab).length;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => { setActiveTab(tab); setFilterSubJenis("Semua"); setFilterStatus("Semua"); setSortBy("terbaru"); setSelected(null); }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-base transition-all ${
+                    activeTab === tab
+                      ? "bg-white shadow-sm text-gray-900"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {tab === "Aset" ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                  ) : tab === "Stock Display" ? (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
+                    </svg>
+                  )}
+                  <span>{tab}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                    activeTab === tab ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-500"
+                  }`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Sub-filter Aset (Cukim / Emas Rosok) */}
+          {activeTab === "Aset" && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm font-semibold text-gray-500">Jenis Aset:</span>
+              {["Semua", ...SUB_JENIS_ASET].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => { setFilterSubJenis(s); setSelected(null); }}
+                  className={`px-4 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
+                    filterSubJenis === s
+                      ? "bg-stone-700 border-stone-700 text-white"
+                      : "border-gray-300 text-gray-600 hover:border-stone-500"
+                  }`}
+                >
+                  {s === "Emas Rosok" ? "Emas Rosok (Buyback)" : s}
+                </button>
+              ))}
             </div>
-            <p className="text-base text-gray-700 leading-relaxed">
-              <strong>Cara pakai:</strong> Pilih salah satu barang di daftar kiri untuk melihat detailnya.
-              Gunakan tombol besar <strong>Tambah 1 Barang</strong> untuk menambah barang satu-satu,
-              atau <strong>Tambah Banyak Barang (CSV)</strong> jika ingin memasukkan banyak barang sekaligus dari file Excel.
-            </p>
+          )}
+
+          {/* Help banner */}
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-4 h-4" style={{ color: "#C99A36" }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+              </div>
+              <p className="text-base font-bold text-gray-800">Panduan Cepat</p>
+            </div>
+            <ol className="text-sm text-gray-700 space-y-1.5 list-none pl-0">
+              <li className="flex items-start gap-2">
+                <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">1</span>
+                <span>Pilih tab kategori di atas (<strong>Stock Dalam</strong>, <strong>Stock Display</strong>, atau <strong>Aset</strong>) sesuai jenis barang.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
+                <span>Klik tombol <strong>Tambah Barang</strong> di bawah untuk memasukkan barang baru. Bisa juga upload banyak barang sekaligus lewat CSV.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
+                <span>Klik nama barang di daftar kiri untuk melihat detailnya. Gunakan tombol <strong>Ubah</strong> atau <strong>Hapus</strong> di panel kanan.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">4</span>
+                <span>Gunakan kolom <strong>Cari Barang</strong> di kiri untuk menemukan barang. Centang &ldquo;Cari di semua kategori&rdquo; agar pencarian tidak terbatas satu tab.</span>
+              </li>
+            </ol>
           </div>
 
           {/* Big action buttons */}
@@ -852,14 +1148,22 @@ function InventoriContent() {
               className="flex items-center gap-4 px-6 py-5 rounded-2xl text-white font-bold transition-all hover:opacity-90 active:scale-[0.98] shadow-sm text-left"
               style={{ backgroundColor: "#C99A36" }}
             >
-              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
                 <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/>
                 </svg>
               </div>
               <div>
-                <p className="text-lg font-bold leading-tight">Tambah 1 Barang</p>
-                <p className="text-sm font-normal opacity-90 mt-0.5">Masukkan satu barang baru ke daftar</p>
+                <p className="text-lg font-bold leading-tight">
+                  {activeTab === "Aset"
+                    ? (filterSubJenis === "Emas Rosok" ? "Tambah Buyback Emas" : filterSubJenis === "Cukim" ? "Tambah Cukim" : "Tambah Aset")
+                    : `Tambah ${activeTab}`}
+                </p>
+                <p className="text-sm font-normal opacity-90 mt-0.5">
+                  {activeTab === "Aset" && filterSubJenis === "Emas Rosok"
+                    ? "Catat pembelian emas rosok (buyback) baru"
+                    : "Masukkan satu barang baru ke daftar"}
+                </p>
               </div>
             </button>
             <button
@@ -880,9 +1184,9 @@ function InventoriContent() {
           </div>
 
           {/* Two-column layout */}
-          <div className="flex gap-5 min-h-[520px]">
+          <div className="flex flex-col lg:flex-row gap-5">
             {/* LEFT: filter + list */}
-            <div className="w-64 xl:w-72 flex-shrink-0 flex flex-col gap-3">
+            <div className="w-full lg:w-64 xl:w-72 lg:shrink-0 flex flex-col gap-3">
               {/* Search */}
               <div>
                 <label className="block text-sm font-semibold text-gray-600 mb-1.5">Cari Barang</label>
@@ -891,16 +1195,30 @@ function InventoriContent() {
                     type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Ketik ID atau nama barang..."
+                    placeholder="Ketik kode, nama, atau karat..."
                     className="w-full border border-gray-300 rounded-xl pl-4 pr-10 py-3 text-base focus:outline-none focus:border-[#C99A36]"
                   />
                   <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
                   </svg>
                 </div>
+                <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={searchAllTabs}
+                    onChange={(e) => setSearchAllTabs(e.target.checked)}
+                    className="w-4 h-4 rounded accent-[#C99A36]"
+                  />
+                  <span className="text-sm text-gray-600">Cari di semua kategori inventori</span>
+                </label>
+                {searchAllTabs && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mt-1.5 font-medium">
+                    Menampilkan hasil dari Stock Dalam, Stock Display & Aset.
+                  </p>
+                )}
               </div>
 
-              {/* Jenis filter — tombol besar yang selalu terlihat */}
+              {/* Jenis filter */}
               <div>
                 <label className="block text-sm font-semibold text-gray-600 mb-1.5">Jenis Barang</label>
                 <div className="flex flex-wrap gap-2">
@@ -957,8 +1275,90 @@ function InventoriContent() {
                 }}
               />
 
+              {/* Status Barang filter */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Status Barang</label>
+                <div className="flex flex-wrap gap-2">
+                  {["Semua", "Tersedia", "Terjual", "Dalam Servis", "Lainnya"].map((s) => {
+                    const isActive = s === "Lainnya"
+                      ? !["Semua","Tersedia","Terjual","Dalam Servis"].includes(filterStatus) && filterStatus !== "Semua"
+                      : filterStatus === s;
+                    return (
+                      <div key={s} className="relative">
+                        {s === "Lainnya" ? (
+                          <select
+                            value={["Semua","Tersedia","Terjual","Dalam Servis"].includes(filterStatus) ? "" : filterStatus}
+                            onChange={(e) => setFilterStatus(e.target.value || "Semua")}
+                            className={`px-3.5 py-2 rounded-full text-sm font-semibold border-2 transition-colors appearance-none pr-7 cursor-pointer ${
+                              isActive
+                                ? "bg-[#C99A36] border-[#C99A36] text-white"
+                                : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                            }`}
+                          >
+                            <option value="">Lainnya ▾</option>
+                            {["Retur","Tidak Laku","Mati Laku","Habis Dijual","Hilang"].map((o) => (
+                              <option key={o} value={o}>{o}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <button
+                            onClick={() => setFilterStatus(s)}
+                            className={`px-3.5 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
+                              isActive
+                                ? "bg-[#C99A36] border-[#C99A36] text-white"
+                                : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                            }`}
+                          >
+                            {s}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Sort */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Urutkan</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-[#C99A36] bg-white"
+                >
+                  <option value="terbaru">Terbaru (baru masuk dulu)</option>
+                  <option value="terlama">Terlama (lama masuk dulu)</option>
+                  <option value="nama_az">Nama A → Z</option>
+                  <option value="stok_banyak">Stok Terbanyak</option>
+                  <option value="stok_sedikit">Stok Paling Sedikit</option>
+                </select>
+              </div>
+
+              {/* Result count */}
+              {!loading && (
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">
+                    <span className="font-bold text-gray-800">{filtered.length}</span> barang ditemukan
+                    {!searchAllTabs && items.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === activeTab).length !== filtered.length && (
+                      <span className="text-gray-400"> dari {items.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === activeTab).length}</span>
+                    )}
+                    {searchAllTabs && items.length !== filtered.length && (
+                      <span className="text-gray-400"> dari {items.length} total</span>
+                    )}
+                  </p>
+                  {(filterStatus !== "Semua" || filterJenis !== "Pilih Jenis Inventori" || search.trim() || searchAllTabs) && (
+                    <button
+                      onClick={() => { setFilterStatus("Semua"); setFilterJenis("Pilih Jenis Inventori"); setSearch(""); setSearchAllTabs(false); }}
+                      className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors"
+                    >
+                      Reset filter
+                    </button>
+                  )}
+                </div>
+              )}
+
               {/* List of items */}
-              <div className="flex-1 border border-gray-200 rounded-xl overflow-hidden">
+              <div className="flex-1 min-h-64 lg:min-h-0 border border-gray-200 rounded-xl overflow-hidden">
                 {loading ? (
                   <div className="p-4 space-y-3">
                     {[1,2,3,4].map((i) => (
@@ -974,7 +1374,7 @@ function InventoriContent() {
                     <p className="text-gray-400 text-sm mt-1">Coba ganti kata pencarian atau pilih jenis &ldquo;Semua&rdquo;</p>
                   </div>
                 ) : (
-                  <div className="divide-y divide-gray-100 max-h-[520px] overflow-y-auto">
+                  <div className="divide-y divide-gray-100 max-h-80 lg:max-h-[520px] overflow-y-auto">
                     {filtered.map((item) => (
                       <button
                         key={item.id}
@@ -997,12 +1397,24 @@ function InventoriContent() {
                         )}
                         <div className="flex-1 min-w-0">
                           <p className="text-base font-bold text-gray-800 leading-tight truncate">{item.nama_produk}</p>
-                          <p className="text-sm text-gray-500 mt-0.5">{item.id_item}</p>
-                          <p className="mt-1">
-                            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${STATUS_BADGE[item.status_inventori] ?? "bg-gray-100 text-gray-600"}`}>
+                          <p className="text-xs text-gray-400 mt-0.5 font-mono">{item.id_item}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {item.kadar && <span>{item.kadar}</span>}
+                            {item.kadar && item.berat_gram ? " · " : ""}
+                            {item.berat_gram ? <span>{item.berat_gram}g</span> : ""}
+                            {(item.kadar || item.berat_gram) && item.jumlah > 1 ? " · " : ""}
+                            {item.jumlah > 1 && <span>{item.jumlah} pcs</span>}
+                          </p>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${STATUS_BADGE[item.status_inventori] ?? "bg-gray-100 text-gray-600"}`}>
                               {item.status_inventori}
                             </span>
-                          </p>
+                            {searchAllTabs && (
+                              <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+                                {item.jenis_inventori ?? "Stock Dalam"}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </button>
                     ))}
@@ -1012,7 +1424,7 @@ function InventoriContent() {
             </div>
 
             {/* RIGHT: detail panel or empty state */}
-            <div className="flex-1 border border-gray-200 rounded-xl overflow-hidden">
+            <div className="flex-1 min-h-64 lg:min-h-0 border border-gray-200 rounded-xl overflow-hidden">
               {!selected ? (
                 <div className="flex flex-col items-center justify-center h-full py-20 text-center px-8">
                   <svg className="w-20 h-20 mb-5" viewBox="0 0 80 80" fill="none">
@@ -1081,12 +1493,35 @@ function InventoriContent() {
                     </div>
                   </div>
 
+                  {/* Jenis Inventori + Sub Jenis badge */}
+                  <div className="flex items-center gap-2 mb-4 flex-wrap">
+                    <span className="px-3 py-1.5 rounded-full text-sm font-bold bg-amber-100 text-amber-800">
+                      {selected.jenis_inventori ?? "Stock Dalam"}
+                    </span>
+                    {selected.sub_jenis_aset && (
+                      <span className="px-3 py-1.5 rounded-full text-sm font-bold bg-stone-100 text-stone-700">
+                        {selected.sub_jenis_aset === "Emas Rosok" ? "Emas Rosok (Buyback)" : selected.sub_jenis_aset}
+                      </span>
+                    )}
+                  </div>
+
                   {/* Info grid */}
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                      <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide mb-1">Karat</p>
+                      <p className="text-xl font-bold text-gray-900">{selected.kadar || "—"}</p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                      <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide mb-1">Berat</p>
+                      <p className="text-xl font-bold text-gray-900">{selected.berat_gram} <span className="text-sm font-normal">gram</span></p>
+                    </div>
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                      <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide mb-1">Stok</p>
+                      <p className="text-xl font-bold text-gray-900">{selected.jumlah} <span className="text-sm font-normal">pcs</span></p>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
                     {[
-                      { label: "Kadar",         value: selected.kadar || "—", icon: "💎" },
-                      { label: "Berat",          value: `${selected.berat_gram} gram`, icon: "⚖️" },
-                      { label: "Jumlah Stok",    value: `${selected.jumlah} pcs`, icon: "📦" },
                       { label: "Tanggal Masuk",  value: new Date(selected.tanggal_masuk).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }), icon: "📅" },
                       { label: "Harga Modal",    value: selected.harga_beli ? `Rp ${selected.harga_beli.toLocaleString("id-ID")}` : "—", icon: "💰" },
                       { label: "Harga Jual",     value: selected.harga_jual ? `Rp ${selected.harga_jual.toLocaleString("id-ID")}` : "—", icon: "🏷️" },
@@ -1155,6 +1590,7 @@ function InventoriContent() {
         existingIds={items.map((i) => i.id_item)}
         onAddJenis={addCustomJenis}
         onDeleteJenis={deleteCustomJenis}
+        defaultJenisInventori={activeTab}
       />
       <HapusPopup
         open={!!hapusItem}

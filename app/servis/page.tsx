@@ -1,96 +1,583 @@
+"use client";
+
+import { useEffect, useState, useCallback, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { fmtRupiah, cetakInvoiceServis } from "@/lib/servis";
 
-const servisData = [
-  { id: "SRV001", pelanggan: "Rina Wati", barang: "Cincin rusak tali", jenis: "Perbaikan", tgl: "05 Jun 2025", estimasi: "08 Jun 2025", biaya: "Rp 150.000", status: "Selesai" },
-  { id: "SRV002", pelanggan: "Hendra Gunawan", barang: "Kalung — sambung putus", jenis: "Penyambungan", tgl: "07 Jun 2025", estimasi: "10 Jun 2025", biaya: "Rp 200.000", status: "Dalam Proses" },
-  { id: "SRV003", pelanggan: "Yuli Astuti", barang: "Gelang ukir motif", jenis: "Pengukiran", tgl: "08 Jun 2025", estimasi: "12 Jun 2025", biaya: "Rp 350.000", status: "Dalam Proses" },
-  { id: "SRV004", pelanggan: "Bapak Sujoko", barang: "Anting bengkok", jenis: "Perbaikan", tgl: "09 Jun 2025", estimasi: "11 Jun 2025", biaya: "Rp 100.000", status: "Menunggu" },
-];
+/* ─── Types ─── */
+interface ServisRow {
+  id: string;
+  no_servis: string;
+  jenis_servis: "Cuci" | "Perbaikan";
+  pelanggan_nama: string;
+  pelanggan_hp: string | null;
+  pelanggan_alamat: string | null;
+  jenis_perhiasan: string;
+  nama_barang: string;
+  berat_gram: number;
+  kadar: string;
+  kondisi_awal: string | null;
+  deskripsi: string | null;
+  foto_barang_url: string | null;
+  jenis_kerusakan: string | null;
+  jenis_tindakan: string | null;
+  prioritas: string | null;
+  catatan_kerusakan: string | null;
+  estimasi_biaya: number;
+  uang_muka: number;
+  status: "Menunggu" | "Diproses" | "Selesai" | "Diambil";
+  tanggal_masuk: string;
+  estimasi_selesai: string | null;
+  tanggal_selesai: string | null;
+  catatan_tambahan: string | null;
+  created_at: string;
+}
 
-const statsServis = [
-  { label: "Dalam Proses", value: "7", icon: "🔧" },
-  { label: "Selesai Hari Ini", value: "3", icon: "✅" },
-  { label: "Menunggu Diambil", value: "2", icon: "⏳" },
-  { label: "Total Pendapatan Servis", value: "Rp 1.2jt", icon: "💰" },
-];
+const PAGE_SIZE = 5;
 
-export default function ServisPage() {
+const STATUS_STYLE: Record<string, string> = {
+  "Menunggu": "bg-orange-100 text-orange-600 border border-orange-200",
+  "Diproses": "bg-blue-100 text-blue-600 border border-blue-200",
+  "Selesai":  "bg-green-100 text-green-700 border border-green-200",
+  "Diambil":  "bg-gray-100 text-gray-600 border border-gray-200",
+};
+
+function Badge({ status }: { status: string }) {
   return (
-    <AppLayout title="Servis & Perbaikan" subtitle="Kelola servis perhiasan pelanggan">
-      {/* Stats */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-5 mb-8">
-        {statsServis.map((s, i) => (
-          <div key={i} className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex items-center gap-4">
-            <span className="text-3xl">{s.icon}</span>
-            <div>
-              <p className="text-3xl font-bold text-gray-800">{s.value}</p>
-              <p className="text-gray-500 text-base">{s.label}</p>
+    <span className={`px-3 py-1 rounded-full text-sm font-semibold whitespace-nowrap ${STATUS_STYLE[status] ?? "bg-gray-100 text-gray-600"}`}>
+      {status}
+    </span>
+  );
+}
+
+/* ═══ Popup: Detail Servis ═══ */
+function DetailServisPopup({
+  open, onClose, item, onChanged,
+}: {
+  open: boolean;
+  onClose: () => void;
+  item: ServisRow | null;
+  onChanged: () => void;
+}) {
+  const supabase = createClient();
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    if (open) setMsg("");
+  }, [open]);
+
+  if (!open || !item) return null;
+
+  const tandaiSelesai = async () => {
+    setBusy(true);
+    setMsg("");
+    const { error } = await supabase
+      .from("servis")
+      .update({ status: "Selesai", tanggal_selesai: new Date().toISOString().split("T")[0], updated_at: new Date().toISOString() })
+      .eq("id", item.id);
+    setBusy(false);
+    if (error) { setMsg("Gagal menyimpan: " + error.message); return; }
+    onChanged();
+    onClose();
+  };
+
+  const tandaiDiambil = async () => {
+    setBusy(true);
+    setMsg("");
+    const { error } = await supabase
+      .from("servis")
+      .update({ status: "Diambil", uang_muka: item.estimasi_biaya, updated_at: new Date().toISOString() })
+      .eq("id", item.id);
+    setBusy(false);
+    if (error) { setMsg("Gagal menyimpan: " + error.message); return; }
+    onChanged();
+    onClose();
+  };
+
+  const cetak = () => {
+    cetakInvoiceServis({
+      no_servis: item.no_servis,
+      tanggal_masuk: item.tanggal_masuk,
+      jenis_servis: item.jenis_servis,
+      pelanggan_nama: item.pelanggan_nama,
+      pelanggan_alamat: item.pelanggan_alamat ?? "",
+      pelanggan_hp: item.pelanggan_hp ?? "",
+      jenis_perhiasan: item.jenis_perhiasan,
+      nama_barang: item.nama_barang,
+      berat_gram: item.berat_gram,
+      kadar: item.kadar,
+      kondisi_awal: item.kondisi_awal ?? "",
+      jenis_kerusakan: item.jenis_kerusakan ?? undefined,
+      jenis_tindakan: item.jenis_tindakan ?? undefined,
+      prioritas: item.prioritas ?? undefined,
+      estimasi_biaya: item.estimasi_biaya,
+      uang_muka: item.uang_muka,
+      estimasi_selesai: item.estimasi_selesai ?? item.tanggal_masuk,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10">
+          <div>
+            <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+              Detail Servis {item.jenis_servis}
+            </h2>
+            <p className="text-sm text-gray-500 mt-0.5">{item.no_servis}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-red-100 text-red-500 hover:bg-red-200 transition-colors font-bold text-xl"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5">
+          <div className="flex items-center justify-between">
+            <Badge status={item.status} />
+            <span className="text-sm text-gray-500">
+              Tgl Masuk: {new Date(item.tanggal_masuk).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+            </span>
+          </div>
+
+          {/* Data Pelanggan */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Data Pelanggan</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-gray-400">Nama</p><p className="font-semibold text-gray-800">{item.pelanggan_nama}</p></div>
+              <div><p className="text-gray-400">No. HP</p><p className="font-semibold text-gray-800">{item.pelanggan_hp || "-"}</p></div>
+              <div className="col-span-2"><p className="text-gray-400">Alamat</p><p className="font-semibold text-gray-800">{item.pelanggan_alamat || "-"}</p></div>
             </div>
           </div>
-        ))}
-      </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-8 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-4">
-          <h3 className="text-xl font-bold text-gray-800">Daftar Servis</h3>
-          <div className="flex gap-3 flex-wrap">
-            <select className="border-2 border-gray-200 rounded-xl px-5 py-3 text-lg focus:outline-none focus:border-[#6F5333]">
-              <option>Semua Status</option>
-              <option>Dalam Proses</option>
-              <option>Selesai</option>
-              <option>Menunggu</option>
-            </select>
-            <button className="bg-[#6F5333] hover:bg-[#5A4228] text-white text-lg font-semibold px-6 py-3 rounded-xl transition-colors whitespace-nowrap">
-              + Terima Servis Baru
+          {/* Data Perhiasan */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Data Perhiasan</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-gray-400">Jenis</p><p className="font-semibold text-gray-800">{item.jenis_perhiasan}</p></div>
+              <div><p className="text-gray-400">Nama Barang</p><p className="font-semibold text-gray-800">{item.nama_barang}</p></div>
+              <div><p className="text-gray-400">Berat</p><p className="font-semibold text-gray-800">{item.berat_gram} gram</p></div>
+              <div><p className="text-gray-400">Kadar</p><p className="font-semibold text-gray-800">{item.kadar}</p></div>
+              {item.kondisi_awal && (
+                <div className="col-span-2"><p className="text-gray-400">Kondisi Awal</p><p className="font-semibold text-gray-800">{item.kondisi_awal}</p></div>
+              )}
+              {item.deskripsi && (
+                <div className="col-span-2"><p className="text-gray-400">Deskripsi</p><p className="text-gray-700">{item.deskripsi}</p></div>
+              )}
+            </div>
+          </div>
+
+          {/* Detail Perbaikan */}
+          {item.jenis_servis === "Perbaikan" && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Detail Perbaikan</h3>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-gray-400">Jenis Kerusakan</p><p className="font-semibold text-gray-800">{item.jenis_kerusakan || "-"}</p></div>
+                <div><p className="text-gray-400">Jenis Tindakan</p><p className="font-semibold text-gray-800">{item.jenis_tindakan || "-"}</p></div>
+                <div><p className="text-gray-400">Prioritas</p><p className="font-semibold text-gray-800">{item.prioritas || "-"}</p></div>
+                {item.catatan_kerusakan && (
+                  <div className="col-span-2"><p className="text-gray-400">Catatan Kerusakan</p><p className="text-gray-700">{item.catatan_kerusakan}</p></div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Biaya */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Biaya & Estimasi</h3>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div><p className="text-gray-400">Estimasi Biaya</p><p className="font-semibold" style={{ color: "#C99A36" }}>{fmtRupiah(item.estimasi_biaya)}</p></div>
+              <div><p className="text-gray-400">Uang Muka</p><p className="font-semibold text-gray-800">{fmtRupiah(item.uang_muka)}</p></div>
+              <div><p className="text-gray-400">Sisa Pembayaran</p><p className="font-semibold text-gray-800">{fmtRupiah(item.estimasi_biaya - item.uang_muka)}</p></div>
+              <div>
+                <p className="text-gray-400">Estimasi Selesai</p>
+                <p className="font-semibold text-gray-800">
+                  {item.estimasi_selesai ? new Date(item.estimasi_selesai).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "-"}
+                </p>
+              </div>
+              {item.tanggal_selesai && (
+                <div>
+                  <p className="text-gray-400">Tanggal Selesai</p>
+                  <p className="font-semibold text-gray-800">
+                    {new Date(item.tanggal_selesai).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {item.catatan_tambahan && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Catatan Tambahan</h3>
+              <p className="text-sm text-gray-700">{item.catatan_tambahan}</p>
+            </div>
+          )}
+
+          {msg && (
+            <p className="text-sm font-semibold py-2.5 px-4 rounded-xl bg-red-50 text-red-600">{msg}</p>
+          )}
+
+          {/* Actions */}
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <button
+              onClick={cetak}
+              className="flex-1 py-3 rounded-xl border-2 font-semibold text-base transition-colors hover:bg-amber-50"
+              style={{ borderColor: "#C99A36", color: "#C99A36" }}
+            >
+              Cetak Invoice Servis
             </button>
+            {(item.status === "Menunggu" || item.status === "Diproses") && (
+              <button
+                onClick={tandaiSelesai}
+                disabled={busy}
+                className="flex-1 py-3 rounded-xl text-white font-semibold text-base transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                Tandai Selesai
+              </button>
+            )}
+            {item.status === "Selesai" && (
+              <button
+                onClick={tandaiDiambil}
+                disabled={busy}
+                className="flex-1 py-3 rounded-xl text-white font-semibold text-base transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                Tandai Diambil & Lunas
+              </button>
+            )}
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
+      </div>
+    </div>
+  );
+}
+
+/* ═══ Main Page ═══ */
+export default function ServisPage() {
+  const supabase = createClient();
+  const router = useRouter();
+
+  const [servisList, setServisList] = useState<ServisRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [filterJenis, setFilterJenis] = useState<"Semua" | "Cuci" | "Perbaikan">("Semua");
+  const [pageAntrian, setPageAntrian] = useState(1);
+  const [pageRiwayat, setPageRiwayat] = useState(1);
+  const [detailItem, setDetailItem] = useState<ServisRow | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("servis")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setServisList(data ?? []);
+    setLoading(false);
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const stats = useMemo(() => {
+    const aktif = servisList.filter((s) => s.status !== "Diambil");
+    return {
+      totalServis: aktif.length,
+      diproses: servisList.filter((s) => s.status === "Diproses").length,
+      selesai: servisList.filter((s) => s.status === "Selesai").length,
+      estimasiPendapatan: aktif.reduce((sum, s) => sum + (s.estimasi_biaya ?? 0), 0),
+    };
+  }, [servisList]);
+
+  const filtered = useMemo(() => {
+    let result = servisList;
+    if (filterJenis !== "Semua") {
+      result = result.filter((s) => s.jenis_servis === filterJenis);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((s) =>
+        s.pelanggan_nama.toLowerCase().includes(q) ||
+        s.nama_barang.toLowerCase().includes(q) ||
+        s.no_servis.toLowerCase().includes(q)
+      );
+    }
+    return result;
+  }, [servisList, filterJenis, search]);
+
+  const antrian = useMemo(() => filtered.filter((s) => s.status !== "Diambil"), [filtered]);
+  const riwayat = useMemo(() => filtered.filter((s) => s.status === "Diambil"), [filtered]);
+
+  const totalPagesAntrian = Math.max(1, Math.ceil(antrian.length / PAGE_SIZE));
+  const pagedAntrian = antrian.slice((pageAntrian - 1) * PAGE_SIZE, pageAntrian * PAGE_SIZE);
+
+  const totalPagesRiwayat = Math.max(1, Math.ceil(riwayat.length / PAGE_SIZE));
+  const pagedRiwayat = riwayat.slice((pageRiwayat - 1) * PAGE_SIZE, pageRiwayat * PAGE_SIZE);
+
+  const statCards = [
+    {
+      label: "Total Servis", value: String(stats.totalServis), suffix: "servis",
+      sublabel: "sedang berjalan",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M7 9h10M7 13h10M7 17h6" stroke="#C99A36" strokeWidth="2" strokeLinecap="round"/></svg>,
+    },
+    {
+      label: "Servis Diproses", value: String(stats.diproses), suffix: "servis",
+      sublabel: "sedang dikerjakan",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2-2 2.5-2.5z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round"/></svg>,
+    },
+    {
+      label: "Servis Selesai", value: String(stats.selesai), suffix: "item",
+      sublabel: "siap diambil",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9"><path d="M5 13l4 4L19 7" stroke="#22C55E" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+    },
+    {
+      label: "Estimasi Pendapatan", value: fmtRupiah(stats.estimasiPendapatan),
+      sublabel: "dari servis aktif",
+      icon: <svg viewBox="0 0 24 24" fill="none" className="w-9 h-9"><path d="M3 20V10M9 20V4M15 20v-7M21 20V8" stroke="#C99A36" strokeWidth="2.5" strokeLinecap="round"/></svg>,
+    },
+  ];
+
+  const renderTable = (
+    title: string,
+    rows: ServisRow[],
+    page: number,
+    setPage: (p: number) => void,
+    totalPages: number,
+    actionLabel: string,
+    emptyText: string,
+  ) => (
+    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="px-6 pt-5 pb-3">
+        <h3 className="text-base font-bold text-gray-800">{title}</h3>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px]">
+          <thead>
+            <tr style={{ backgroundColor: "#FDF6E3" }}>
+              {["No","Tanggal","Nama Pelanggan","Jenis Servis","Biaya","Status","Aksi"].map((h) => (
+                <th key={h} className="px-4 py-3 text-left text-sm font-semibold text-gray-700 whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              Array.from({ length: 3 }).map((_, i) => (
+                <tr key={i} className="border-t border-gray-100">
+                  {Array.from({ length: 7 }).map((_, j) => (
+                    <td key={j} className="px-4 py-3.5"><div className="h-4 bg-gray-200 animate-pulse rounded w-full"/></td>
+                  ))}
+                </tr>
+              ))
+            ) : rows.length === 0 ? (
               <tr>
-                {["ID", "Pelanggan", "Barang", "Jenis Servis", "Tgl Masuk", "Estimasi Selesai", "Biaya", "Status", "Aksi"].map((h) => (
-                  <th key={h} className="px-6 py-4 text-left text-base font-semibold text-gray-600 whitespace-nowrap">{h}</th>
-                ))}
+                <td colSpan={7} className="px-6 py-10 text-center">
+                  <p className="text-gray-400 text-base">{emptyText}</p>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {servisData.map((s) => (
-                <tr key={s.id} className="hover:bg-amber-50 transition-colors">
-                  <td className="px-6 py-4 text-base text-gray-500 font-mono">{s.id}</td>
-                  <td className="px-6 py-4 text-lg font-medium text-gray-800 whitespace-nowrap">{s.pelanggan}</td>
-                  <td className="px-6 py-4 text-base text-gray-700">{s.barang}</td>
-                  <td className="px-6 py-4 text-base text-gray-600 whitespace-nowrap">{s.jenis}</td>
-                  <td className="px-6 py-4 text-base text-gray-600 whitespace-nowrap">{s.tgl}</td>
-                  <td className="px-6 py-4 text-base text-gray-600 whitespace-nowrap">{s.estimasi}</td>
-                  <td className="px-6 py-4 text-base font-semibold text-gray-800">{s.biaya}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-4 py-1.5 rounded-full text-base font-semibold ${
-                      s.status === "Selesai" ? "bg-green-100 text-green-700" :
-                      s.status === "Dalam Proses" ? "bg-blue-100 text-blue-700" :
-                      "bg-yellow-100 text-yellow-700"
-                    }`}>
-                      {s.status}
-                    </span>
+            ) : (
+              rows.map((s, idx) => (
+                <tr key={s.id} className="border-t border-gray-100 hover:bg-amber-50/60 transition-colors">
+                  <td className="px-4 py-3.5 text-sm text-gray-500">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                  <td className="px-4 py-3.5 text-sm text-gray-600 whitespace-nowrap">
+                    {new Date(s.tanggal_masuk).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
                   </td>
-                  <td className="px-6 py-4">
-                    <div className="flex gap-2">
-                      <button className="px-4 py-2 bg-blue-50 text-blue-700 rounded-lg text-base font-medium hover:bg-blue-100 transition-colors">
-                        Detail
-                      </button>
-                      {s.status === "Selesai" && (
-                        <button className="px-4 py-2 bg-green-50 text-green-700 rounded-lg text-base font-medium hover:bg-green-100 transition-colors whitespace-nowrap">
-                          Serahkan
-                        </button>
-                      )}
-                    </div>
+                  <td className="px-4 py-3.5 text-sm font-medium text-gray-800 whitespace-nowrap">{s.pelanggan_nama}</td>
+                  <td className="px-4 py-3.5 text-sm text-gray-700 whitespace-nowrap">{s.jenis_servis}</td>
+                  <td className="px-4 py-3.5 text-sm font-semibold text-gray-800 whitespace-nowrap">{fmtRupiah(s.estimasi_biaya)}</td>
+                  <td className="px-4 py-3.5"><Badge status={s.status} /></td>
+                  <td className="px-4 py-3.5">
+                    <button
+                      onClick={() => setDetailItem(s)}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-amber-50"
+                      style={{ borderColor: "#C99A36", color: "#C99A36" }}
+                    >
+                      {actionLabel}
+                    </button>
                   </td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {!loading && rows.length > 0 && totalPages > 1 && (
+        <div className="flex items-center justify-between px-6 py-4">
+          <button
+            onClick={() => setPage(Math.max(1, page - 1))}
+            disabled={page === 1}
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
+            Prev
+          </button>
+          <span className="text-sm text-gray-500">Halaman {page} dari {totalPages}</span>
+          <button
+            onClick={() => setPage(Math.min(totalPages, page + 1))}
+            disabled={page === totalPages}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-40 transition-colors"
+            style={{ backgroundColor: "#C99A36" }}
+          >
+            Next
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <AppLayout>
+      <div className="flex-1 flex flex-col bg-white min-h-screen">
+        <div className="px-4 sm:px-6 pb-8 space-y-6 pt-4">
+
+          {/* Title */}
+          <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+            Servis Perhiasan
+          </h1>
+
+          {/* Stat cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {statCards.map((card, i) => (
+              <div key={i} className="bg-white rounded-xl border border-gray-200 px-5 py-4 flex items-center justify-between shadow-sm">
+                <div>
+                  <p className="text-gray-500 text-sm font-medium mb-1">{card.label}</p>
+                  <div className="flex items-baseline gap-2">
+                    {loading
+                      ? <span className="h-8 w-16 bg-gray-200 animate-pulse rounded block" />
+                      : <span className="font-bold leading-none" style={{ color: "#C99A36", fontSize: card.value.length > 8 ? "1.3rem" : "1.8rem" }}>
+                          {card.value}
+                        </span>
+                    }
+                    {"suffix" in card && card.suffix && <span className="text-gray-500 text-base font-medium">{card.suffix}</span>}
+                  </div>
+                  {card.sublabel && <p className="text-xs font-semibold mt-0.5 text-gray-400">{card.sublabel}</p>}
+                </div>
+                <div className="opacity-75 flex-shrink-0">{card.icon}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Action cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#FDF6E3" }}>
+                  <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6"><path d="M7 3v4M12 3v4M17 3v4" stroke="#C99A36" strokeWidth="2" strokeLinecap="round"/><path d="M4 9h16l-1.5 9.5A2 2 0 0116.5 20h-9A2 2 0 015.5 18.5L4 9z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round"/></svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>Cuci Perhiasan</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Pembersihan & pemolesan perhiasan</p>
+                </div>
+              </div>
+              <button
+                onClick={() => router.push("/servis/tambah?jenis=Cuci")}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white font-semibold text-sm transition-all hover:opacity-90 active:scale-[0.98] whitespace-nowrap"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                <span className="text-lg leading-none font-bold">+</span> Tambah Servis Cuci
+              </button>
+            </div>
+
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0" style={{ backgroundColor: "#FDF6E3" }}>
+                  <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2-2 2.5-2.5z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round"/></svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>Perbaikan Perhiasan</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Servis perbaikan kerusakan perhiasan</p>
+                </div>
+              </div>
+              <button
+                onClick={() => router.push("/servis/tambah?jenis=Perbaikan")}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white font-semibold text-sm transition-all hover:opacity-90 active:scale-[0.98] whitespace-nowrap"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                <span className="text-lg leading-none font-bold">+</span> Tambah Servis Perbaikan
+              </button>
+            </div>
+          </div>
+
+          {/* Filter tab Cuci / Perbaikan */}
+          <div className="flex gap-2 p-1 bg-gray-100 rounded-2xl max-w-sm">
+            {(["Semua", "Cuci", "Perbaikan"] as const).map((tab) => {
+              const count = tab === "Semua"
+                ? servisList.length
+                : servisList.filter((s) => s.jenis_servis === tab).length;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => { setFilterJenis(tab); setPageAntrian(1); setPageRiwayat(1); }}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl font-semibold text-sm transition-all ${
+                    filterJenis === tab
+                      ? "bg-white shadow-sm text-gray-900"
+                      : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {tab === "Cuci" && (
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M7 3v4M12 3v4M17 3v4" strokeWidth="2" strokeLinecap="round"/>
+                      <path d="M4 9h16l-1.5 9.5A2 2 0 0116.5 20h-9A2 2 0 015.5 18.5L4 9z" strokeWidth="2" strokeLinejoin="round"/>
+                    </svg>
+                  )}
+                  {tab === "Perbaikan" && (
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2-2 2.5-2.5z" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+                    </svg>
+                  )}
+                  {tab}
+                  <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                    filterJenis === tab ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-500"
+                  }`}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search */}
+          <div className="relative max-w-sm">
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setPageAntrian(1); setPageRiwayat(1); }}
+              placeholder="Cari nama pelanggan, barang, atau no. servis..."
+              className="w-full border border-gray-300 rounded-lg pl-4 pr-10 py-2.5 text-base bg-white focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20 transition-colors"
+            />
+            <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z"/>
+            </svg>
+          </div>
+
+          {/* Antrian Servis Terbaru */}
+          {renderTable(
+            "Antrian Servis Terbaru",
+            pagedAntrian, pageAntrian, setPageAntrian, totalPagesAntrian,
+            "Detail",
+            search ? `Tidak ada hasil untuk "${search}"` : "Belum ada servis dalam antrian"
+          )}
+
+          {/* Riwayat Servis Selesai */}
+          {renderTable(
+            "Riwayat Servis Selesai",
+            pagedRiwayat, pageRiwayat, setPageRiwayat, totalPagesRiwayat,
+            "Lihat Detail",
+            search ? `Tidak ada hasil untuk "${search}"` : "Belum ada riwayat servis selesai"
+          )}
         </div>
       </div>
+
+      <DetailServisPopup
+        open={!!detailItem}
+        onClose={() => setDetailItem(null)}
+        item={detailItem}
+        onChanged={load}
+      />
     </AppLayout>
   );
 }
