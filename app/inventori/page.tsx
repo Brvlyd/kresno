@@ -231,20 +231,20 @@ function BarcodePreviewModal({
         </div>`);
     });
     if (!labels.length) return;
-    const w = window.open("", "_blank", "width=500,height=400");
+    const w = window.open("", "_blank", "width=600,height=400");
     if (!w) return;
     w.document.write(`<html><head><title>Barcode ${idItem}</title>
       <style>
-        @page { size: auto; margin: 4mm; }
+        @page { margin: 0; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: Arial, sans-serif; }
-        .sheet { display: grid; grid-template-columns: repeat(3, 30mm); gap: 1.5mm; }
-        .label { width: 30mm; height: 20mm; overflow: hidden; border: 1px dashed #bbb; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 1mm; }
-        .label .toko { font-size: 6px; font-weight: bold; }
-        .label svg { width: 26mm; height: 8mm; }
-        .label .kode { font-size: 7px; font-weight: bold; letter-spacing: 1px; }
-        .label .nama { font-size: 5.5px; max-width: 28mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .label .info { font-size: 5.5px; color: #555; }
+        .sheet { display: grid; grid-template-columns: repeat(3, 33mm); gap: 0; }
+        .label { width: 33mm; height: 15mm; overflow: hidden; border: 0.3px dashed #ccc; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0.4mm 1mm; }
+        .label .toko { font-size: 5pt; font-weight: bold; line-height: 1.2; }
+        .label svg { width: 31mm; height: 5.5mm; }
+        .label .kode { font-size: 5.5pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.1; }
+        .label .nama { font-size: 4.5pt; max-width: 31mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
+        .label .info { font-size: 4.5pt; color: #555; line-height: 1.1; }
         @media print { .label { border: none; } }
       </style></head>
       <body><div class="sheet">${labels.join("")}</div>
