@@ -101,7 +101,7 @@ function KonfirmasiKeluarContent() {
   return (
     <AppLayout>
       <div className="flex-1 flex flex-col bg-white min-h-screen">
-        <div className="px-6 pt-6 pb-8 max-w-2xl mx-auto w-full flex flex-col gap-5">
+        <div className="px-4 sm:px-6 pt-6 pb-8 max-w-4xl mx-auto w-full flex flex-col gap-5">
           <div>
             <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
               Konfirmasi Barang Keluar
@@ -136,7 +136,7 @@ function KonfirmasiKeluarContent() {
               <p className="text-gray-500 text-sm mb-5">
                 {item.nama_produk} ({item.id_item}) — status diperbarui menjadi <strong>{statusBaru}</strong>.
               </p>
-              <div className="flex gap-3 justify-center">
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <button
                   onClick={() => router.push(`/inventori?id=${item.id}`)}
                   className="px-5 py-2.5 rounded-xl border-2 font-semibold text-sm transition-colors hover:bg-amber-50"
@@ -190,31 +190,33 @@ function KonfirmasiKeluarContent() {
 
               {/* Form konfirmasi */}
               <div className="border border-gray-200 rounded-xl p-5 space-y-4">
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Jumlah Keluar</label>
-                  <input
-                    type="number"
-                    value={jumlahKeluar}
-                    onChange={(e) => setJumlahKeluar(e.target.value)}
-                    min="1"
-                    max={item.jumlah}
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Maksimal {item.jumlah} pcs (sesuai stok saat ini).</p>
-                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Jumlah Keluar</label>
+                    <input
+                      type="number"
+                      value={jumlahKeluar}
+                      onChange={(e) => setJumlahKeluar(e.target.value)}
+                      min="1"
+                      max={item.jumlah}
+                      className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">Maksimal {item.jumlah} pcs (sesuai stok saat ini).</p>
+                  </div>
 
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Status Baru</label>
-                  <select
-                    value={statusBaru}
-                    onChange={(e) => setStatusBaru(e.target.value)}
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
-                  >
-                    {STATUS_KELUAR_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Barang tetap tercatat di inventori (riwayat), hanya status & stok yang diperbarui.
-                  </p>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1.5">Status Baru</label>
+                    <select
+                      value={statusBaru}
+                      onChange={(e) => setStatusBaru(e.target.value)}
+                      className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                    >
+                      {STATUS_KELUAR_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Barang tetap tercatat di inventori (riwayat), hanya status & stok yang diperbarui.
+                    </p>
+                  </div>
                 </div>
 
                 <div>
@@ -232,7 +234,7 @@ function KonfirmasiKeluarContent() {
                   <p className="text-sm font-semibold py-2.5 px-4 rounded-xl bg-red-50 text-red-600">{msg}</p>
                 )}
 
-                <div className="flex gap-3 pt-1">
+                <div className="flex flex-col sm:flex-row gap-3 pt-1">
                   <button
                     onClick={() => router.push("/inventori")}
                     className="flex-1 py-3.5 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"

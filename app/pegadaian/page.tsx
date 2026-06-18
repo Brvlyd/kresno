@@ -61,6 +61,7 @@ function DetailGadaiPopup({
   onChanged: () => void;
 }) {
   const supabase = createClient();
+  const router = useRouter();
   const [cicilan, setCicilan] = useState<(CicilanItem & { id: string; tanggal_bayar: string | null })[]>([]);
   const [loadingCicilan, setLoadingCicilan] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -280,6 +281,18 @@ function DetailGadaiPopup({
               </button>
             )}
           </div>
+
+          {item.status === "Aktif" && (
+            <button
+              onClick={() => router.push(
+                `/hutang-piutang/tambah-piutang?sumber=Gadai&nama=${encodeURIComponent(item.pelanggan_nama)}&jumlah=${item.nilai_pinjaman}&kategori=Customer&referensi=${encodeURIComponent(item.no_gadai)}`
+              )}
+              className="w-full py-3 rounded-xl border-2 border-dashed font-semibold text-sm transition-colors hover:bg-amber-50"
+              style={{ borderColor: "#C99A36", color: "#C99A36" }}
+            >
+              📋 Catat Pinjaman sebagai Piutang
+            </button>
+          )}
         </div>
       </div>
     </div>

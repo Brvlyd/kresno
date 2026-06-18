@@ -202,7 +202,7 @@ function TambahServisContent() {
   return (
     <AppLayout>
       <div className="flex-1 flex flex-col bg-white min-h-screen">
-        <div className="px-4 sm:px-6 pt-6 pb-10 max-w-2xl mx-auto w-full flex flex-col gap-5">
+        <div className="px-4 sm:px-6 pt-6 pb-10 max-w-5xl mx-auto w-full flex flex-col gap-5">
           <div>
             <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
               Tambah Servis Layanan
@@ -213,7 +213,7 @@ function TambahServisContent() {
           </div>
 
           {/* Pilih jenis servis */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               type="button"
               onClick={() => setJenisServis("Cuci")}
@@ -286,24 +286,26 @@ function TambahServisContent() {
           <div className="border border-gray-200 rounded-xl p-5 space-y-4">
             <h2 className="text-lg font-bold text-gray-800" style={{ fontFamily: "var(--font-playfair)" }}>Data Pelanggan</h2>
 
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Pelanggan</label>
-              <input
-                value={form.pelanggan_nama}
-                onChange={(e) => set("pelanggan_nama", e.target.value)}
-                placeholder="Nama lengkap"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
-              />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Pelanggan</label>
+                <input
+                  value={form.pelanggan_nama}
+                  onChange={(e) => set("pelanggan_nama", e.target.value)}
+                  placeholder="Nama lengkap"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+                />
+              </div>
 
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">No. HP</label>
-              <input
-                value={form.pelanggan_hp}
-                onChange={(e) => set("pelanggan_hp", e.target.value)}
-                placeholder="08xxxxxxxxxx"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
-              />
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">No. HP</label>
+                <input
+                  value={form.pelanggan_hp}
+                  onChange={(e) => set("pelanggan_hp", e.target.value)}
+                  placeholder="08xxxxxxxxxx"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+                />
+              </div>
             </div>
 
             <div>
@@ -352,12 +354,9 @@ function TambahServisContent() {
               />
             </div>
 
-            <div>
-              <div className="grid grid-cols-2 gap-2 mb-1.5">
-                <label className="text-sm font-semibold text-gray-600">Berat (gram)</label>
-                <label className="text-sm font-semibold text-gray-600">Kadar Emas</label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Berat (gram)</label>
                 <input
                   type="number"
                   value={form.berat_gram}
@@ -365,15 +364,18 @@ function TambahServisContent() {
                   placeholder="3.50"
                   min="0"
                   step="0.01"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Kadar Emas</label>
                 <input
                   type="text"
                   list="kadar-servis-options"
                   value={form.kadar}
                   onChange={(e) => set("kadar", e.target.value)}
                   placeholder="Contoh: 24K, 18K"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
                 />
                 <datalist id="kadar-servis-options">
                   {KADAR_OPTIONS.map((k) => <option key={k} value={k} />)}
@@ -441,24 +443,24 @@ function TambahServisContent() {
             <div className="border border-gray-200 rounded-xl p-5 space-y-4">
               <h2 className="text-lg font-bold text-gray-800" style={{ fontFamily: "var(--font-playfair)" }}>Detail Perbaikan</h2>
 
-              <div>
-                <div className="grid grid-cols-2 gap-2 mb-1.5">
-                  <label className="text-sm font-semibold text-gray-600">Jenis Kerusakan</label>
-                  <label className="text-sm font-semibold text-gray-600">Jenis Tindakan</label>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Jenis Kerusakan</label>
                   <select
                     value={form.jenis_kerusakan}
                     onChange={(e) => set("jenis_kerusakan", e.target.value)}
-                    className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
                   >
                     <option value="">Pilih kerusakan</option>
                     {JENIS_KERUSAKAN_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Jenis Tindakan</label>
                   <select
                     value={form.jenis_tindakan}
                     onChange={(e) => set("jenis_tindakan", e.target.value)}
-                    className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
                   >
                     <option value="">Pilih tindakan</option>
                     {JENIS_TINDAKAN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -504,27 +506,29 @@ function TambahServisContent() {
             <h2 className="text-lg font-bold text-gray-800" style={{ fontFamily: "var(--font-playfair)" }}>Biaya & Status</h2>
 
             <div>
-              <div className="grid grid-cols-2 gap-2 mb-1.5">
-                <label className="text-sm font-semibold text-gray-600">Estimasi Biaya (Rp)</label>
-                <label className="text-sm font-semibold text-gray-600">Uang Muka (Rp)</label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="number"
-                  value={form.estimasi_biaya}
-                  onChange={(e) => set("estimasi_biaya", e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                />
-                <input
-                  type="number"
-                  value={form.uang_muka}
-                  onChange={(e) => set("uang_muka", e.target.value)}
-                  placeholder="0"
-                  min="0"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Estimasi Biaya (Rp)</label>
+                  <input
+                    type="number"
+                    value={form.estimasi_biaya}
+                    onChange={(e) => set("estimasi_biaya", e.target.value)}
+                    placeholder="0"
+                    min="0"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Uang Muka (Rp)</label>
+                  <input
+                    type="number"
+                    value={form.uang_muka}
+                    onChange={(e) => set("uang_muka", e.target.value)}
+                    placeholder="0"
+                    min="0"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
               </div>
               <p className="text-xs text-gray-400 mt-1">
                 Sisa Pembayaran: <span className="font-semibold text-gray-600">{fmtRupiah(Math.max(0, sisaPembayaran))}</span>
@@ -552,23 +556,25 @@ function TambahServisContent() {
             </div>
 
             <div>
-              <div className="grid grid-cols-2 gap-2 mb-1.5">
-                <label className="text-sm font-semibold text-gray-600">Tanggal Masuk</label>
-                <label className="text-sm font-semibold text-gray-600">Estimasi Selesai</label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={form.tanggal_masuk}
-                  onChange={(e) => set("tanggal_masuk", e.target.value)}
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                />
-                <input
-                  type="date"
-                  value={form.estimasi_selesai}
-                  onChange={(e) => { estimasiTouchedRef.current = true; set("estimasi_selesai", e.target.value); }}
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Tanggal Masuk</label>
+                  <input
+                    type="date"
+                    value={form.tanggal_masuk}
+                    onChange={(e) => set("tanggal_masuk", e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Estimasi Selesai</label>
+                  <input
+                    type="date"
+                    value={form.estimasi_selesai}
+                    onChange={(e) => { estimasiTouchedRef.current = true; set("estimasi_selesai", e.target.value); }}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
               </div>
               <p className="text-xs text-gray-400 mt-1">Estimasi selesai dihitung otomatis dari tanggal masuk + estimasi waktu, dan bisa diubah manual.</p>
             </div>
@@ -614,7 +620,7 @@ function TambahServisContent() {
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-1">
+          <div className="flex flex-col sm:flex-row gap-3 pt-1">
             <button
               onClick={() => router.push("/servis")}
               className="flex-1 py-3.5 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"

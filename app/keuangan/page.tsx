@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import AppLayout from "@/components/AppLayout";
@@ -170,12 +170,17 @@ function PinLockScreen({ onUnlock }: { onUnlock: () => void }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [shake, setShake] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const storedPin =
     typeof window !== "undefined"
       ? localStorage.getItem(PIN_KEY) || DEFAULT_PIN
       : DEFAULT_PIN;
   const pinLen = storedPin.length;
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
 
   function tryPin(p: string) {
     if (p === storedPin) {
@@ -184,7 +189,7 @@ function PinLockScreen({ onUnlock }: { onUnlock: () => void }) {
     } else {
       setError(true);
       setShake(true);
-      setTimeout(() => { setPin(""); setError(false); setShake(false); }, 900);
+      setTimeout(() => { setPin(""); setError(false); setShake(false); inputRef.current?.focus(); }, 900);
     }
   }
 
@@ -196,11 +201,30 @@ function PinLockScreen({ onUnlock }: { onUnlock: () => void }) {
     if (next.length === pinLen) setTimeout(() => tryPin(next), 80);
   }
 
+  function handleTyped(raw: string) {
+    if (error) return;
+    const digits = raw.replace(/\D/g, "").slice(0, pinLen);
+    setPin(digits);
+    if (digits.length === pinLen) setTimeout(() => tryPin(digits), 80);
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 px-4"
       style={{ backgroundColor: "#6F5333" }}
+      onClick={() => inputRef.current?.focus()}
     >
+      {/* Input asli supaya PIN bisa diketik via keyboard fisik, disamarkan di atas titik-titik PIN */}
+      <input
+        ref={inputRef}
+        type="password"
+        inputMode="numeric"
+        autoComplete="off"
+        value={pin}
+        onChange={(e) => handleTyped(e.target.value)}
+        className="absolute opacity-0 w-px h-px"
+        aria-label="Masukkan PIN"
+      />
       {/* Tombol Kembali */}
       <button
         onClick={() => router.back()}

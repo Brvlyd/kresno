@@ -214,7 +214,7 @@ export default function TambahPengajuanGadaiPage() {
   return (
     <AppLayout>
       <div className="flex-1 flex flex-col bg-white min-h-screen">
-        <div className="px-4 sm:px-6 pt-6 pb-10 max-w-2xl mx-auto w-full flex flex-col gap-5">
+        <div className="px-4 sm:px-6 pt-6 pb-10 max-w-5xl mx-auto w-full flex flex-col gap-5">
           <div>
             <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
               Tambah Pengajuan Gadai
@@ -228,24 +228,26 @@ export default function TambahPengajuanGadaiPage() {
           <div className="border border-gray-200 rounded-xl p-5 space-y-4">
             <h2 className="text-lg font-bold text-gray-800" style={{ fontFamily: "var(--font-playfair)" }}>Data Pelanggan</h2>
 
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Pelanggan</label>
-              <input
-                value={form.pelanggan_nama}
-                onChange={(e) => set("pelanggan_nama", e.target.value)}
-                placeholder="Nama lengkap"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
-              />
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Pelanggan</label>
+                <input
+                  value={form.pelanggan_nama}
+                  onChange={(e) => set("pelanggan_nama", e.target.value)}
+                  placeholder="Nama lengkap"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+                />
+              </div>
 
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">No. HP</label>
-              <input
-                value={form.pelanggan_hp}
-                onChange={(e) => set("pelanggan_hp", e.target.value)}
-                placeholder="08xxxxxxxxxx"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
-              />
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">No. HP</label>
+                <input
+                  value={form.pelanggan_hp}
+                  onChange={(e) => set("pelanggan_hp", e.target.value)}
+                  placeholder="08xxxxxxxxxx"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+                />
+              </div>
             </div>
 
             <div>
@@ -327,12 +329,9 @@ export default function TambahPengajuanGadaiPage() {
               />
             </div>
 
-            <div>
-              <div className="grid grid-cols-2 gap-2 mb-1.5">
-                <label className="text-sm font-semibold text-gray-600">Berat (gram)</label>
-                <label className="text-sm font-semibold text-gray-600">Kadar Emas</label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Berat (gram)</label>
                 <input
                   type="number"
                   value={form.berat_gram}
@@ -340,15 +339,18 @@ export default function TambahPengajuanGadaiPage() {
                   placeholder="3.50"
                   min="0"
                   step="0.01"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Kadar Emas</label>
                 <input
                   type="text"
                   list="kadar-gadai-options"
                   value={form.kadar}
                   onChange={(e) => set("kadar", e.target.value)}
                   placeholder="Contoh: 24K, 18K"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
                 />
                 <datalist id="kadar-gadai-options">
                   {KADAR_OPTIONS.map((k) => <option key={k} value={k} />)}
@@ -415,27 +417,27 @@ export default function TambahPengajuanGadaiPage() {
           <div className="border border-gray-200 rounded-xl p-5 space-y-4">
             <h2 className="text-lg font-bold text-gray-800" style={{ fontFamily: "var(--font-playfair)" }}>Data Pinjaman</h2>
 
-            <div>
-              <div className="grid grid-cols-2 gap-2 mb-1.5">
-                <label className="text-sm font-semibold text-gray-600">Nilai Taksiran (Rp)</label>
-                <label className="text-sm font-semibold text-gray-600">Nilai Pinjaman (Rp)</label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Nilai Taksiran (Rp)</label>
                 <input
                   type="number"
                   value={form.nilai_taksiran}
                   onChange={(e) => set("nilai_taksiran", e.target.value)}
                   placeholder="0"
                   min="0"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Nilai Pinjaman (Rp)</label>
                 <input
                   type="number"
                   value={form.nilai_pinjaman}
                   onChange={(e) => set("nilai_pinjaman", e.target.value)}
                   placeholder="0"
                   min="0"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
                 />
               </div>
             </div>
@@ -474,23 +476,25 @@ export default function TambahPengajuanGadaiPage() {
             </div>
 
             <div>
-              <div className="grid grid-cols-2 gap-2 mb-1.5">
-                <label className="text-sm font-semibold text-gray-600">Tanggal Gadai</label>
-                <label className="text-sm font-semibold text-gray-600">Tanggal Jatuh Tempo</label>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="date"
-                  value={form.tanggal_gadai}
-                  onChange={(e) => set("tanggal_gadai", e.target.value)}
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                />
-                <input
-                  type="date"
-                  value={form.tanggal_jatuh_tempo}
-                  onChange={(e) => { jatuhTempoTouchedRef.current = true; set("tanggal_jatuh_tempo", e.target.value); }}
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Tanggal Gadai</label>
+                  <input
+                    type="date"
+                    value={form.tanggal_gadai}
+                    onChange={(e) => set("tanggal_gadai", e.target.value)}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Tanggal Jatuh Tempo</label>
+                  <input
+                    type="date"
+                    value={form.tanggal_jatuh_tempo}
+                    onChange={(e) => { jatuhTempoTouchedRef.current = true; set("tanggal_jatuh_tempo", e.target.value); }}
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
               </div>
               <p className="text-xs text-gray-400 mt-1">Jatuh tempo dihitung otomatis dari tanggal gadai + jangka waktu, dan bisa diubah manual.</p>
             </div>
@@ -564,7 +568,7 @@ export default function TambahPengajuanGadaiPage() {
           )}
 
           {/* Actions */}
-          <div className="flex gap-3 pt-1">
+          <div className="flex flex-col sm:flex-row gap-3 pt-1">
             <button
               onClick={() => router.push("/pegadaian")}
               className="flex-1 py-3.5 rounded-xl border border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 transition-colors"

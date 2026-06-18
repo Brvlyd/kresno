@@ -46,6 +46,15 @@ interface DraftRow {
   qty: number;
 }
 
+interface RiwayatTransaksi {
+  noInvoice: string;
+  pelangganNama: string;
+  paymentMethod: string;
+  createdAt: string;
+  items: string[];
+  totalQty: number;
+}
+
 /* ═══════════════════════════════════════════════════════
    HELPERS
 ═══════════════════════════════════════════════════════ */
@@ -105,6 +114,12 @@ function fmtTanggalInv(d: Date) {
   );
 }
 
+function fmtWaktuRiwayat(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short" }) +
+    ", " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+}
+
 let rowSeq = 0;
 function makeRow(): DraftRow {
   rowSeq += 1;
@@ -158,6 +173,38 @@ function AutocompleteField<T>({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── No. telepon disimpan sebagai nomor lokal (tanpa 0 / 62 di depan) ───
+   Prefix +62 ditambahkan otomatis saat ditampilkan / disimpan. */
+function localPhoneDigits(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("62")) digits = digits.slice(2);
+  else if (digits.startsWith("0")) digits = digits.slice(1);
+  return digits.slice(0, 13);
+}
+
+function toFullPhone(local: string): string {
+  return local ? `+62${local}` : "";
+}
+
+/* ─── Input no. telepon dengan prefix +62 otomatis ─── */
+function PhoneField({
+  value, onChange, placeholder, className,
+}: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
+  return (
+    <div className={`flex items-center border border-gray-200 rounded-xl overflow-hidden focus-within:border-[#C99A36] bg-white ${className || ""}`}>
+      <span className="px-3 py-2.5 text-sm text-gray-500 bg-gray-50 border-r border-gray-200 select-none shrink-0">+62</span>
+      <input
+        type="tel"
+        inputMode="numeric"
+        placeholder={placeholder || "8123456789"}
+        value={value}
+        onChange={(e) => onChange(localPhoneDigits(e.target.value))}
+        className="flex-1 px-3 py-2.5 text-sm focus:outline-none min-w-0"
+      />
     </div>
   );
 }
@@ -494,6 +541,8 @@ export default function POSPage() {
   const [pendingInvoiceNo, setPendingInvoiceNo] = useState<string | null>(null);
   const [invoiceDate, setInvoiceDate] = useState(todayStr());
   const [invoiceReady, setInvoiceReady] = useState<{ noInvoice: string; tanggal: string } | null>(null);
+  const [riwayat, setRiwayat] = useState<RiwayatTransaksi[]>([]);
+  const [loadingRiwayat, setLoadingRiwayat] = useState(true);
 
   /* ── Load inventori tersedia + daftar pelanggan ── */
   async function loadItems() {
@@ -507,8 +556,45 @@ export default function POSPage() {
     setLoading(false);
   }
 
+  /* ── Load riwayat transaksi POS terakhir (dikelompokkan per no. invoice) ── */
+  async function loadRiwayat() {
+    setLoadingRiwayat(true);
+    const { data } = await supabase
+      .from("inventori_keluar")
+      .select("nama_produk, jumlah_keluar, catatan, created_at")
+      .like("catatan", "INV-%")
+      .order("created_at", { ascending: false })
+      .limit(40);
+
+    const grouped: RiwayatTransaksi[] = [];
+    const seen = new Map<string, RiwayatTransaksi>();
+    for (const row of data ?? []) {
+      const parts = ((row.catatan as string) || "").split(" | ");
+      const noInvoice = parts[0] || "-";
+      let entry = seen.get(noInvoice);
+      if (!entry) {
+        entry = {
+          noInvoice,
+          pelangganNama: parts[1] || "Umum",
+          paymentMethod: parts[2] || "",
+          createdAt: row.created_at as string,
+          items: [],
+          totalQty: 0,
+        };
+        seen.set(noInvoice, entry);
+        grouped.push(entry);
+      }
+      entry.items.push(row.nama_produk as string);
+      entry.totalQty += (row.jumlah_keluar as number) || 0;
+      if (grouped.length >= 6) break;
+    }
+    setRiwayat(grouped);
+    setLoadingRiwayat(false);
+  }
+
   useEffect(() => {
     loadItems();
+    loadRiwayat();
     supabase.from("pelanggan").select("*").order("nama").then(({ data }) => {
       setPelangganList((data ?? []) as Pelanggan[]);
     });
@@ -595,7 +681,7 @@ export default function POSPage() {
 
   function pilihPelanggan(p: Pelanggan) {
     setPelangganNama(p.nama);
-    setPelangganHP(p.telepon ?? "");
+    setPelangganHP(localPhoneDigits(p.telepon ?? ""));
   }
 
   /* ── Derived ── */
@@ -629,7 +715,7 @@ export default function POSPage() {
     if (!existingPelanggan && pelangganNama.trim()) {
       const { data } = await supabase
         .from("pelanggan")
-        .insert({ nama: pelangganNama.trim(), telepon: pelangganHP.trim() || null })
+        .insert({ nama: pelangganNama.trim(), telepon: toFullPhone(pelangganHP) || null })
         .select()
         .single();
       if (data) setPelangganList((prev) => [...prev, data as Pelanggan]);
@@ -660,6 +746,7 @@ export default function POSPage() {
     setSaving(false);
     setShowBuatInvoiceModal(false);
     setShowPreviewModal(true);
+    loadRiwayat();
   }
 
   /* ── Reset form (belum transaksi) ── */
@@ -713,7 +800,7 @@ export default function POSPage() {
           noInvoice={invoiceReady.noInvoice}
           tanggal={invoiceReady.tanggal}
           pelangganNama={pelangganNama}
-          pelangganHP={pelangganHP}
+          pelangganHP={toFullPhone(pelangganHP)}
           cart={cartForInvoice}
           diskon={diskonNum}
           subtotal={subtotal}
@@ -781,12 +868,10 @@ export default function POSPage() {
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">No. Telepon</label>
-                    <input
-                      type="tel"
-                      placeholder="08xxxxxxxxxx"
+                    <PhoneField
                       value={pelangganHP}
-                      onChange={(e) => setPelangganHP(e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                      onChange={setPelangganHP}
+                      className="w-full"
                     />
                   </div>
                   <div>
@@ -928,6 +1013,38 @@ export default function POSPage() {
               </div>
             </>
           )}
+
+          {/* Riwayat Transaksi Terakhir */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
+              <h3 className="font-bold text-gray-800">Riwayat Transaksi Terakhir</h3>
+            </div>
+            {loadingRiwayat ? (
+              <p className="text-sm text-gray-400">Memuat riwayat...</p>
+            ) : riwayat.length === 0 ? (
+              <p className="text-sm text-gray-400">Belum ada transaksi.</p>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {riwayat.map((r) => (
+                  <div key={r.noInvoice} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-gray-800 truncate">
+                        {r.pelangganNama} <span className="text-gray-400 font-normal">· {r.noInvoice}</span>
+                      </p>
+                      <p className="text-xs text-gray-400 truncate">
+                        {r.items.join(", ")} {r.paymentMethod && `· ${r.paymentMethod}`}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs text-gray-400">{fmtWaktuRiwayat(r.createdAt)}</p>
+                      <p className="text-xs font-semibold" style={{ color: "#6F5333" }}>{r.totalQty} pcs</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </AppLayout>
 
@@ -981,12 +1098,10 @@ export default function POSPage() {
                     placeholder="Pilih atau ketik nama pelanggan"
                     inputClassName="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
                   />
-                  <input
-                    type="tel"
-                    placeholder="No. Telepon"
+                  <PhoneField
                     value={pelangganHP}
-                    onChange={(e) => setPelangganHP(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                    onChange={setPelangganHP}
+                    className="w-full"
                   />
                 </div>
               </div>
@@ -1213,7 +1328,7 @@ export default function POSPage() {
                   noInvoice={invoiceReady.noInvoice}
                   tanggal={invoiceReady.tanggal}
                   pelangganNama={pelangganNama}
-                  pelangganHP={pelangganHP}
+                  pelangganHP={toFullPhone(pelangganHP)}
                   cart={cartForInvoice}
                   diskon={diskonNum}
                   subtotal={subtotal}

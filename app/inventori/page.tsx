@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { prefixForKategori, buildPrefixCounters, nextId } from "@/lib/csv";
+import { generateNoHutang } from "@/lib/hutangPiutang";
 import JsBarcode from "jsbarcode";
 
 /* ─── Types ─── */
@@ -368,11 +369,13 @@ function DetailBarangPopup({
   const [showAddJenis, setShowAddJenis] = useState(false);
   const [showBarcodePreview, setShowBarcodePreview] = useState(false);
   const [barcodeOffset, setBarcodeOffset] = useState(0);
+  const [catatHutang, setCatatHutang] = useState(false);
   const jenisTouchedRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
     jenisTouchedRef.current = false;
+    setCatatHutang(false);
     if (editData) {
       setForm({
         id_item:           editData.id_item,
@@ -480,8 +483,39 @@ function DetailBarangPopup({
       ? await supabase.from("inventori").update(payload).eq("id", editData.id)
       : await supabase.from("inventori").insert(payload);
 
+    if (error) { setSaving(false); setMsg("Gagal menyimpan: " + error.message); return; }
+
+    if (!editData && catatHutang && payload.supplier) {
+      const jatuhTempo = new Date();
+      jatuhTempo.setDate(jatuhTempo.getDate() + 30);
+      const { error: hutangError } = await supabase.from("hutang").insert({
+        no_hutang: generateNoHutang(),
+        jenis_hutang: "supplier",
+        nama: payload.supplier,
+        kategori: "Supplier",
+        berat_emas_gram: null,
+        persentase_harga: null,
+        kadar_karat: null,
+        hasil: null,
+        hasil_akhir: null,
+        harga_per_gram: null,
+        harga_total: Math.round(payload.harga_beli * payload.jumlah),
+        pembayaran_pelunasan: null,
+        status: "Belum Lunas",
+        tanggal_jatuh_tempo: jatuhTempo.toISOString().split("T")[0],
+        tanggal_pelunasan: null,
+      });
+      setSaving(false);
+      if (hutangError) {
+        setMsg("Barang tersimpan, tapi gagal mencatat hutang: " + hutangError.message);
+        return;
+      }
+      setMsg("✓ Berhasil disimpan! Hutang ke supplier juga tercatat.");
+      setTimeout(() => { onSaved(); onClose(); }, 900);
+      return;
+    }
+
     setSaving(false);
-    if (error) { setMsg("Gagal menyimpan: " + error.message); return; }
     setMsg("✓ Berhasil disimpan!");
     setTimeout(() => { onSaved(); onClose(); }, 700);
   };
@@ -753,6 +787,17 @@ function DetailBarangPopup({
               placeholder="Nama supplier"
               className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36]"
             />
+            {!editData && (
+              <label className="flex items-center gap-2 mt-2 text-sm text-gray-600 select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={catatHutang}
+                  onChange={(e) => setCatatHutang(e.target.checked)}
+                  className="accent-[#C99A36]"
+                />
+                Catat sebagai Hutang ke Supplier (belum dibayar)
+              </label>
+            )}
           </div>
 
           {/* Keterangan — opsional */}

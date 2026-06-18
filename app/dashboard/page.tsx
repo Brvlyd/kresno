@@ -28,6 +28,8 @@ interface InventoriRow {
 interface Stats {
   totalItem: number;
   stokMenipis: number;
+  hutangBelumLunas: number;
+  piutangBelumLunas: number;
 }
 
 interface QuickMenuItem {
@@ -251,7 +253,7 @@ export default function DashboardPage() {
   const supabase = createClient();
   const router = useRouter();
 
-  const [stats, setStats] = useState<Stats>({ totalItem: 0, stokMenipis: 0 });
+  const [stats, setStats] = useState<Stats>({ totalItem: 0, stokMenipis: 0, hutangBelumLunas: 0, piutangBelumLunas: 0 });
   const [hargaEmas, setHargaEmas] = useState<HargaEmas[]>([]);
   const [inventori, setInventori] = useState<InventoriRow[]>([]);
   const [allInventori, setAllInventori] = useState<InventoriRow[]>([]);
@@ -304,7 +306,7 @@ export default function DashboardPage() {
         invQuery = invQuery.gte("tanggal_masuk", fromDate).lte("tanggal_masuk", todayStr);
       }
 
-      const [statsRes, invRes, hargaRes] = await Promise.all([
+      const [statsRes, invRes, hargaRes, hutangRes, piutangRes] = await Promise.all([
         // Stats selalu dari SEMUA data, tidak terpengaruh filter tanggal
         supabase.from("inventori").select("id,jumlah"),
         invQuery,
@@ -313,12 +315,16 @@ export default function DashboardPage() {
           .select("id,karat,harga_beli,harga_jual,tanggal")
           .eq("tanggal", todayStr)
           .order("karat", { ascending: false }),
+        supabase.from("hutang").select("harga_total").eq("status", "Belum Lunas"),
+        supabase.from("piutang").select("jumlah_piutang").eq("status", "Belum Lunas"),
       ]);
 
       const allData = statsRes.data ?? [];
       setStats({
         totalItem:   allData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
         stokMenipis: allData.filter((r) => (r.jumlah ?? 0) <= 5).length,
+        hutangBelumLunas:  (hutangRes.data ?? []).reduce((s, r) => s + (r.harga_total ?? 0), 0),
+        piutangBelumLunas: (piutangRes.data ?? []).reduce((s, r) => s + (r.jumlah_piutang ?? 0), 0),
       });
 
       const inventoriData = invRes.data ?? [];
@@ -360,10 +366,6 @@ export default function DashboardPage() {
       icon: <svg viewBox="0 0 32 32" fill="none" className="w-8 h-8"><path d="M16 3L29 10v12L16 29 3 22V10L16 3z" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M3 10l13 7M16 29V17M29 10l-13 7" stroke="#C99A36" strokeWidth="2"/></svg>,
     },
     {
-      label: "Pembelian", href: "/pembelian",
-      icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><path d="M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round"/><path d="M8 7V5a4 4 0 018 0v2" stroke="#C99A36" strokeWidth="2" fill="none"/></svg>,
-    },
-    {
       label: "Servis", href: "/servis",
       icon: <svg viewBox="0 0 24 24" fill="none" className="w-8 h-8"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2-2 2.5-2.5z" stroke="#C99A36" strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round"/></svg>,
     },
@@ -397,8 +399,8 @@ export default function DashboardPage() {
             </h1>
           </div>
 
-          {/* ── Ringkasan singkat: jumlah barang & peringatan stok ── */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* ── Ringkasan singkat: jumlah barang, peringatan stok, & hutang/piutang ── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <Link
               href="/inventori"
               className="bg-white rounded-xl border border-gray-200 px-6 py-5 flex items-center gap-4 shadow-sm hover:shadow-md hover:border-[#C99A36]/40 transition-all"
@@ -442,6 +444,31 @@ export default function DashboardPage() {
                     : <p className="text-3xl font-bold leading-none text-green-600">
                         Aman <span className="text-base text-gray-500 font-medium">— stok cukup</span>
                       </p>
+                }
+              </div>
+            </Link>
+
+            <Link
+              href="/hutang-piutang"
+              className="bg-white rounded-xl border border-gray-200 px-6 py-5 flex items-center gap-4 shadow-sm hover:shadow-md hover:border-[#C99A36]/40 transition-all"
+            >
+              <div className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: "#FDF6E3" }}>
+                <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M7 9h10M7 13h10M7 17h6" stroke="#C99A36" strokeWidth="2" strokeLinecap="round"/></svg>
+              </div>
+              <div>
+                <p className="text-gray-500 text-base font-medium mb-1">Hutang &amp; Piutang Belum Lunas</p>
+                {loading
+                  ? <div className="h-9 w-32 bg-gray-200 animate-pulse rounded" />
+                  : (
+                    <div className="flex items-baseline gap-3">
+                      <p className="text-lg font-bold leading-none text-red-500">
+                        {fmt(stats.hutangBelumLunas)} <span className="text-xs text-gray-500 font-medium">hutang</span>
+                      </p>
+                      <p className="text-lg font-bold leading-none text-blue-600">
+                        {fmt(stats.piutangBelumLunas)} <span className="text-xs text-gray-500 font-medium">piutang</span>
+                      </p>
+                    </div>
+                  )
                 }
               </div>
             </Link>

@@ -62,6 +62,7 @@ function DetailServisPopup({
   onChanged: () => void;
 }) {
   const supabase = createClient();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
 
@@ -255,6 +256,18 @@ function DetailServisPopup({
               </button>
             )}
           </div>
+
+          {item.status !== "Diambil" && (item.estimasi_biaya - item.uang_muka) > 0 && (
+            <button
+              onClick={() => router.push(
+                `/hutang-piutang/tambah-piutang?sumber=Servis&nama=${encodeURIComponent(item.pelanggan_nama)}&jumlah=${item.estimasi_biaya - item.uang_muka}&kategori=Customer&referensi=${encodeURIComponent(item.no_servis)}`
+              )}
+              className="w-full py-3 rounded-xl border-2 border-dashed font-semibold text-sm transition-colors hover:bg-amber-50"
+              style={{ borderColor: "#C99A36", color: "#C99A36" }}
+            >
+              📋 Catat Sisa Pembayaran sebagai Piutang
+            </button>
+          )}
         </div>
       </div>
     </div>

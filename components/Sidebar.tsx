@@ -34,10 +34,6 @@ const menuItems = [
     href: "/servis", label: "Servis",
     icon: <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 005.4-5.4l-2.5 2.5-2-2 2.5-2.5z" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round" strokeLinecap="round"/></svg>,
   },
-  {
-    href: "/pembelian", label: "Pembelian",
-    icon: <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6"><path d="M4 7h16l-1.5 12a2 2 0 01-2 1.8H7.5a2 2 0 01-2-1.8L4 7z" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round"/><path d="M8 7V5a4 4 0 018 0v2" stroke="currentColor" strokeWidth="2" fill="none"/></svg>,
-  },
 ];
 
 export default function Sidebar() {
