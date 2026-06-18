@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Lato, Playfair_Display } from "next/font/google";
 import BarcodeScannerListener from "@/components/BarcodeScannerListener";
+import PrintTitleCleaner from "@/components/PrintTitleCleaner";
 import "./globals.css";
 
 const lato = Lato({
@@ -29,6 +30,7 @@ export default function RootLayout({
     <html lang="id" className={`${lato.variable} ${playfair.variable} h-full`}>
       <body className="min-h-full flex flex-col bg-gray-50" style={{ fontFamily: "var(--font-lato), sans-serif" }}>
         <BarcodeScannerListener />
+        <PrintTitleCleaner />
         {children}
       </body>
     </html>

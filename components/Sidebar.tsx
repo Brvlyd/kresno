@@ -72,7 +72,7 @@ export default function Sidebar() {
     <>
       {/* ── DESKTOP: fixed sidebar ── */}
       <aside
-        className="hidden lg:flex flex-col fixed top-0 left-0 h-screen w-[210px] xl:w-[230px] z-40 overflow-y-auto"
+        className="hidden lg:flex flex-col fixed top-0 left-0 h-screen w-[210px] xl:w-[230px] z-40 overflow-y-auto print:hidden"
         style={{ backgroundColor: "#6F5333" }}
       >
         {/* Logo */}
@@ -107,11 +107,11 @@ export default function Sidebar() {
       </aside>
 
       {/* ── DESKTOP: spacer so content isn't hidden behind fixed sidebar ── */}
-      <div className="hidden lg:block w-[210px] xl:w-[230px] flex-shrink-0" />
+      <div className="hidden lg:block w-[210px] xl:w-[230px] flex-shrink-0 print:hidden" />
 
       {/* ── MOBILE: top bar ── */}
       <div
-        className="lg:hidden flex items-center justify-between px-4 py-3 fixed top-0 left-0 right-0 z-50 shadow-md"
+        className="lg:hidden print:hidden flex items-center justify-between px-4 py-3 fixed top-0 left-0 right-0 z-50 shadow-md"
         style={{ backgroundColor: "#6F5333" }}
       >
         <Image src="/logo-kresno.png" alt="Logo" width={42} height={48} className="object-contain" />
@@ -131,17 +131,17 @@ export default function Sidebar() {
       </div>
 
       {/* ── MOBILE: spacer ── */}
-      <div className="lg:hidden h-[58px]" />
+      <div className="lg:hidden print:hidden h-[58px]" />
 
       {/* ── MOBILE: slide-down menu ── */}
       {mobileOpen && (
         <>
           <div
-            className="lg:hidden fixed inset-0 z-40 bg-black/40"
+            className="lg:hidden print:hidden fixed inset-0 z-40 bg-black/40"
             onClick={() => setMobileOpen(false)}
           />
           <div
-            className="lg:hidden fixed top-[58px] left-0 right-0 z-50 shadow-lg"
+            className="lg:hidden print:hidden fixed top-[58px] left-0 right-0 z-50 shadow-lg"
             style={{ backgroundColor: "#6F5333" }}
           >
             <nav className="py-2">

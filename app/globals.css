@@ -33,3 +33,48 @@ h1, h2, h3 {
   outline: 2px solid #C99A36;
   outline-offset: 2px;
 }
+
+/* ── Print styles (Laporan Keuangan) ── */
+@media print {
+  /* Sembunyikan sidebar, navbar, elemen no-print */
+  aside,
+  nav,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Hapus margin/padding wrapper supaya konten full-width */
+  body {
+    background: white !important;
+    font-size: 11pt;
+    color: #111;
+  }
+
+  /* Konten utama ambil full lebar */
+  .flex.min-h-screen {
+    display: block !important;
+  }
+
+  /* Sidebar spacer (div invisible di desktop) tidak perlu ruang */
+  .lg\:block.w-\[210px\],
+  .lg\:block.xl\:w-\[230px\] {
+    display: none !important;
+  }
+
+  /* Pastikan tabel tidak terpotong antar halaman */
+  table {
+    page-break-inside: auto;
+    font-size: 9pt;
+  }
+  tr {
+    page-break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+
+  @page {
+    margin: 12mm 15mm;
+    size: A4;
+  }
+}

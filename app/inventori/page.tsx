@@ -2,7 +2,6 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
-import ImportCsvModal from "@/components/ImportCsvModal";
 import { createClient } from "@/lib/supabase/client";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -227,7 +226,6 @@ function BarcodePreviewModal({
           ${el.outerHTML}
           <div class="kode">${code}</div>
           <div class="nama">${namaProduk}</div>
-          <div class="info">${kadar} • ${beratGram} gr</div>
         </div>`);
     });
     if (!labels.length) return;
@@ -235,16 +233,15 @@ function BarcodePreviewModal({
     if (!w) return;
     w.document.write(`<html><head><title>Barcode ${idItem}</title>
       <style>
-        @page { margin: 0; }
+        @page { size: 99mm auto; margin: 0; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: Arial, sans-serif; }
-        .sheet { display: grid; grid-template-columns: repeat(3, 33mm); gap: 0; }
+        .sheet { display: grid; grid-template-columns: repeat(3, 33mm); column-gap: 0; row-gap: 2mm; }
         .label { width: 33mm; height: 15mm; overflow: hidden; border: 0.3px dashed #ccc; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0.4mm 1mm; }
         .label .toko { font-size: 5pt; font-weight: bold; line-height: 1.2; }
         .label svg { width: 31mm; height: 5.5mm; }
         .label .kode { font-size: 5.5pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.1; }
         .label .nama { font-size: 4.5pt; max-width: 31mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
-        .label .info { font-size: 4.5pt; color: #555; line-height: 1.1; }
         @media print { .label { border: none; } }
       </style></head>
       <body><div class="sheet">${labels.join("")}</div>
@@ -924,7 +921,6 @@ function InventoriContent() {
   const [filterStatus, setFilterStatus] = useState("Semua");
   const [sortBy, setSortBy] = useState<"terbaru" | "terlama" | "nama_az" | "stok_banyak" | "stok_sedikit">("terbaru");
   const [showPopup, setShowPopup] = useState(false);
-  const [showImportPopup, setShowImportPopup] = useState(false);
   const [editItem, setEditItem] = useState<BarangRow | null>(null);
   const [hapusItem, setHapusItem] = useState<BarangRow | null>(null);
   const [search, setSearch] = useState("");
@@ -1091,26 +1087,6 @@ function InventoriContent() {
             })}
           </div>
 
-          {/* Sub-filter Aset (Cukim / Emas Rosok) */}
-          {activeTab === "Aset" && (
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-semibold text-gray-500">Jenis Aset:</span>
-              {["Semua", ...SUB_JENIS_ASET].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => { setFilterSubJenis(s); setSelected(null); }}
-                  className={`px-4 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
-                    filterSubJenis === s
-                      ? "bg-stone-700 border-stone-700 text-white"
-                      : "border-gray-300 text-gray-600 hover:border-stone-500"
-                  }`}
-                >
-                  {s === "Emas Rosok" ? "Emas Rosok (Buyback)" : s}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Help banner */}
           <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4">
             <div className="flex items-center gap-2 mb-3">
@@ -1128,7 +1104,7 @@ function InventoriContent() {
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">2</span>
-                <span>Klik tombol <strong>Tambah Barang</strong> di bawah untuk memasukkan barang baru. Bisa juga upload banyak barang sekaligus lewat CSV.</span>
+                <span>Klik tombol <strong>Tambah Barang</strong> di bawah untuk memasukkan barang baru.</span>
               </li>
               <li className="flex items-start gap-2">
                 <span className="w-5 h-5 rounded-full bg-amber-200 text-amber-800 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">3</span>
@@ -1141,20 +1117,20 @@ function InventoriContent() {
             </ol>
           </div>
 
-          {/* Big action buttons */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Tambah Barang action button */}
+          <div className="flex justify-center">
             <button
               onClick={openTambah}
-              className="flex items-center gap-4 px-6 py-5 rounded-2xl text-white font-bold transition-all hover:opacity-90 active:scale-[0.98] shadow-sm text-left"
+              className="w-full sm:w-auto flex items-center justify-center gap-4 px-[50px] py-5 rounded-2xl text-white font-bold transition-all hover:opacity-90 active:scale-[0.98] shadow-sm"
               style={{ backgroundColor: "#C99A36" }}
             >
               <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/>
                 </svg>
               </div>
-              <div>
-                <p className="text-lg font-bold leading-tight">
+              <div className="text-center max-w-[280px]">
+                <p className="text-xl font-bold leading-tight">
                   {activeTab === "Aset"
                     ? (filterSubJenis === "Emas Rosok" ? "Tambah Buyback Emas" : filterSubJenis === "Cukim" ? "Tambah Cukim" : "Tambah Aset")
                     : `Tambah ${activeTab}`}
@@ -1164,21 +1140,6 @@ function InventoriContent() {
                     ? "Catat pembelian emas rosok (buyback) baru"
                     : "Masukkan satu barang baru ke daftar"}
                 </p>
-              </div>
-            </button>
-            <button
-              onClick={() => setShowImportPopup(true)}
-              className="flex items-center gap-4 px-6 py-5 rounded-2xl font-bold border-2 transition-all hover:bg-amber-50 active:scale-[0.98] text-left"
-              style={{ borderColor: "#C99A36", color: "#C99A36" }}
-            >
-              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center flex-shrink-0">
-                <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M12 11v9m0-9l-3 3m3-3l3 3"/>
-                </svg>
-              </div>
-              <div>
-                <p className="text-lg font-bold leading-tight">Tambah Banyak Barang (CSV)</p>
-                <p className="text-sm font-normal opacity-80 mt-0.5">Masukkan banyak barang sekaligus dari file Excel/CSV</p>
               </div>
             </button>
           </div>
@@ -1217,6 +1178,28 @@ function InventoriContent() {
                   </p>
                 )}
               </div>
+
+              {/* Sub-filter Aset (Cukim / Emas Rosok) */}
+              {activeTab === "Aset" && (
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Jenis Aset</label>
+                  <div className="flex flex-wrap gap-2">
+                    {["Semua", ...SUB_JENIS_ASET].map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => { setFilterSubJenis(s); setSelected(null); }}
+                        className={`px-3.5 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
+                          filterSubJenis === s
+                            ? "bg-stone-700 border-stone-700 text-white"
+                            : "border-gray-200 text-gray-600 hover:border-stone-500"
+                        }`}
+                      >
+                        {s === "Emas Rosok" ? "Emas Rosok (Buyback)" : s}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Jenis filter */}
               <div>
@@ -1597,11 +1580,6 @@ function InventoriContent() {
         item={hapusItem}
         onClose={() => setHapusItem(null)}
         onConfirm={hapus}
-      />
-      <ImportCsvModal
-        open={showImportPopup}
-        onClose={() => setShowImportPopup(false)}
-        onImported={load}
       />
     </AppLayout>
   );
