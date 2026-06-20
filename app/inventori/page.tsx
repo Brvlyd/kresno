@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { prefixForKategori, buildPrefixCounters, nextId } from "@/lib/csv";
-import { generateNoHutang } from "@/lib/hutangPiutang";
+import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
 import JsBarcode from "jsbarcode";
 
 /* ─── Types ─── */
@@ -24,6 +24,8 @@ interface BarangRow {
   kategori: string;
   harga_beli?: number;
   harga_jual?: number;
+  persen_modal?: number;
+  persen_jual?: number;
   supplier?: string;
   keterangan?: string;
   gambar_url?: string;
@@ -41,8 +43,8 @@ interface FormData {
   status_inventori: string;
   status_laporan: string;
   kategori: string;
-  harga_beli: string;
-  harga_jual: string;
+  persen_modal: string;
+  persen_jual: string;
   supplier: string;
   keterangan: string;
   gambar_url: string;
@@ -55,7 +57,7 @@ const emptyForm: FormData = {
   kadar: "", berat_gram: "", jumlah: "1",
   status_inventori: "Tersedia",
   status_laporan: "Draft", kategori: "Gelang",
-  harga_beli: "", harga_jual: "", supplier: "",
+  persen_modal: "", persen_jual: "", supplier: "",
   keterangan: "", gambar_url: "",
   jenis_inventori: "Stock Dalam", sub_jenis_aset: "",
 };
@@ -76,6 +78,23 @@ const STATUS_BADGE: Record<string, string> = {
   "Habis Dijual":     "bg-gray-100 text-gray-600",
   "Hilang":           "bg-red-100 text-red-700",
 };
+
+/** Harga emas 24K (patokan) hari ini, dari halaman Dashboard. */
+interface HargaEmas24 {
+  harga_beli: number;
+  harga_jual: number;
+}
+
+/**
+ * Rumus Pengambilan Barang (lihat lib/hutangPiutang.ts):
+ * Hasil = Berat x Persentase. Hasil Akhir = Hasil x (Karat barang / 24).
+ * Harga (Rp) = Hasil Akhir x Harga Emas 24K hari ini.
+ */
+function hitungHargaDariPersentase(beratGram: number, persentase: number, karatBarang: number, harga24KPerGram: number): number {
+  const hasil = hitungHasil(beratGram, persentase);
+  const hasilAkhir = hitungHasilAkhir(hasil, karatBarang);
+  return Math.round(hasilAkhir * harga24KPerGram);
+}
 
 /* ─── Popup Tambah Jenis Barang Baru ─── */
 function AddJenisModal({
@@ -145,8 +164,8 @@ function AddJenisModal({
   );
 }
 
-/* ─── Input harga format Rp ─── */
-function RpInput({
+/* ─── Input persentase harga (%) ─── */
+function PercentInput({
   value,
   onChange,
   className = "",
@@ -155,22 +174,19 @@ function RpInput({
   onChange: (val: string) => void;
   className?: string;
 }) {
-  const numVal = parseInt(value.replace(/\D/g, "")) || 0;
-  const formatted = numVal > 0 ? numVal.toLocaleString("id-ID") : "";
   return (
     <div className={`flex items-center border border-gray-300 rounded-xl overflow-hidden focus-within:border-[#C99A36] focus-within:ring-1 focus-within:ring-[#C99A36]/20 ${className}`}>
-      <span className="px-3 py-3 text-base font-semibold text-gray-500 bg-gray-50 border-r border-gray-200 select-none shrink-0">Rp</span>
       <input
-        type="text"
-        inputMode="numeric"
-        value={formatted}
-        onChange={(e) => {
-          const raw = e.target.value.replace(/\D/g, "");
-          onChange(raw);
-        }}
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step="0.01"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         placeholder="0"
         className="flex-1 px-3 py-3 text-base focus:outline-none bg-white min-w-0"
       />
+      <span className="px-3 py-3 text-base font-semibold text-gray-500 bg-gray-50 border-l border-gray-200 select-none shrink-0">%</span>
     </div>
   );
 }
@@ -348,7 +364,7 @@ function BarcodePreviewModal({
 
 /* ─── Popup Detail Barang ─── */
 function DetailBarangPopup({
-  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori,
+  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmas24,
 }: {
   open: boolean;
   onClose: () => void;
@@ -360,6 +376,7 @@ function DetailBarangPopup({
   onAddJenis: (nama: string) => Promise<string | null>;
   onDeleteJenis: (nama: string) => void;
   defaultJenisInventori?: string;
+  hargaEmas24: HargaEmas24 | null;
 }) {
   const supabase = createClient();
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -387,8 +404,8 @@ function DetailBarangPopup({
         status_inventori:  editData.status_inventori,
         status_laporan:    editData.status_laporan,
         kategori:          editData.kategori,
-        harga_beli:        editData.harga_beli != null ? String(Math.round(editData.harga_beli)) : "",
-        harga_jual:        editData.harga_jual != null ? String(Math.round(editData.harga_jual)) : "",
+        persen_modal:      editData.persen_modal != null ? String(editData.persen_modal) : "",
+        persen_jual:       editData.persen_jual != null ? String(editData.persen_jual) : "",
         supplier:          editData.supplier ?? "",
         keterangan:        editData.keterangan ?? "",
         gambar_url:        editData.gambar_url ?? "",
@@ -443,8 +460,9 @@ function DetailBarangPopup({
     }
     if (!form.berat_gram.trim() || (parseFloat(form.berat_gram) || 0) <= 0) missing.push("Berat (gram)");
     if (!form.jumlah.trim() || (parseInt(form.jumlah) || 0) < 1) missing.push("Jumlah");
-    if (!form.harga_beli.trim() || (parseFloat(form.harga_beli) || 0) <= 0) missing.push("Harga Modal");
-    if (!form.harga_jual.trim() || (parseFloat(form.harga_jual) || 0) <= 0) missing.push("Harga Jual");
+    if (!form.persen_modal.trim() || (parseFloat(form.persen_modal) || 0) <= 0) missing.push("Persentase Modal");
+    if (!form.persen_jual.trim() || (parseFloat(form.persen_jual) || 0) <= 0) missing.push("Persentase Jual");
+    if (!hargaEmas24) missing.push("Harga Emas 24K hari ini (isi dulu di halaman Dashboard)");
     if (!form.supplier.trim()) missing.push("Supplier");
     if (form.jenis_inventori === "Aset" && !form.sub_jenis_aset) missing.push("Jenis Aset (Cukim / Emas Rosok)");
     return missing;
@@ -456,20 +474,30 @@ function DetailBarangPopup({
       setMsg(`Lengkapi dulu: ${missing.join(", ")}.`);
       return;
     }
+    if (!hargaEmas24) return;
     setSaving(true); setMsg("");
+
+    const beratGramNum = parseFloat(form.berat_gram) || 0;
+    const karatNum = parseFloat(form.kadar.trim()) || 24;
+    const persenModalNum = parseFloat(form.persen_modal) || 0;
+    const persenJualNum = parseFloat(form.persen_jual) || 0;
+    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, karatNum, hargaEmas24.harga_beli);
+    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, karatNum, hargaEmas24.harga_jual);
 
     const payload = {
       id_item:           form.id_item.trim().toUpperCase(),
       jenis_barang:      form.jenis_barang,
       nama_produk:       form.nama_produk.trim(),
       kadar:             form.kadar.trim(),
-      berat_gram:        parseFloat(form.berat_gram) || 0,
+      berat_gram:        beratGramNum,
       jumlah:            parseInt(form.jumlah) || 1,
       status_inventori:  form.status_inventori,
       status_laporan:    form.status_laporan,
       kategori:          form.jenis_barang,
-      harga_beli:        parseFloat(form.harga_beli) || 0,
-      harga_jual:        parseFloat(form.harga_jual) || 0,
+      persen_modal:      persenModalNum,
+      persen_jual:       persenJualNum,
+      harga_beli:        hargaBeliRp,
+      harga_jual:        hargaJualRp,
       supplier:          form.supplier.trim(),
       keterangan:        form.keterangan.trim(),
       gambar_url:        form.gambar_url.trim() || null,
@@ -488,17 +516,20 @@ function DetailBarangPopup({
     if (!editData && catatHutang && payload.supplier) {
       const jatuhTempo = new Date();
       jatuhTempo.setDate(jatuhTempo.getDate() + 30);
+      const totalBeratNum = beratGramNum * payload.jumlah;
+      const hasilHutang = hitungHasil(totalBeratNum, persenModalNum);
+      const hasilAkhirHutang = hitungHasilAkhir(hasilHutang, karatNum);
       const { error: hutangError } = await supabase.from("hutang").insert({
         no_hutang: generateNoHutang(),
         jenis_hutang: "supplier",
         nama: payload.supplier,
         kategori: "Supplier",
-        berat_emas_gram: null,
-        persentase_harga: null,
-        kadar_karat: null,
-        hasil: null,
-        hasil_akhir: null,
-        harga_per_gram: null,
+        berat_emas_gram: totalBeratNum,
+        persentase_harga: persenModalNum,
+        kadar_karat: karatNum,
+        hasil: hasilHutang,
+        hasil_akhir: hasilAkhirHutang,
+        harga_per_gram: hargaEmas24.harga_beli,
         harga_total: Math.round(payload.harga_beli * payload.jumlah),
         pembayaran_pelunasan: null,
         status: "Belum Lunas",
@@ -765,17 +796,41 @@ function DetailBarangPopup({
             </div>
           </div>
 
-          {/* Harga Modal / Harga Jual — format Rp saat input */}
+          {/* Persentase Modal / Persentase Jual — harga asli baru muncul saat barang dijual */}
           <div>
             <div className="grid grid-cols-2 gap-2 mb-1.5">
-              {["Harga Modal (beli)", "Harga Jual"].map((h) => (
+              {["Persentase Modal (%)", "Persentase Jual (%)"].map((h) => (
                 <label key={h} className="text-sm font-semibold text-gray-600">{h}</label>
               ))}
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <RpInput value={form.harga_beli} onChange={(v) => set("harga_beli", v)} />
-              <RpInput value={form.harga_jual} onChange={(v) => set("harga_jual", v)} />
+              <PercentInput value={form.persen_modal} onChange={(v) => set("persen_modal", v)} />
+              <PercentInput value={form.persen_jual} onChange={(v) => set("persen_jual", v)} />
             </div>
+            <p className="text-xs text-gray-400 mt-1.5">
+              % dari harga emas 24K hari ini (Dashboard). Harga Rupiah sebenarnya baru muncul saat barang ini dijual.
+            </p>
+            {hargaEmas24 ? (
+              (() => {
+                const beratPreview = parseFloat(form.berat_gram) || 0;
+                const karatPreview = parseFloat(form.kadar.trim()) || 0;
+                const persenModalPreview = parseFloat(form.persen_modal) || 0;
+                const persenJualPreview = parseFloat(form.persen_jual) || 0;
+                if (!beratPreview || !karatPreview || (!persenModalPreview && !persenJualPreview)) return null;
+                const modalRp = hitungHargaDariPersentase(beratPreview, persenModalPreview, karatPreview, hargaEmas24.harga_beli);
+                const jualRp = hitungHargaDariPersentase(beratPreview, persenJualPreview, karatPreview, hargaEmas24.harga_jual);
+                return (
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                    <p className="text-gray-400">≈ Rp {modalRp.toLocaleString("id-ID")}</p>
+                    <p className="text-gray-400">≈ Rp {jualRp.toLocaleString("id-ID")}</p>
+                  </div>
+                );
+              })()
+            ) : (
+              <p className="text-xs font-semibold text-red-500 mt-1.5">
+                Harga Emas 24K hari ini belum diisi di Dashboard — isi dulu sebelum menyimpan barang.
+              </p>
+            )}
           </div>
 
           {/* Supplier */}
@@ -972,18 +1027,29 @@ function InventoriContent() {
   const [searchAllTabs, setSearchAllTabs] = useState(false);
   const [customJenis, setCustomJenis] = useState<string[]>([]);
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
+  const [hargaEmas24, setHargaEmas24] = useState<HargaEmas24 | null>(null);
 
   const allJenis = [...JENIS, ...customJenis];
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("inventori")
-      .select("*")
-      .order("tanggal_masuk", { ascending: false });
-    const rows = (data ?? []) as BarangRow[];
+    const todayStr = new Date().toISOString().split("T")[0];
+    const [invRes, hargaRes] = await Promise.all([
+      supabase
+        .from("inventori")
+        .select("*")
+        .order("tanggal_masuk", { ascending: false }),
+      supabase
+        .from("harga_emas")
+        .select("harga_beli,harga_jual")
+        .eq("tanggal", todayStr)
+        .eq("karat", 24)
+        .maybeSingle(),
+    ]);
+    const rows = (invRes.data ?? []) as BarangRow[];
     setItems(rows);
     setFiltered(rows);
+    setHargaEmas24(hargaRes.data ? { harga_beli: hargaRes.data.harga_beli, harga_jual: hargaRes.data.harga_jual } : null);
 
     // Auto-select from URL param
     const idParam = searchParams.get("id");
@@ -1551,8 +1617,8 @@ function InventoriContent() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
                     {[
                       { label: "Tanggal Masuk",  value: new Date(selected.tanggal_masuk).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }), icon: "📅" },
-                      { label: "Harga Modal",    value: selected.harga_beli ? `Rp ${selected.harga_beli.toLocaleString("id-ID")}` : "—", icon: "💰" },
-                      { label: "Harga Jual",     value: selected.harga_jual ? `Rp ${selected.harga_jual.toLocaleString("id-ID")}` : "—", icon: "🏷️" },
+                      { label: "Persentase Modal", value: selected.persen_modal ? `${selected.persen_modal}% dari emas 24K` : "—", icon: "💰" },
+                      { label: "Persentase Jual",  value: selected.persen_jual ? `${selected.persen_jual}% dari emas 24K` : "—", icon: "🏷️" },
                       { label: "Supplier",       value: selected.supplier || "—", icon: "🚚" },
                     ].map(({ label, value, icon }) => (
                       <div key={label} className="bg-gray-50 rounded-xl px-4 py-3">
@@ -1619,6 +1685,7 @@ function InventoriContent() {
         onAddJenis={addCustomJenis}
         onDeleteJenis={deleteCustomJenis}
         defaultJenisInventori={activeTab}
+        hargaEmas24={hargaEmas24}
       />
       <HapusPopup
         open={!!hapusItem}

@@ -20,7 +20,6 @@ const MIN_CODE_LENGTH = 2;
 
 export default function BarcodeScannerListener() {
   const router = useRouter();
-  const supabase = createClient();
   const bufferRef = useRef("");
   const lastTimeRef = useRef(0);
 
@@ -40,6 +39,7 @@ export default function BarcodeScannerListener() {
         if (prefix !== PREFIX_CEK && prefix !== PREFIX_KELUAR) return;
         if (!idItem) return;
 
+        const supabase = createClient();
         const { data } = await supabase
           .from("inventori")
           .select("id")
@@ -70,7 +70,7 @@ export default function BarcodeScannerListener() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [router, supabase]);
+  }, [router]);
 
   return null;
 }

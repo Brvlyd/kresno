@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
+import { hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
 
 /* ═══════════════════════════════════════════════════════
    TYPES
@@ -18,6 +19,8 @@ interface InvItem {
   jumlah: number;
   harga_beli: number;
   harga_jual: number;
+  persen_modal: number;
+  persen_jual: number;
   gambar_url?: string;
   jenis_inventori?: string;
 }
@@ -543,6 +546,17 @@ export default function POSPage() {
   const [invoiceReady, setInvoiceReady] = useState<{ noInvoice: string; tanggal: string } | null>(null);
   const [riwayat, setRiwayat] = useState<RiwayatTransaksi[]>([]);
   const [loadingRiwayat, setLoadingRiwayat] = useState(true);
+  const [hargaEmas24Jual, setHargaEmas24Jual] = useState<number | null>(null);
+
+  /* ── Harga jual sebenarnya (Rp) baru dihitung saat barang ini mau dijual,
+     memakai harga emas 24K HARI INI (bukan harga saat barang dimasukkan ke inventori). ── */
+  function hargaJualLive(item: InvItem): number {
+    if (!hargaEmas24Jual) return item.harga_jual;
+    const karat = parseFloat(item.kadar) || 24;
+    const hasil = hitungHasil(item.berat_gram, item.persen_jual);
+    const hasilAkhir = hitungHasilAkhir(hasil, karat);
+    return Math.round(hasilAkhir * hargaEmas24Jual);
+  }
 
   /* ── Load inventori tersedia + daftar pelanggan ── */
   async function loadItems() {
@@ -598,6 +612,14 @@ export default function POSPage() {
     supabase.from("pelanggan").select("*").order("nama").then(({ data }) => {
       setPelangganList((data ?? []) as Pelanggan[]);
     });
+    const todayStrIso = new Date().toISOString().split("T")[0];
+    supabase
+      .from("harga_emas")
+      .select("harga_jual")
+      .eq("tanggal", todayStrIso)
+      .eq("karat", 24)
+      .maybeSingle()
+      .then(({ data }) => setHargaEmas24Jual(data?.harga_jual ?? null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Buka modal "Buat Invoice Baru" + siapkan No. Invoice ── */
@@ -620,7 +642,7 @@ export default function POSPage() {
       item,
       codeText: item.id_item,
       nameText: item.nama_produk,
-      hargaJual: item.harga_jual,
+      hargaJual: hargaJualLive(item),
       ongkos: 0,
       qty: 1,
     });

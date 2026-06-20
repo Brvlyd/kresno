@@ -19,6 +19,11 @@ const playfair = Playfair_Display({
 export const metadata: Metadata = {
   title: "SITOMAS - Sistem Toko Mas",
   description: "Sistem Manajemen Toko Emas Kresno",
+  icons: {
+    icon: "/logo-kresno.png",
+    shortcut: "/logo-kresno.png",
+    apple: "/logo-kresno.png",
+  },
 };
 
 export default function RootLayout({
