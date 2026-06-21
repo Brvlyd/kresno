@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+dist
+coverage
+.git
+.env*.local
+.env.production
+*.log
+npm-debug.log*
+.DS_Store
+.vscode
+.kiro
+.agents
