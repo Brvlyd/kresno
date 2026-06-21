@@ -60,10 +60,10 @@ export function hitungHasilAkhir(hasil: number, kadarKarat: number): number {
 
 /* ═══════════════════════════════════════════════════════
    RUMUS NOTA (nilai Rupiah yang tercetak di nota/invoice)
-   Berat emas × Harga (per gram) = Harga Total
+   Hasil Akhir (gram) × Harga (per gram) = Harga Total
 ═══════════════════════════════════════════════════════ */
 
-/** Harga Total = Berat emas (gram) × Harga per gram (Rp) */
-export function hitungHargaTotalNota(beratEmasGram: number, hargaPerGram: number): number {
-  return Math.round(beratEmasGram * hargaPerGram);
+/** Harga Total = Hasil Akhir (gram) × Harga per gram (Rp) */
+export function hitungHargaTotalNota(hasilAkhirGram: number, hargaPerGram: number): number {
+  return Math.round(hasilAkhirGram * hargaPerGram);
 }

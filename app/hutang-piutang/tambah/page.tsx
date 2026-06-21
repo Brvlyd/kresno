@@ -95,7 +95,7 @@ function TambahHutangContent() {
   const hargaPerGramNum = parseFloat(form.harga_per_gram) || 0;
   const hasil = hitungHasil(beratNum, persentaseNum);
   const hasilAkhir = hitungHasilAkhir(hasil, kadarNum);
-  const hargaTotalNota = hitungHargaTotalNota(beratNum, hargaPerGramNum);
+  const hargaTotalNota = hitungHargaTotalNota(hasilAkhir, hargaPerGramNum);
   const hargaTotal = isSupplier ? hargaTotalNota : Math.round(parseFloat(form.harga_total_manual) || 0);
 
   const missingFields = (): string[] => {
@@ -297,7 +297,7 @@ function TambahHutangContent() {
                   />
                 </div>
                 <div className="mt-3 rounded-xl px-4 py-3" style={{ backgroundColor: "#FDF6E3" }}>
-                  <p className="text-xs text-gray-500">Harga Total (Berat Emas × Harga per Gram)</p>
+                  <p className="text-xs text-gray-500">Harga Total (Hasil Akhir × Harga per Gram)</p>
                   <p className="font-bold text-lg" style={{ color: "#6F5333" }}>{fmtRupiah(hargaTotalNota)}</p>
                 </div>
               </div>

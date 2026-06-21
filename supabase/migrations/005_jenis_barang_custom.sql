@@ -1,5 +1,5 @@
 -- Daftar "Jenis Barang" tambahan yang dibuat sendiri oleh pengguna toko
--- (selain jenis bawaan: Gelang, Kalung, Cincin, Anting, Liontin, Gelang Kaki, Tusuk Konde, Lainnya)
+-- (selain jenis bawaan: Gelang, Kalung, Cincin, Anting, Liontin, Tindik Mata, Tusuk Konde, Lainnya)
 -- Run in Supabase Dashboard > SQL Editor
 
 create table if not exists public.jenis_barang_custom (

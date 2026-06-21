@@ -5,6 +5,7 @@ import AppLayout from "@/components/AppLayout";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { KADAR_PATOKAN_OPTIONS } from "@/lib/hutangPiutang";
 
 /* ─── Types ─── */
 interface HargaEmas {
@@ -56,6 +57,75 @@ function Badge({ status }: { status: string }) {
   );
 }
 
+/* ═══ Input Rupiah: format ribuan otomatis sambil mengetik (mis. 1.050.000) ═══ */
+function RupiahInput({
+  value, onChange, placeholder,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+  placeholder?: string;
+}) {
+  const display = value ? new Intl.NumberFormat("id-ID").format(value) : "";
+  return (
+    <div className="relative">
+      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold select-none">
+        Rp
+      </span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={display}
+        onChange={(e) => {
+          const digits = e.target.value.replace(/\D/g, "");
+          onChange(digits ? parseInt(digits, 10) : 0);
+        }}
+        placeholder={placeholder}
+        className="w-full border border-gray-300 rounded-xl py-3 pl-11 pr-4 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+      />
+    </div>
+  );
+}
+
+/* ─── Draft input harga emas — disimpan di localStorage supaya tidak hilang
+   kalau popup ditutup / halaman ditutup sebelum diklik "Simpan Harga". ─── */
+const HARGA_DRAFT_KEY = "kresno_harga_emas_draft";
+
+function emptyRow(): HargaEmas {
+  return { karat: 0, harga_beli: 0, harga_jual: 0 };
+}
+
+// Baris awal: satu per satu (bukan langsung 24K/22K/18K) — atau lanjutkan dari yang
+// sudah tersimpan hari ini di DB kalau ada.
+function buildRowsFromExisting(existing: HargaEmas[]): HargaEmas[] {
+  if (existing.length > 0) {
+    return existing.map((e) => ({ karat: e.karat, harga_beli: e.harga_beli, harga_jual: e.harga_jual }));
+  }
+  return [emptyRow()];
+}
+
+function loadHargaDraft(today: string): HargaEmas[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(HARGA_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { tanggal: string; rows: HargaEmas[] };
+    if (parsed.tanggal !== today || !Array.isArray(parsed.rows) || parsed.rows.length === 0) return null;
+    return parsed.rows;
+  } catch {
+    return null;
+  }
+}
+
+function saveHargaDraft(today: string, rows: HargaEmas[]) {
+  try {
+    localStorage.setItem(HARGA_DRAFT_KEY, JSON.stringify({ tanggal: today, rows }));
+  } catch { /* storage penuh/disabled — abaikan */ }
+}
+
+function clearHargaDraft() {
+  try { localStorage.removeItem(HARGA_DRAFT_KEY); } catch { /* ignore */ }
+}
+
 /* ═══ Popup: Harga Emas ═══ */
 function HargaPopup({
   open, onClose, existing, onSaved,
@@ -68,29 +138,28 @@ function HargaPopup({
   const supabase = createClient();
   const today = new Date().toISOString().split("T")[0];
 
-  const defaultRows: HargaEmas[] = [
-    { karat: 24, harga_beli: 0, harga_jual: 0 },
-    { karat: 22, harga_beli: 0, harga_jual: 0 },
-    { karat: 18, harga_beli: 0, harga_jual: 0 },
-  ];
-
-  const [rows, setRows] = useState<HargaEmas[]>(defaultRows);
+  const [rows, setRows] = useState<HargaEmas[]>([emptyRow()]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
 
-  // Pre-fill with DB values when popup opens
+  // Saat popup dibuka: pakai draft yang belum disimpan kalau ada (supaya tidak perlu
+  // ketik ulang), kalau tidak ada draft baru pakai data tersimpan di DB / satu baris kosong.
   useEffect(() => {
     if (!open) return;
-    setRows(defaultRows.map((r) => {
-      const found = existing.find((e) => e.karat === r.karat);
-      return found ? { ...r, harga_beli: found.harga_beli, harga_jual: found.harga_jual } : r;
-    }));
+    setRows(loadHargaDraft(today) ?? buildRowsFromExisting(existing));
     setMsg("");
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updateRow = (i: number, field: keyof HargaEmas, val: string) => {
+  // Simpan draft tiap kali baris diubah, supaya ketikan tidak hilang walau popup ditutup
+  // atau halaman direfresh sebelum diklik "Simpan Harga".
+  useEffect(() => {
+    if (!open) return;
+    saveHargaDraft(today, rows);
+  }, [open, rows]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateRow = (i: number, field: keyof HargaEmas, val: number) => {
     const nr = [...rows];
-    nr[i] = { ...nr[i], [field]: Number(val) || 0 };
+    nr[i] = { ...nr[i], [field]: val };
     setRows(nr);
   };
 
@@ -108,12 +177,16 @@ function HargaPopup({
         );
       if (error) { setMsg("Gagal menyimpan: " + error.message); setSaving(false); return; }
     }
+    clearHargaDraft();
     setSaving(false);
     setMsg("✓ Harga berhasil disimpan!");
     setTimeout(() => { onSaved(); onClose(); }, 900);
   };
 
-  const reset = () => setRows(defaultRows);
+  const reset = () => {
+    clearHargaDraft();
+    setRows(buildRowsFromExisting(existing));
+  };
 
   if (!open) return null;
   return (
@@ -121,18 +194,29 @@ function HargaPopup({
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-          <div>
-            <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
-              Biaya Emas Hari Ini
-            </h2>
-            <p className="text-sm text-gray-500 mt-0.5">
-              {new Date().toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-            </p>
+        <div
+          className="flex items-center justify-between px-6 py-5"
+          style={{ background: "linear-gradient(135deg, #C99A36 0%, #E8C468 100%)" }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.5 15c0 1.1 1.12 2 2.5 2s2.5-.9 2.5-2-1.12-1.5-2.5-1.5-2.5-.4-2.5-1.5 1.12-2 2.5-2 2.5.9 2.5 2M12 7.5v1M12 15.5v1" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white" style={{ fontFamily: "var(--font-playfair)" }}>
+                Biaya Emas Hari Ini
+              </h2>
+              <p className="text-sm text-white/85 mt-0.5">
+                {new Date().toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg p-1.5 transition-colors"
+            className="text-white/80 hover:text-white hover:bg-white/15 rounded-lg p-1.5 transition-colors"
             aria-label="Tutup"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -154,41 +238,36 @@ function HargaPopup({
           <div className="space-y-3">
             {rows.map((row, i) => (
               <div key={i} className="grid grid-cols-3 gap-3">
-                <div className="relative">
-                  <input
-                    type="number"
-                    value={row.karat || ""}
-                    onChange={(e) => updateRow(i, "karat", e.target.value)}
-                    className="w-full border border-gray-300 rounded-xl py-3 pl-4 pr-9 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
-                    placeholder="24"
-                    min={1}
-                    max={24}
-                  />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold select-none">K</span>
-                </div>
-                <input
-                  type="number"
-                  value={row.harga_beli || ""}
-                  onChange={(e) => updateRow(i, "harga_beli", e.target.value)}
-                  className="border border-gray-300 rounded-xl py-3 px-4 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                <select
+                  value={row.karat || ""}
+                  onChange={(e) => updateRow(i, "karat", Number(e.target.value))}
+                  className="w-full border border-gray-300 rounded-xl py-3 px-3 text-base font-semibold focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors bg-white"
+                >
+                  <option value="" disabled>Pilih karat</option>
+                  {KADAR_PATOKAN_OPTIONS.map((k) => (
+                    <option key={k} value={k}>{k}K</option>
+                  ))}
+                </select>
+                <RupiahInput
+                  value={row.harga_beli}
+                  onChange={(n) => updateRow(i, "harga_beli", n)}
                   placeholder="1.050.000"
-                  min={0}
                 />
-                <input
-                  type="number"
-                  value={row.harga_jual || ""}
-                  onChange={(e) => updateRow(i, "harga_jual", e.target.value)}
-                  className="border border-gray-300 rounded-xl py-3 px-4 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                <RupiahInput
+                  value={row.harga_jual}
+                  onChange={(n) => updateRow(i, "harga_jual", n)}
                   placeholder="1.100.000"
-                  min={0}
                 />
               </div>
             ))}
           </div>
+          <p className="text-xs text-gray-400 mt-2.5">
+            Tinggal pilih karat dan ketik angkanya — format Rupiah (mis. Rp 1.050.000) terisi otomatis.
+          </p>
 
           {/* Add row */}
           <button
-            onClick={() => setRows([...rows, { karat: 0, harga_beli: 0, harga_jual: 0 }])}
+            onClick={() => setRows([...rows, emptyRow()])}
             className="mt-3 text-sm font-medium transition-colors"
             style={{ color: "#C99A36" }}
           >
@@ -496,56 +575,69 @@ export default function DashboardPage() {
           </div>
 
           {/* ── Biaya Emas Hari Ini ── */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="flex items-start justify-between px-6 pt-5 pb-3">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
-                  Biaya Emas Hari Ini
-                </h2>
-                <p className="text-sm text-gray-500 mt-0.5">Input manual harga emas, bisa diganti kapan saja.</p>
+          <div className="rounded-xl border-2 shadow-md overflow-hidden" style={{ borderColor: "#C99A36" }}>
+            <div
+              className="flex items-center justify-between gap-4 px-6 py-5 flex-wrap"
+              style={{ background: "linear-gradient(135deg, #C99A36 0%, #E8C468 100%)" }}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                  <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <circle cx="12" cy="12" r="9" strokeWidth={1.5} />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.5 15c0 1.1 1.12 2 2.5 2s2.5-.9 2.5-2-1.12-1.5-2.5-1.5-2.5-.4-2.5-1.5 1.12-2 2.5-2 2.5.9 2.5 2M12 7.5v1M12 15.5v1" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white" style={{ fontFamily: "var(--font-playfair)" }}>
+                    Biaya Emas Hari Ini
+                  </h2>
+                  <p className="text-sm text-white/85 mt-0.5">
+                    {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                  </p>
+                </div>
               </div>
               <button
                 onClick={() => setShowHargaPopup(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-amber-50 active:scale-95"
-                style={{ borderColor: "#C99A36", color: "#C99A36" }}
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-lg text-sm font-bold bg-white shadow-sm hover:bg-amber-50 active:scale-95 transition-all"
+                style={{ color: "#6F5333" }}
               >
-                <span className="text-base leading-none font-bold">+</span> Add Data
+                <span className="text-base leading-none font-bold">+</span> Tambah / Ubah Harga
               </button>
             </div>
 
-            {/* Column headers */}
-            <div className="mx-6 mb-2">
-              <div className="grid grid-cols-3 gap-4 px-4 py-2.5 rounded-lg text-sm font-semibold text-gray-700" style={{ backgroundColor: "#FDF6E3" }}>
-                <span>Karat</span>
-                <span>Harga Beli</span>
-                <span>Harga Jual</span>
+            <div className="bg-white">
+              {/* Column headers */}
+              <div className="mx-6 mt-5 mb-2">
+                <div className="grid grid-cols-3 gap-4 px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide" style={{ backgroundColor: "#FDF6E3", color: "#6F5333" }}>
+                  <span>Karat</span>
+                  <span>Harga Beli / gram</span>
+                  <span>Harga Jual / gram</span>
+                </div>
               </div>
-            </div>
 
-            {/* Rows */}
-            <div className="mx-6 pb-5 space-y-2.5">
-              {loading ? (
-                [1,2,3].map((i) => (
-                  <div key={i} className="grid grid-cols-3 gap-4">
-                    {[1,2,3].map((j) => <div key={j} className="h-12 bg-gray-100 animate-pulse rounded-lg"/>)}
-                  </div>
-                ))
-              ) : hargaEmas.length > 0 ? (
-                hargaEmas.map((row) => (
-                  <div key={row.karat} className="grid grid-cols-3 gap-4">
-                    <div className="relative border border-gray-200 rounded-lg px-4 py-3 bg-gray-50 flex items-center">
-                      <span className="text-gray-700 font-semibold">{row.karat}</span>
-                      <span className="absolute right-3 text-gray-400 text-sm font-bold">K</span>
+              {/* Rows */}
+              <div className="mx-6 pb-5 space-y-2.5">
+                {loading ? (
+                  [1,2,3].map((i) => (
+                    <div key={i} className="grid grid-cols-3 gap-4">
+                      {[1,2,3].map((j) => <div key={j} className="h-14 bg-gray-100 animate-pulse rounded-lg"/>)}
                     </div>
-                    <div className="border border-gray-200 rounded-lg px-4 py-3 bg-gray-50 text-gray-700 text-sm">
-                      Rp {fmt(row.harga_beli)}
+                  ))
+                ) : hargaEmas.length > 0 ? (
+                  hargaEmas.map((row) => (
+                    <div key={row.karat} className="grid grid-cols-3 gap-4">
+                      <div className="relative border-2 rounded-lg px-4 py-3 flex items-center" style={{ borderColor: "#F0DDA8", backgroundColor: "#FDF6E3" }}>
+                        <span className="text-lg font-extrabold" style={{ color: "#6F5333" }}>{row.karat}K</span>
+                      </div>
+                      <div className="border border-gray-200 rounded-lg px-4 py-3 bg-white text-gray-900 text-base font-bold">
+                        Rp {fmt(row.harga_beli)}
+                      </div>
+                      <div className="border border-gray-200 rounded-lg px-4 py-3 bg-white text-gray-900 text-base font-bold">
+                        Rp {fmt(row.harga_jual)}
+                      </div>
                     </div>
-                    <div className="border border-gray-200 rounded-lg px-4 py-3 bg-gray-50 text-gray-700 text-sm">
-                      Rp {fmt(row.harga_jual)}
-                    </div>
-                  </div>
-                ))
-              ) : (
+                  ))
+                ) : (
                 <div className="py-6 text-center">
                   <p className="text-gray-400 text-sm mb-3">Belum ada harga emas hari ini.</p>
                   <button
@@ -583,6 +675,7 @@ export default function DashboardPage() {
                   </button>
                 </div>
               )}
+              </div>
             </div>
           </div>
 

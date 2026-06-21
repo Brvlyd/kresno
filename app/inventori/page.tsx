@@ -62,7 +62,7 @@ const emptyForm: FormData = {
   jenis_inventori: "Stock Dalam", sub_jenis_aset: "",
 };
 
-const JENIS = ["Gelang", "Kalung", "Cincin", "Anting", "Liontin", "Gelang Kaki", "Tusuk Konde", "Lainnya"];
+const JENIS = ["Gelang", "Kalung", "Cincin", "Anting", "Liontin", "Tindik Mata", "Tusuk Konde", "Lainnya"];
 const STATUS_INVENTORI = ["Tersedia", "Terjual", "Dalam Servis", "Retur", "Tidak Laku", "Mati Laku", "Habis Dijual", "Hilang"];
 const STATUS_LAPORAN = ["Draft", "Approval Checker", "Approval Signer", "Approved", "Rejected"];
 const JENIS_INVENTORI = ["Stock Dalam", "Stock Display", "Aset"] as const;
@@ -79,21 +79,18 @@ const STATUS_BADGE: Record<string, string> = {
   "Hilang":           "bg-red-100 text-red-700",
 };
 
-/** Harga emas 24K (patokan) hari ini, dari halaman Dashboard. */
-interface HargaEmas24 {
+/** Harga emas per gram untuk satu karat tertentu, hari ini, dari halaman Dashboard. */
+interface HargaEmasKarat {
   harga_beli: number;
   harga_jual: number;
 }
 
 /**
- * Rumus Pengambilan Barang (lihat lib/hutangPiutang.ts):
- * Hasil = Berat x Persentase. Hasil Akhir = Hasil x (Karat barang / 24).
- * Harga (Rp) = Hasil Akhir x Harga Emas 24K hari ini.
+ * Harga (Rp) = Berat x Persentase x Harga emas per gram sesuai karat barang itu sendiri
+ * (bukan dikonversi ke 24K — harga per karat diambil langsung dari halaman Dashboard).
  */
-function hitungHargaDariPersentase(beratGram: number, persentase: number, karatBarang: number, harga24KPerGram: number): number {
-  const hasil = hitungHasil(beratGram, persentase);
-  const hasilAkhir = hitungHasilAkhir(hasil, karatBarang);
-  return Math.round(hasilAkhir * harga24KPerGram);
+function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaPerGramKaratBarang: number): number {
+  return Math.round(hitungHasil(beratGram, persentase) * hargaPerGramKaratBarang);
 }
 
 /* ─── Popup Tambah Jenis Barang Baru ─── */
@@ -364,7 +361,7 @@ function BarcodePreviewModal({
 
 /* ─── Popup Detail Barang ─── */
 function DetailBarangPopup({
-  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmas24,
+  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmasByKarat,
 }: {
   open: boolean;
   onClose: () => void;
@@ -376,7 +373,7 @@ function DetailBarangPopup({
   onAddJenis: (nama: string) => Promise<string | null>;
   onDeleteJenis: (nama: string) => void;
   defaultJenisInventori?: string;
-  hargaEmas24: HargaEmas24 | null;
+  hargaEmasByKarat: Record<number, HargaEmasKarat>;
 }) {
   const supabase = createClient();
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -462,7 +459,10 @@ function DetailBarangPopup({
     if (!form.jumlah.trim() || (parseInt(form.jumlah) || 0) < 1) missing.push("Jumlah");
     if (!form.persen_modal.trim() || (parseFloat(form.persen_modal) || 0) <= 0) missing.push("Persentase Modal");
     if (!form.persen_jual.trim() || (parseFloat(form.persen_jual) || 0) <= 0) missing.push("Persentase Jual");
-    if (!hargaEmas24) missing.push("Harga Emas 24K hari ini (isi dulu di halaman Dashboard)");
+    if (kadarTrimmed && /^\d+(\.\d+)?K$/.test(kadarTrimmed) && !hargaEmasByKarat[parseFloat(kadarTrimmed)]) {
+      missing.push(`Harga Emas ${kadarTrimmed} hari ini (isi dulu di halaman Dashboard)`);
+    }
+    if (catatHutang && !hargaEmasByKarat[24]) missing.push("Harga Emas 24K hari ini (untuk catat hutang, isi dulu di halaman Dashboard)");
     if (!form.supplier.trim()) missing.push("Supplier");
     if (form.jenis_inventori === "Aset" && !form.sub_jenis_aset) missing.push("Jenis Aset (Cukim / Emas Rosok)");
     return missing;
@@ -474,15 +474,16 @@ function DetailBarangPopup({
       setMsg(`Lengkapi dulu: ${missing.join(", ")}.`);
       return;
     }
-    if (!hargaEmas24) return;
-    setSaving(true); setMsg("");
-
     const beratGramNum = parseFloat(form.berat_gram) || 0;
     const karatNum = parseFloat(form.kadar.trim()) || 24;
+    const hargaKarat = hargaEmasByKarat[karatNum];
+    if (!hargaKarat) return;
+    setSaving(true); setMsg("");
+
     const persenModalNum = parseFloat(form.persen_modal) || 0;
     const persenJualNum = parseFloat(form.persen_jual) || 0;
-    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, karatNum, hargaEmas24.harga_beli);
-    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, karatNum, hargaEmas24.harga_jual);
+    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaKarat.harga_beli);
+    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaKarat.harga_jual);
 
     const payload = {
       id_item:           form.id_item.trim().toUpperCase(),
@@ -529,7 +530,7 @@ function DetailBarangPopup({
         kadar_karat: karatNum,
         hasil: hasilHutang,
         hasil_akhir: hasilAkhirHutang,
-        harga_per_gram: hargaEmas24.harga_beli,
+        harga_per_gram: hargaEmasByKarat[24]?.harga_beli ?? 0,
         harga_total: Math.round(payload.harga_beli * payload.jumlah),
         pembayaran_pelunasan: null,
         status: "Belum Lunas",
@@ -808,29 +809,33 @@ function DetailBarangPopup({
               <PercentInput value={form.persen_jual} onChange={(v) => set("persen_jual", v)} />
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
-              % dari harga emas 24K hari ini (Dashboard). Harga Rupiah sebenarnya baru muncul saat barang ini dijual.
+              % dari harga emas sesuai karat barang ini hari ini (Dashboard). Harga Rupiah sebenarnya baru muncul saat barang ini dijual.
             </p>
-            {hargaEmas24 ? (
-              (() => {
-                const beratPreview = parseFloat(form.berat_gram) || 0;
-                const karatPreview = parseFloat(form.kadar.trim()) || 0;
-                const persenModalPreview = parseFloat(form.persen_modal) || 0;
-                const persenJualPreview = parseFloat(form.persen_jual) || 0;
-                if (!beratPreview || !karatPreview || (!persenModalPreview && !persenJualPreview)) return null;
-                const modalRp = hitungHargaDariPersentase(beratPreview, persenModalPreview, karatPreview, hargaEmas24.harga_beli);
-                const jualRp = hitungHargaDariPersentase(beratPreview, persenJualPreview, karatPreview, hargaEmas24.harga_jual);
+            {(() => {
+              const beratPreview = parseFloat(form.berat_gram) || 0;
+              const karatTrimmedPreview = form.kadar.trim();
+              const karatPreview = parseFloat(karatTrimmedPreview) || 0;
+              const persenModalPreview = parseFloat(form.persen_modal) || 0;
+              const persenJualPreview = parseFloat(form.persen_jual) || 0;
+              const hargaKaratPreview = hargaEmasByKarat[karatPreview];
+              if (!karatTrimmedPreview || !/^\d+(\.\d+)?K$/.test(karatTrimmedPreview)) return null;
+              if (!hargaKaratPreview) {
                 return (
-                  <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-                    <p className="text-gray-400">≈ Rp {modalRp.toLocaleString("id-ID")}</p>
-                    <p className="text-gray-400">≈ Rp {jualRp.toLocaleString("id-ID")}</p>
-                  </div>
+                  <p className="text-xs font-semibold text-red-500 mt-1.5">
+                    Harga Emas {karatTrimmedPreview} hari ini belum diisi di Dashboard — isi dulu sebelum menyimpan barang.
+                  </p>
                 );
-              })()
-            ) : (
-              <p className="text-xs font-semibold text-red-500 mt-1.5">
-                Harga Emas 24K hari ini belum diisi di Dashboard — isi dulu sebelum menyimpan barang.
-              </p>
-            )}
+              }
+              if (!beratPreview || (!persenModalPreview && !persenJualPreview)) return null;
+              const modalRp = hitungHargaDariPersentase(beratPreview, persenModalPreview, hargaKaratPreview.harga_beli);
+              const jualRp = hitungHargaDariPersentase(beratPreview, persenJualPreview, hargaKaratPreview.harga_jual);
+              return (
+                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                  <p className="text-gray-400">≈ Rp {modalRp.toLocaleString("id-ID")}</p>
+                  <p className="text-gray-400">≈ Rp {jualRp.toLocaleString("id-ID")}</p>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Supplier */}
@@ -1027,7 +1032,7 @@ function InventoriContent() {
   const [searchAllTabs, setSearchAllTabs] = useState(false);
   const [customJenis, setCustomJenis] = useState<string[]>([]);
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
-  const [hargaEmas24, setHargaEmas24] = useState<HargaEmas24 | null>(null);
+  const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
 
   const allJenis = [...JENIS, ...customJenis];
 
@@ -1041,15 +1046,17 @@ function InventoriContent() {
         .order("tanggal_masuk", { ascending: false }),
       supabase
         .from("harga_emas")
-        .select("harga_beli,harga_jual")
-        .eq("tanggal", todayStr)
-        .eq("karat", 24)
-        .maybeSingle(),
+        .select("karat,harga_beli,harga_jual")
+        .eq("tanggal", todayStr),
     ]);
     const rows = (invRes.data ?? []) as BarangRow[];
     setItems(rows);
     setFiltered(rows);
-    setHargaEmas24(hargaRes.data ? { harga_beli: hargaRes.data.harga_beli, harga_jual: hargaRes.data.harga_jual } : null);
+    const hargaMap: Record<number, HargaEmasKarat> = {};
+    for (const r of hargaRes.data ?? []) {
+      hargaMap[r.karat] = { harga_beli: r.harga_beli, harga_jual: r.harga_jual };
+    }
+    setHargaEmasByKarat(hargaMap);
 
     // Auto-select from URL param
     const idParam = searchParams.get("id");
@@ -1617,8 +1624,8 @@ function InventoriContent() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
                     {[
                       { label: "Tanggal Masuk",  value: new Date(selected.tanggal_masuk).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }), icon: "📅" },
-                      { label: "Persentase Modal", value: selected.persen_modal ? `${selected.persen_modal}% dari emas 24K` : "—", icon: "💰" },
-                      { label: "Persentase Jual",  value: selected.persen_jual ? `${selected.persen_jual}% dari emas 24K` : "—", icon: "🏷️" },
+                      { label: "Persentase Modal", value: selected.persen_modal ? `${selected.persen_modal}% dari emas ${selected.kadar}` : "—", icon: "💰" },
+                      { label: "Persentase Jual",  value: selected.persen_jual ? `${selected.persen_jual}% dari emas ${selected.kadar}` : "—", icon: "🏷️" },
                       { label: "Supplier",       value: selected.supplier || "—", icon: "🚚" },
                     ].map(({ label, value, icon }) => (
                       <div key={label} className="bg-gray-50 rounded-xl px-4 py-3">
@@ -1685,7 +1692,7 @@ function InventoriContent() {
         onAddJenis={addCustomJenis}
         onDeleteJenis={deleteCustomJenis}
         defaultJenisInventori={activeTab}
-        hargaEmas24={hargaEmas24}
+        hargaEmasByKarat={hargaEmasByKarat}
       />
       <HapusPopup
         open={!!hapusItem}

@@ -1,7 +1,48 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+
+const SESSION_KEY = "kresno_login_unlocked";
+const DEFAULT_PASSWORD = "1111";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [storedPassword, setStoredPassword] = useState(DEFAULT_PASSWORD);
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState(false);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from("login_password")
+      .select("password")
+      .eq("id", 1)
+      .single()
+      .then(({ data }) => {
+        if (data?.password) setStoredPassword(data.password);
+      });
+  }, [supabase]);
+
+  function handleMasuk() {
+    if (checking) return;
+    setChecking(true);
+    if (pin === storedPassword) {
+      try { sessionStorage.setItem(SESSION_KEY, "1"); } catch { /* ignore */ }
+      router.push("/dashboard");
+    } else {
+      setError(true);
+      setChecking(false);
+      setTimeout(() => { setPin(""); setError(false); inputRef.current?.focus(); }, 900);
+    }
+  }
+
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center gap-10 px-4"
@@ -28,23 +69,36 @@ export default function LoginPage() {
 
         {/* PIN Input */}
         <input
+          ref={inputRef}
           type="password"
           inputMode="numeric"
           maxLength={6}
-          placeholder=""
-          className="w-full max-w-sm h-14 rounded-full bg-white px-6 text-2xl font-bold text-center text-gray-800 focus:outline-none focus:ring-4 focus:ring-white/50 shadow-lg"
+          value={pin}
+          onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(false); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleMasuk(); }}
+          autoFocus
+          className={`w-full max-w-sm h-14 rounded-full bg-white px-6 text-2xl font-bold text-center text-gray-800 focus:outline-none focus:ring-4 shadow-lg transition-all ${
+            error ? "ring-4 ring-red-400" : "focus:ring-white/50"
+          }`}
         />
+
+        {error && (
+          <p className="text-red-300 text-sm font-semibold -mt-2">
+            PIN salah. Coba lagi.
+          </p>
+        )}
 
         {/* Buttons */}
         <div className="flex gap-6 mt-2">
           {/* Masuk — bold */}
-          <Link
-            href="/dashboard"
-            className="min-w-[160px] h-14 rounded-2xl flex items-center justify-center text-xl font-bold transition-all shadow-md active:scale-95"
+          <button
+            onClick={handleMasuk}
+            disabled={checking}
+            className="min-w-[160px] h-14 rounded-2xl flex items-center justify-center text-xl font-bold transition-all shadow-md active:scale-95 disabled:opacity-60"
             style={{ backgroundColor: "#FFFBE9", color: "#6F5333", border: "2px solid #C4A35A" }}
           >
             Masuk
-          </Link>
+          </button>
 
           {/* Reset Password */}
           <Link

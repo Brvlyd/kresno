@@ -18,7 +18,7 @@ export const KATEGORI_PREFIX: Record<string, string> = {
   "Cincin": "CN",
   "Anting": "AT",
   "Liontin": "LT",
-  "Gelang Kaki": "GK",
+  "Tindik Mata": "GK",
   "Tusuk Konde": "TK",
   "Lainnya": "LN",
 };

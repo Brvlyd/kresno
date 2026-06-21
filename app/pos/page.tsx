@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
@@ -142,12 +142,16 @@ interface AutocompleteFieldProps<T> {
   placeholder?: string;
   inputClassName?: string;
   disabled?: boolean;
+  noResultsText?: string;
 }
 
+/** Field ketik-atau-pilih: chevron menandakan ada daftar pilihan, dan daftar
+ * tetap muncul saat field masih kosong (browse) — bukan cuma setelah mengetik. */
 function AutocompleteField<T>({
-  value, onChange, onSelect, suggestions, renderLabel, renderSub, placeholder, inputClassName, disabled,
+  value, onChange, onSelect, suggestions, renderLabel, renderSub, placeholder, inputClassName, disabled, noResultsText,
 }: AutocompleteFieldProps<T>) {
   const [open, setOpen] = useState(false);
+  const showNoResults = open && !disabled && suggestions.length === 0 && value.trim().length > 0;
   return (
     <div className="relative">
       <input
@@ -158,8 +162,16 @@ function AutocompleteField<T>({
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
         placeholder={placeholder}
-        className={inputClassName || "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] disabled:bg-gray-50"}
+        className={inputClassName || "w-full border border-gray-200 rounded-lg pl-3 pr-7 py-2 text-sm focus:outline-none focus:border-[#C99A36] disabled:bg-gray-50"}
       />
+      {!disabled && (
+        <svg
+          className={`absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 transition-transform pointer-events-none ${open ? "rotate-180 text-[#C99A36]" : "text-gray-400"}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      )}
       {open && suggestions.length > 0 && (
         <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
           {suggestions.map((s, i) => (
@@ -174,6 +186,11 @@ function AutocompleteField<T>({
               {renderSub && <p className="text-xs text-gray-400">{renderSub(s)}</p>}
             </button>
           ))}
+        </div>
+      )}
+      {showNoResults && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg px-3 py-2.5 text-sm text-gray-400">
+          {noResultsText || "Tidak ditemukan."}
         </div>
       )}
     </div>
@@ -193,22 +210,70 @@ function toFullPhone(local: string): string {
   return local ? `+62${local}` : "";
 }
 
-/* ─── Input no. telepon dengan prefix +62 otomatis ─── */
-function PhoneField({
-  value, onChange, placeholder, className,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; className?: string }) {
+/* ─── Input no. telepon + cari data pelanggan tersimpan sambil mengetik ─── */
+function PhoneAutocompleteField({
+  value, onChange, onSelect, suggestions, className,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSelect: (p: Pelanggan) => void;
+  suggestions: Pelanggan[];
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <div className={`flex items-center border border-gray-200 rounded-xl overflow-hidden focus-within:border-[#C99A36] bg-white ${className || ""}`}>
-      <span className="px-3 py-2.5 text-sm text-gray-500 bg-gray-50 border-r border-gray-200 select-none shrink-0">+62</span>
-      <input
-        type="tel"
-        inputMode="numeric"
-        placeholder={placeholder || "8123456789"}
-        value={value}
-        onChange={(e) => onChange(localPhoneDigits(e.target.value))}
-        className="flex-1 px-3 py-2.5 text-sm focus:outline-none min-w-0"
-      />
+    <div className={`relative ${className ?? ""}`}>
+      <div className="flex items-center border border-gray-200 rounded-xl overflow-hidden focus-within:border-[#C99A36] bg-white">
+        <span className="px-3 py-2.5 text-sm text-gray-500 bg-gray-50 border-r border-gray-200 select-none shrink-0">+62</span>
+        <input
+          type="tel"
+          inputMode="numeric"
+          placeholder="8123456789"
+          value={value}
+          onChange={(e) => { onChange(localPhoneDigits(e.target.value)); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
+          className="flex-1 px-3 py-2.5 text-sm focus:outline-none min-w-0"
+        />
+      </div>
+      {open && value.trim().length > 0 && suggestions.length > 0 && (
+        <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+          {suggestions.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onSelect(p); setOpen(false); }}
+              className="w-full text-left px-3 py-2 hover:bg-amber-50 transition-colors border-b border-gray-50 last:border-0"
+            >
+              <p className="text-sm font-semibold text-gray-800">+62{localPhoneDigits(p.telepon ?? "")}</p>
+              <p className="text-xs text-gray-400">{p.nama}</p>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
+  );
+}
+
+/* ─── Input tanggal — klik di mana saja pada field langsung membuka kalender ─── */
+function DateField({
+  value, onChange, className = "",
+}: { value: string; onChange: (v: string) => void; className?: string }) {
+  const ref = useRef<HTMLInputElement>(null);
+  function openPicker() {
+    try { ref.current?.showPicker?.(); } catch { /* browser tidak dukung showPicker() */ }
+  }
+  return (
+    <input
+      ref={ref}
+      type="date"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onClick={openPicker}
+      onFocus={openPicker}
+      className={`w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#C99A36] cursor-pointer ${className}`}
+    />
   );
 }
 
@@ -539,10 +604,8 @@ export default function POSPage() {
   const [catatan, setCatatan] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [showBuatInvoiceModal, setShowBuatInvoiceModal] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [pendingInvoiceNo, setPendingInvoiceNo] = useState<string | null>(null);
-  const [invoiceDate, setInvoiceDate] = useState(todayStr());
   const [invoiceReady, setInvoiceReady] = useState<{ noInvoice: string; tanggal: string } | null>(null);
   const [riwayat, setRiwayat] = useState<RiwayatTransaksi[]>([]);
   const [loadingRiwayat, setLoadingRiwayat] = useState(true);
@@ -622,14 +685,11 @@ export default function POSPage() {
       .then(({ data }) => setHargaEmas24Jual(data?.harga_jual ?? null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Buka modal "Buat Invoice Baru" + siapkan No. Invoice ── */
-  function openBuatInvoiceModal() {
+  /* ── Buka preview invoice (siap proses) — tanpa popup input data lagi ── */
+  function openPreviewModal() {
     if (!canPreview) return;
-    if (!pendingInvoiceNo) {
-      setPendingInvoiceNo(genNoInvoice());
-      setInvoiceDate(tanggalPembelian || todayStr());
-    }
-    setShowBuatInvoiceModal(true);
+    if (!pendingInvoiceNo) setPendingInvoiceNo(genNoInvoice());
+    setShowPreviewModal(true);
   }
 
   /* ── Row helpers ── */
@@ -685,20 +745,26 @@ export default function POSPage() {
 
   function suggestByCode(text: string): InvItem[] {
     const q = text.trim().toLowerCase();
-    if (!q) return [];
-    return items.filter((i) => i.id_item.toLowerCase().includes(q)).slice(0, 6);
+    if (!q) return items.slice(0, 8);
+    return items.filter((i) => i.id_item.toLowerCase().includes(q)).slice(0, 8);
   }
 
   function suggestByName(text: string): InvItem[] {
     const q = text.trim().toLowerCase();
-    if (!q) return [];
-    return items.filter((i) => i.nama_produk.toLowerCase().includes(q)).slice(0, 6);
+    if (!q) return items.slice(0, 8);
+    return items.filter((i) => i.nama_produk.toLowerCase().includes(q)).slice(0, 8);
   }
 
   function suggestPelanggan(text: string): Pelanggan[] {
     const q = text.trim().toLowerCase();
+    if (!q) return pelangganList.slice(0, 8);
+    return pelangganList.filter((p) => p.nama.toLowerCase().includes(q)).slice(0, 8);
+  }
+
+  function suggestPelangganByPhone(text: string): Pelanggan[] {
+    const q = text.trim();
     if (!q) return [];
-    return pelangganList.filter((p) => p.nama.toLowerCase().includes(q)).slice(0, 6);
+    return pelangganList.filter((p) => localPhoneDigits(p.telepon ?? "").includes(q)).slice(0, 8);
   }
 
   function pilihPelanggan(p: Pelanggan) {
@@ -715,7 +781,7 @@ export default function POSPage() {
   const ppnAmount = ppnEnabled ? Math.round(afterDiskon * ppnPercentNum / 100) : 0;
   const total = afterDiskon + ppnAmount;
   const totalBerat = validRows.reduce((s, r) => s + r.item.berat_gram * r.qty, 0);
-  const canPreview = validRows.length > 0;
+  const canPreview = validRows.length > 0 && pelangganNama.trim().length > 0 && paymentMethod !== "";
   const cartForInvoice: CartItem[] = validRows.map((r) => ({ item: r.item, qty: r.qty, hargaJual: r.hargaJual, ongkos: r.ongkos }));
 
   /* ── Simpan transaksi & cetak ── */
@@ -728,7 +794,7 @@ export default function POSPage() {
     setSaving(true);
 
     const noInvoice = pendingInvoiceNo || genNoInvoice();
-    const tanggal = fmtTanggalInv(invoiceDate ? new Date(invoiceDate) : new Date());
+    const tanggal = fmtTanggalInv(tanggalPembelian ? new Date(tanggalPembelian) : new Date());
 
     // Simpan pelanggan baru otomatis jika namanya belum ada di daftar
     const existingPelanggan = pelangganList.find(
@@ -747,11 +813,46 @@ export default function POSPage() {
       .filter(Boolean)
       .join(" | ");
 
+    // Gabungkan dulu per id barang — satu barang bisa muncul di lebih dari satu baris
+    // keranjang, jadi pengurangan stoknya harus dihitung dari total qty semua baris itu.
+    const qtyByItemId = new Map<string, { item: InvItem; totalQty: number }>();
+    for (const r of validRows) {
+      const acc = qtyByItemId.get(r.item.id);
+      if (acc) acc.totalQty += r.qty;
+      else qtyByItemId.set(r.item.id, { item: r.item, totalQty: r.qty });
+    }
+    const jumlahSisaByItemId = new Map<string, number>(
+      Array.from(qtyByItemId.entries()).map(([id, { item, totalQty }]) => [id, item.jumlah - totalQty])
+    );
+
+    // Kurangi stok di inventori untuk setiap barang yang terjual — kalau stok habis,
+    // status_inventori otomatis jadi "Terjual"; kalau masih sisa, tetap "Tersedia".
+    const updateResults = await Promise.all(
+      Array.from(qtyByItemId.entries()).map(([id]) => {
+        const jumlahSisa = jumlahSisaByItemId.get(id)!;
+        return supabase
+          .from("inventori")
+          .update({
+            jumlah: jumlahSisa,
+            status_inventori: jumlahSisa <= 0 ? "Terjual" : "Tersedia",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+      })
+    );
+    const updateError = updateResults.find((res) => res.error)?.error;
+    if (updateError) {
+      alert("Gagal memperbarui stok inventori: " + updateError.message);
+      setSaving(false);
+      return;
+    }
+
     const inserts = validRows.map((r) => ({
       inventori_id: r.item.id,
       id_item: r.item.id_item,
       nama_produk: r.item.nama_produk,
       jumlah_keluar: r.qty,
+      jumlah_sisa: jumlahSisaByItemId.get(r.item.id)!,
       status_baru: "Terjual",
       catatan: catatanGabungan,
     }));
@@ -759,15 +860,14 @@ export default function POSPage() {
     const { error } = await supabase.from("inventori_keluar").insert(inserts);
 
     if (error) {
-      alert("Gagal menyimpan transaksi: " + error.message);
+      alert("Stok sudah dikurangi, tapi gagal menyimpan riwayat transaksi: " + error.message);
       setSaving(false);
       return;
     }
 
     setInvoiceReady({ noInvoice, tanggal });
     setSaving(false);
-    setShowBuatInvoiceModal(false);
-    setShowPreviewModal(true);
+    loadItems();
     loadRiwayat();
   }
 
@@ -808,7 +908,7 @@ export default function POSPage() {
       {/* Print CSS */}
       <style>{`
         @media print {
-          aside, nav, #pos-screen, #preview-modal-overlay, #buat-invoice-modal-overlay { display: none !important; }
+          aside, nav, #pos-screen, #preview-modal-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
           @page { size: A5 landscape; margin: 10mm; }
@@ -885,51 +985,57 @@ export default function POSPage() {
                       renderLabel={(p) => p.nama}
                       renderSub={(p) => p.telepon ?? ""}
                       placeholder="Ketik atau pilih nama customer"
-                      inputClassName="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                      inputClassName="w-full border border-gray-200 rounded-xl pl-4 pr-8 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">No. Telepon</label>
-                    <PhoneField
+                    <PhoneAutocompleteField
                       value={pelangganHP}
                       onChange={setPelangganHP}
+                      onSelect={pilihPelanggan}
+                      suggestions={suggestPelangganByPhone(pelangganHP)}
                       className="w-full"
                     />
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Tanggal Pembelian</label>
-                    <input
-                      type="date"
-                      value={tanggalPembelian}
-                      onChange={(e) => setTanggalPembelian(e.target.value)}
-                      className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
-                    />
+                    <DateField value={tanggalPembelian} onChange={setTanggalPembelian} />
                   </div>
                 </div>
               </div>
 
-              {/* Detail Barang */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
-                  <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
-                  <h3 className="font-bold text-gray-800">Detail Barang</h3>
-                  {loading && <span className="text-xs text-gray-400">(memuat stok...)</span>}
+              {/* Detail Barang — overflow sengaja dibiarkan terbuka (bukan overflow-hidden) supaya
+                  dropdown pencarian barang tidak terpotong oleh kartu/tombol di bawahnya. */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                <div className="px-5 py-4 border-b border-gray-100 rounded-t-2xl">
+                  <div className="flex items-center gap-2">
+                    <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
+                    <h3 className="font-bold text-gray-800">Detail Barang</h3>
+                    {loading && <span className="text-xs text-gray-400">(memuat stok...)</span>}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1 ml-3">
+                    Cari kode atau nama barang — kadar, berat, dan harga jual terisi otomatis dari data inventori.
+                  </p>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-xs text-gray-500 uppercase tracking-wide">
-                        <th className="text-left px-5 py-2 font-semibold">Kode Barang</th>
-                        <th className="text-left px-3 py-2 font-semibold">Nama Barang</th>
-                        <th className="text-left px-3 py-2 font-semibold w-36">Harga Satuan</th>
-                        <th className="text-left px-3 py-2 font-semibold w-20">Jumlah</th>
-                        <th className="px-3 py-2 w-10" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((row) => (
-                        <tr key={row.id} className="border-t border-gray-50">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-gray-500 uppercase tracking-wide">
+                      <th className="text-left px-5 py-2 font-semibold">Kode Barang</th>
+                      <th className="text-left px-3 py-2 font-semibold">Nama Barang</th>
+                      <th className="text-left px-3 py-2 font-semibold w-32">Harga Satuan</th>
+                      <th className="text-left px-3 py-2 font-semibold w-28">Ongkos</th>
+                      <th className="text-left px-3 py-2 font-semibold w-16">Jumlah</th>
+                      <th className="text-right px-3 py-2 font-semibold w-32">Total</th>
+                      <th className="px-3 py-2 w-10" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row) => {
+                      const rowTotal = row.item ? row.hargaJual * row.qty + row.ongkos : 0;
+                      return (
+                        <tr key={row.id} className="border-t border-gray-50 align-top">
                           <td className="px-5 py-2.5 min-w-[120px]">
                             <AutocompleteField
                               value={row.codeText}
@@ -938,10 +1044,11 @@ export default function POSPage() {
                               suggestions={suggestByCode(row.codeText)}
                               renderLabel={(it) => it.id_item}
                               renderSub={(it) => it.nama_produk}
-                              placeholder="KS-001"
+                              placeholder="Cari kode..."
+                              noResultsText="Kode tidak ditemukan"
                             />
                           </td>
-                          <td className="px-3 py-2.5 min-w-[160px]">
+                          <td className="px-3 py-2.5 min-w-[170px]">
                             <AutocompleteField
                               value={row.nameText}
                               onChange={(v) => setNameText(row.id, v)}
@@ -949,11 +1056,22 @@ export default function POSPage() {
                               suggestions={suggestByName(row.nameText)}
                               renderLabel={(it) => it.nama_produk}
                               renderSub={(it) => `${it.id_item} · ${it.kadar} · Stok ${it.jumlah}`}
-                              placeholder="Nama barang..."
+                              placeholder="Cari nama barang..."
+                              noResultsText="Barang tidak ditemukan"
                             />
+                            {row.item && (
+                              <p className="text-xs text-gray-400 mt-1">
+                                {row.item.kadar} · {fmtGram(row.item.berat_gram)}
+                              </p>
+                            )}
                           </td>
-                          <td className="px-3 py-2.5 min-w-[120px]">
-                            <RpField disabled={!row.item} value={row.hargaJual} onChange={(v) => updateRow(row.id, { hargaJual: v })} />
+                          <td className="px-3 py-2.5 min-w-[110px]">
+                            <p className="py-2 text-sm font-semibold text-gray-700">
+                              {row.item ? fmtRp(row.hargaJual) : "—"}
+                            </p>
+                          </td>
+                          <td className="px-3 py-2.5 min-w-[100px]">
+                            <RpField disabled={!row.item} value={row.ongkos} onChange={(v) => updateRow(row.id, { ongkos: v })} />
                           </td>
                           <td className="px-3 py-2.5">
                             <input
@@ -966,14 +1084,19 @@ export default function POSPage() {
                               className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[#C99A36] disabled:bg-gray-50"
                             />
                           </td>
+                          <td className="px-3 py-2.5 text-right">
+                            <p className="py-2 text-sm font-bold" style={{ color: "#6F5333" }}>
+                              {row.item ? fmtRp(rowTotal) : "—"}
+                            </p>
+                          </td>
                           <td className="px-3 py-2.5 text-center">
                             <button type="button" onClick={() => removeRow(row.id)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      );
+                    })}
+                  </tbody>
+                </table>
 
                 <button
                   type="button"
@@ -985,10 +1108,21 @@ export default function POSPage() {
                 </button>
 
                 {/* Summary */}
-                <div className="px-5 py-4 border-t border-gray-100 space-y-2 bg-amber-50/50">
+                <div className="px-5 py-4 border-t border-gray-100 space-y-2 bg-amber-50/50 rounded-b-2xl">
                   <div className="flex justify-between text-sm text-gray-600">
                     <span>Subtotal</span>
                     <span className="font-semibold">{fmtRp(subtotal)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 text-sm">
+                    <span className="text-gray-600">Diskon (Rp)</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={diskon ? Number(diskon).toLocaleString("id-ID") : ""}
+                      onChange={(e) => setDiskon(e.target.value.replace(/\D/g, ""))}
+                      placeholder="0"
+                      className="w-32 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <label className="flex items-center gap-1.5 text-gray-600 select-none cursor-pointer">
@@ -1013,25 +1147,71 @@ export default function POSPage() {
                 </div>
               </div>
 
+              {/* Pembayaran & Catatan */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 space-y-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
+                    <h3 className="font-bold text-gray-800">Metode Pembayaran</h3>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 max-w-sm">
+                    {(["Tunai", "Transfer", "QRIS"] as const).map((m) => (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => setPaymentMethod(m)}
+                        className={`py-2.5 rounded-xl text-sm font-semibold border-2 transition-all ${
+                          paymentMethod === m ? "text-white border-transparent" : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                        }`}
+                        style={paymentMethod === m ? { backgroundColor: "#6F5333" } : {}}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide">Catatan (Opsional)</label>
+                  <textarea
+                    value={catatan}
+                    onChange={(e) => setCatatan(e.target.value)}
+                    rows={2}
+                    placeholder="Tuliskan catatan jika perlu..."
+                    className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36] resize-none"
+                  />
+                </div>
+              </div>
+
               {/* Action buttons */}
-              <div className="flex flex-col sm:flex-row gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="px-6 py-3 rounded-xl border-2 font-bold transition-all hover:bg-gray-50"
-                  style={{ borderColor: "#6F5333", color: "#6F5333" }}
-                >
-                  ↻ Reset Form
-                </button>
-                <button
-                  type="button"
-                  onClick={openBuatInvoiceModal}
-                  disabled={!canPreview}
-                  className="px-6 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
-                  style={{ backgroundColor: "#6F5333" }}
-                >
-                  👁 Preview Invoice
-                </button>
+              <div className="flex flex-col items-end gap-2">
+                {!canPreview && (
+                  <p className="text-xs text-gray-400">
+                    {validRows.length === 0
+                      ? "Tambahkan minimal satu barang dulu."
+                      : !pelangganNama.trim()
+                        ? "Isi nama customer dulu."
+                        : "Pilih metode pembayaran dulu."}
+                  </p>
+                )}
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className="px-6 py-3 rounded-xl border-2 font-bold transition-all hover:bg-gray-50"
+                    style={{ borderColor: "#6F5333", color: "#6F5333" }}
+                  >
+                    ↻ Reset Form
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openPreviewModal}
+                    disabled={!canPreview}
+                    className="px-6 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                    style={{ backgroundColor: "#6F5333" }}
+                  >
+                    👁 Preview Invoice
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -1071,270 +1251,19 @@ export default function POSPage() {
       </AppLayout>
 
       {/* ══════════════════════════════════
-          MODAL: BUAT INVOICE BARU
+          MODAL: PREVIEW INVOICE — sekaligus tempat proses transaksi.
+          Tidak ada input data lagi di sini, semua sudah diisi di halaman utama;
+          modal ini murni konfirmasi sebelum disimpan, lalu cetak.
       ══════════════════════════════════ */}
-      {showBuatInvoiceModal && (
-        <div id="buat-invoice-modal-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] overflow-y-auto">
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 flex flex-wrap items-start justify-between gap-4 rounded-t-2xl">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Buat Invoice Baru</h2>
-                <p className="text-xs text-gray-400">Point of Sale</p>
-              </div>
-              <div className="flex items-center gap-4 text-sm">
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">No. Invoice</p>
-                  <p className="font-mono font-bold" style={{ color: "#6F5333" }}>{pendingInvoiceNo}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-400 mb-0.5">Tanggal Invoice</p>
-                  <input
-                    type="date"
-                    value={invoiceDate}
-                    onChange={(e) => setInvoiceDate(e.target.value)}
-                    className="border border-gray-200 rounded-lg px-2 py-1 text-sm"
-                  />
-                </div>
-                <button
-                  onClick={() => setShowBuatInvoiceModal(false)}
-                  className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold shrink-0"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 space-y-5">
-              {/* Data Customer */}
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Data Customer</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <AutocompleteField
-                    value={pelangganNama}
-                    onChange={setPelangganNama}
-                    onSelect={pilihPelanggan}
-                    suggestions={suggestPelanggan(pelangganNama)}
-                    renderLabel={(p) => p.nama}
-                    renderSub={(p) => p.telepon ?? ""}
-                    placeholder="Pilih atau ketik nama pelanggan"
-                    inputClassName="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
-                  />
-                  <PhoneField
-                    value={pelangganHP}
-                    onChange={setPelangganHP}
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              {/* Detail Pembelian */}
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Detail Pembelian</p>
-                <div className="border border-gray-200 rounded-xl overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          {["#", "Kode", "Nama Barang", "Kadar", "Berat", "Harga/gram", "Ongkos", "Qty", "Total", "Aksi"].map((h) => (
-                            <th key={h} className="text-left px-2.5 py-2 font-semibold text-gray-500 whitespace-nowrap">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {rows.map((row, idx) => {
-                          const hargaPerGram = row.item && row.item.berat_gram > 0 ? Math.round(row.hargaJual / row.item.berat_gram) : 0;
-                          const rowTotal = row.item ? row.hargaJual * row.qty + row.ongkos : 0;
-                          return (
-                            <tr key={row.id}>
-                              <td className="px-2.5 py-2 text-gray-400">{idx + 1}</td>
-                              <td className="px-2.5 py-2 min-w-[110px]">
-                                <AutocompleteField
-                                  value={row.codeText}
-                                  onChange={(v) => setCodeText(row.id, v)}
-                                  onSelect={(it: InvItem) => selectItemForRow(row.id, it)}
-                                  suggestions={suggestByCode(row.codeText)}
-                                  renderLabel={(it) => it.id_item}
-                                  renderSub={(it) => it.nama_produk}
-                                  placeholder="Kode"
-                                  inputClassName="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-[#C99A36]"
-                                />
-                              </td>
-                              <td className="px-2.5 py-2 min-w-[160px]">
-                                <AutocompleteField
-                                  value={row.nameText}
-                                  onChange={(v) => setNameText(row.id, v)}
-                                  onSelect={(it: InvItem) => selectItemForRow(row.id, it)}
-                                  suggestions={suggestByName(row.nameText)}
-                                  renderLabel={(it) => it.nama_produk}
-                                  renderSub={(it) => `${it.id_item} · ${it.kadar}`}
-                                  placeholder="Nama barang"
-                                  inputClassName="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-[#C99A36]"
-                                />
-                              </td>
-                              <td className="px-2.5 py-2 whitespace-nowrap">{row.item?.kadar ?? "-"}</td>
-                              <td className="px-2.5 py-2 whitespace-nowrap">{row.item ? fmtGram(row.item.berat_gram) : "-"}</td>
-                              <td className="px-2.5 py-2 min-w-[110px]">
-                                <RpField
-                                  disabled={!row.item}
-                                  value={hargaPerGram}
-                                  onChange={(v) => row.item && updateRow(row.id, { hargaJual: Math.round(v * row.item.berat_gram) })}
-                                />
-                              </td>
-                              <td className="px-2.5 py-2 min-w-[100px]">
-                                <RpField disabled={!row.item} value={row.ongkos} onChange={(v) => updateRow(row.id, { ongkos: v })} />
-                              </td>
-                              <td className="px-2.5 py-2 w-16">
-                                <input
-                                  type="number"
-                                  min={1}
-                                  max={rowMaxQty(row)}
-                                  disabled={!row.item}
-                                  value={row.qty}
-                                  onChange={(e) => updateRow(row.id, { qty: Math.max(1, Math.min(parseInt(e.target.value) || 1, rowMaxQty(row))) })}
-                                  className="w-16 border border-gray-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-[#C99A36] disabled:bg-gray-50"
-                                />
-                              </td>
-                              <td className="px-2.5 py-2 font-bold whitespace-nowrap" style={{ color: "#6F5333" }}>{fmtRp(rowTotal)}</td>
-                              <td className="px-2.5 py-2 text-center">
-                                <button type="button" onClick={() => removeRow(row.id)} className="text-red-400 hover:text-red-600">🗑️</button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={addRow}
-                    className="w-full text-center py-2.5 text-sm font-semibold border-t border-gray-100 hover:bg-amber-50 transition-colors"
-                    style={{ color: "#6F5333" }}
-                  >
-                    + Tambah Barang
-                  </button>
-                </div>
-              </div>
-
-              {/* Ringkasan Berat & Pembayaran */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="border border-gray-200 rounded-xl p-4">
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Ringkasan Berat</p>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-500">Total Berat</span>
-                    <span className="font-semibold">{fmtGram(totalBerat)}</span>
-                  </div>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Terbilang</span>
-                    <p className="italic text-gray-700 mt-0.5 capitalize">{terbilang(total)} rupiah</p>
-                  </div>
-                </div>
-                <div className="border border-gray-200 rounded-xl p-4 space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">Ringkasan Pembayaran</p>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Subtotal</span>
-                    <span className="font-semibold">{fmtRp(subtotal)}</span>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <span className="text-gray-600">Diskon (Rp)</span>
-                    <input
-                      type="text"
-                      value={diskon}
-                      onChange={(e) => setDiskon(e.target.value.replace(/\D/g, ""))}
-                      placeholder="0"
-                      className="w-28 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-[#C99A36]"
-                    />
-                  </div>
-                  <div className="flex items-center justify-between gap-2 text-sm">
-                    <label className="flex items-center gap-1.5 text-gray-600 select-none cursor-pointer">
-                      <input type="checkbox" checked={ppnEnabled} onChange={(e) => setPpnEnabled(e.target.checked)} className="accent-[#C99A36]" />
-                      PPN (%)
-                    </label>
-                    <input
-                      type="text"
-                      disabled={!ppnEnabled}
-                      value={ppnPercent}
-                      onChange={(e) => setPpnPercent(e.target.value.replace(/[^0-9.,]/g, ""))}
-                      className="w-16 border border-gray-200 rounded-lg px-2 py-1 text-right text-sm focus:outline-none focus:border-[#C99A36] disabled:bg-gray-50"
-                    />
-                  </div>
-                  {ppnEnabled && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Jumlah PPN</span>
-                      <span className="font-semibold">{fmtRp(ppnAmount)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-base font-bold pt-2 border-t border-gray-100">
-                    <span>TOTAL</span>
-                    <span style={{ color: "#DC2626" }}>{fmtRp(total)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Metode Pembayaran */}
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Metode Pembayaran</p>
-                <div className="grid grid-cols-3 gap-2 max-w-sm">
-                  {(["Tunai", "Transfer", "QRIS"] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setPaymentMethod(m)}
-                      className={`py-2 rounded-xl text-sm font-semibold border-2 transition-all ${
-                        paymentMethod === m ? "text-white border-transparent" : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                      }`}
-                      style={paymentMethod === m ? { backgroundColor: "#6F5333" } : {}}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Catatan */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Catatan (Opsional)</label>
-                <textarea
-                  value={catatan}
-                  onChange={(e) => setCatatan(e.target.value)}
-                  rows={2}
-                  placeholder="Tuliskan catatan jika perlu..."
-                  className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36] resize-none"
-                />
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
-              <button
-                onClick={() => setShowBuatInvoiceModal(false)}
-                className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
-              >
-                Batal
-              </button>
-              <button
-                onClick={simpanInvoice}
-                disabled={saving || validRows.length === 0 || !paymentMethod || !pelangganNama.trim()}
-                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 disabled:opacity-40 transition-all"
-                style={{ backgroundColor: "#6F5333" }}
-              >
-                {saving ? "⏳ Menyimpan..." : "💾 Simpan Invoice"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════════
-          MODAL: PREVIEW INVOICE SEBELUM CETAK
-      ══════════════════════════════════ */}
-      {showPreviewModal && invoiceReady && (
+      {showPreviewModal && (
         <div id="preview-modal-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
               <div>
                 <h2 className="text-lg font-bold text-gray-900">Preview Invoice</h2>
-                <p className="text-xs text-gray-400">Periksa kembali sebelum dicetak.</p>
+                <p className="text-xs text-gray-400">
+                  {invoiceReady ? "Periksa kembali sebelum dicetak." : "Periksa sekali lagi sebelum diproses."}
+                </p>
               </div>
               <button
                 onClick={() => setShowPreviewModal(false)}
@@ -1347,8 +1276,8 @@ export default function POSPage() {
               <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
                 <InvoiceCetak
                   mode="preview"
-                  noInvoice={invoiceReady.noInvoice}
-                  tanggal={invoiceReady.tanggal}
+                  noInvoice={invoiceReady?.noInvoice ?? pendingInvoiceNo ?? ""}
+                  tanggal={invoiceReady?.tanggal ?? fmtTanggalInv(tanggalPembelian ? new Date(tanggalPembelian) : new Date())}
                   pelangganNama={pelangganNama}
                   pelangganHP={toFullPhone(pelangganHP)}
                   cart={cartForInvoice}
@@ -1368,15 +1297,26 @@ export default function POSPage() {
                 onClick={() => setShowPreviewModal(false)}
                 className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
               >
-                ✕ Tutup
+                {invoiceReady ? "✕ Tutup" : "← Kembali Edit"}
               </button>
-              <button
-                onClick={() => printClean()}
-                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
-                style={{ backgroundColor: "#6F5333" }}
-              >
-                🖨️ Print Invoice
-              </button>
+              {invoiceReady ? (
+                <button
+                  onClick={() => printClean()}
+                  className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                  style={{ backgroundColor: "#6F5333" }}
+                >
+                  🖨️ Print Invoice
+                </button>
+              ) : (
+                <button
+                  onClick={simpanInvoice}
+                  disabled={saving}
+                  className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 disabled:opacity-40 transition-all"
+                  style={{ backgroundColor: "#6F5333" }}
+                >
+                  {saving ? "⏳ Menyimpan..." : "✓ Proses & Simpan Transaksi"}
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -10,9 +10,10 @@ import { printClean } from "@/lib/print";
 /* ═══════════════════════════════════════════════════════
    KONSTANTA & HELPER
 ═══════════════════════════════════════════════════════ */
-const PIN_KEY = "kresno_keuangan_pin";
 const SESSION_KEY = "kresno_keuangan_unlocked";
 const DEFAULT_PIN = "1234";
+/** Email tujuan kode reset PIN — kotak masuk toko, bukan email pegawai perorangan. */
+const RESET_PIN_EMAIL = "tokomaskresno5758@gmail.com";
 
 const fmtRp = (n: number) =>
   "Rp " + Math.round(n || 0).toLocaleString("id-ID");
@@ -28,6 +29,20 @@ const fmtTglShort = (d: string | Date) =>
   new Date(d).toLocaleDateString("id-ID", {
     day: "2-digit", month: "2-digit", year: "numeric",
   });
+
+const fmtPersen = (n: number) => (n || 0).toFixed(1).replace(/\.0$/, "") + "%";
+
+/** Rata-rata persentase modal/jual tertimbang berat — karena persen tidak bisa
+ * dijumlah langsung antar barang yang beratnya beda-beda. */
+function weightedAvgPersen(
+  rows: { berat_gram: number; jumlah: number; persen_modal: number; persen_jual: number }[],
+  field: "persen_modal" | "persen_jual",
+): number {
+  const totalBerat = rows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+  if (totalBerat === 0) return 0;
+  const weighted = rows.reduce((s, r) => s + (r[field] || 0) * r.berat_gram * r.jumlah, 0);
+  return weighted / totalBerat;
+}
 
 /* ═══════════════════════════════════════════════════════
    TIPE DATA
@@ -46,6 +61,8 @@ interface StokRow {
   jumlah: number;
   harga_beli: number;
   harga_jual: number;
+  persen_modal: number;
+  persen_jual: number;
   status_inventori: string;
   tanggal_masuk: string;
   jenis_inventori: string;
@@ -165,17 +182,20 @@ function filterLabel(
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: PIN LOCK SCREEN
 ═══════════════════════════════════════════════════════ */
-function PinLockScreen({ onUnlock }: { onUnlock: () => void }) {
+function PinLockScreen({
+  storedPin, onUnlock, onPinReset,
+}: {
+  storedPin: string;
+  onUnlock: () => void;
+  onPinReset: (newPin: string) => void;
+}) {
   const router = useRouter();
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [shake, setShake] = useState(false);
+  const [showForgotPin, setShowForgotPin] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const storedPin =
-    typeof window !== "undefined"
-      ? localStorage.getItem(PIN_KEY) || DEFAULT_PIN
-      : DEFAULT_PIN;
   const pinLen = storedPin.length;
 
   useEffect(() => {
@@ -307,6 +327,193 @@ function PinLockScreen({ onUnlock }: { onUnlock: () => void }) {
         <div />
       </div>
 
+      {/* Lupa PIN */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setShowForgotPin(true); }}
+        className="text-sm font-semibold text-white/70 hover:text-white underline transition-colors"
+      >
+        Lupa PIN?
+      </button>
+
+      <ForgotPinModal
+        open={showForgotPin}
+        onClose={() => setShowForgotPin(false)}
+        onReset={(newPin) => {
+          onPinReset(newPin);
+          setShowForgotPin(false);
+          onUnlock();
+        }}
+      />
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   KOMPONEN: LUPA PIN — kirim kode OTP ke email toko (lewat Supabase Auth),
+   lalu set PIN baru kalau kodenya benar.
+═══════════════════════════════════════════════════════ */
+function ForgotPinModal({
+  open, onClose, onReset,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onReset: (newPin: string) => void;
+}) {
+  const supabase = createClient();
+  const [step, setStep] = useState<"request" | "verify">("request");
+  const [sending, setSending] = useState(false);
+  const [code, setCode] = useState("");
+  const [newPin, setNewPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setStep("request"); setCode(""); setNewPin(""); setConfirmPin("");
+      setMsg(null); setCooldown(0);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  async function sendCode() {
+    setSending(true); setMsg(null);
+    const { error } = await supabase.auth.signInWithOtp({ email: RESET_PIN_EMAIL });
+    setSending(false);
+    if (error) { setMsg({ type: "err", text: "Gagal mengirim kode: " + error.message }); return; }
+    setStep("verify");
+    setCooldown(60);
+    setMsg({ type: "ok", text: `Kode telah dikirim ke ${RESET_PIN_EMAIL}.` });
+  }
+
+  async function resetPin() {
+    if (!/^\d{4,10}$/.test(code)) { setMsg({ type: "err", text: "Kode dari email tidak valid." }); return; }
+    if (newPin.length < 4) { setMsg({ type: "err", text: "PIN baru minimal 4 angka." }); return; }
+    if (!/^\d+$/.test(newPin)) { setMsg({ type: "err", text: "PIN hanya boleh angka." }); return; }
+    if (newPin !== confirmPin) { setMsg({ type: "err", text: "Konfirmasi PIN tidak cocok." }); return; }
+
+    setVerifying(true); setMsg(null);
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      email: RESET_PIN_EMAIL, token: code, type: "email",
+    });
+    if (verifyError) {
+      setVerifying(false);
+      setMsg({ type: "err", text: "Kode salah atau sudah kedaluwarsa: " + verifyError.message });
+      return;
+    }
+
+    const { error: updateError } = await supabase
+      .from("keuangan_pin")
+      .update({ pin: newPin, updated_at: new Date().toISOString() })
+      .eq("id", 1);
+    await supabase.auth.signOut();
+    setVerifying(false);
+
+    if (updateError) { setMsg({ type: "err", text: "Gagal menyimpan PIN baru: " + updateError.message }); return; }
+    setMsg({ type: "ok", text: "PIN berhasil direset!" });
+    setTimeout(() => onReset(newPin), 900);
+  }
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+        <h3 className="text-xl font-bold text-gray-900 mb-1">Lupa PIN Keuangan</h3>
+
+        {step === "request" ? (
+          <>
+            <p className="text-sm text-gray-500 mb-4">
+              Kode reset akan dikirim ke email toko: <strong>{RESET_PIN_EMAIL}</strong>.
+            </p>
+            <button
+              onClick={sendCode}
+              disabled={sending}
+              className="w-full py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: "#C99A36" }}
+            >
+              {sending ? "Mengirim..." : "Kirim Kode ke Email"}
+            </button>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500 mb-4">
+              Masukkan kode dari email, lalu buat PIN baru.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-semibold text-gray-700 block mb-1">Kode dari Email</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={10}
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-center text-xl tracking-[0.3em] focus:outline-none focus:border-[#C99A36]"
+                  placeholder="Kode dari email"
+                />
+              </div>
+              {(
+                [
+                  { label: "PIN Baru (minimal 4 angka)", val: newPin, set: setNewPin },
+                  { label: "Konfirmasi PIN Baru", val: confirmPin, set: setConfirmPin },
+                ] as { label: string; val: string; set: (v: string) => void }[]
+              ).map(({ label, val, set }) => (
+                <div key={label}>
+                  <label className="text-sm font-semibold text-gray-700 block mb-1">{label}</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={8}
+                    value={val}
+                    onChange={(e) => set(e.target.value.replace(/\D/g, ""))}
+                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={sendCode}
+              disabled={cooldown > 0 || sending}
+              className="text-sm font-semibold mt-3 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed"
+              style={{ color: cooldown > 0 ? undefined : "#C99A36" }}
+            >
+              {cooldown > 0 ? `Kirim ulang kode (${cooldown}s)` : "Kirim ulang kode"}
+            </button>
+          </>
+        )}
+
+        {msg && (
+          <p className={`mt-3 text-sm font-semibold py-2 px-3 rounded-lg ${
+            msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
+          }`}>{msg.text}</p>
+        )}
+
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+          >
+            Batal
+          </button>
+          {step === "verify" && (
+            <button
+              onClick={resetPin}
+              disabled={verifying}
+              className="flex-1 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: "#C99A36" }}
+            >
+              {verifying ? "Memverifikasi..." : "Reset PIN"}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -314,23 +521,37 @@ function PinLockScreen({ onUnlock }: { onUnlock: () => void }) {
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: GANTI PIN MODAL
 ═══════════════════════════════════════════════════════ */
-function ChangePinModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function ChangePinModal({ open, onClose, currentPin, onChanged }: {
+  open: boolean;
+  onClose: () => void;
+  currentPin: string;
+  onChanged: (newPin: string) => void;
+}) {
+  const supabase = createClient();
   const [oldPin, setOldPin] = useState("");
   const [newPin, setNewPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
+  const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   useEffect(() => {
     if (open) { setOldPin(""); setNewPin(""); setConfirmPin(""); setMsg(null); }
   }, [open]);
 
-  function save() {
-    const stored = localStorage.getItem(PIN_KEY) || DEFAULT_PIN;
-    if (oldPin !== stored) { setMsg({ type: "err", text: "PIN lama tidak sesuai." }); return; }
+  async function save() {
+    if (oldPin !== currentPin) { setMsg({ type: "err", text: "PIN lama tidak sesuai." }); return; }
     if (newPin.length < 4) { setMsg({ type: "err", text: "PIN baru minimal 4 angka." }); return; }
     if (!/^\d+$/.test(newPin)) { setMsg({ type: "err", text: "PIN hanya boleh angka." }); return; }
     if (newPin !== confirmPin) { setMsg({ type: "err", text: "Konfirmasi PIN tidak cocok." }); return; }
-    localStorage.setItem(PIN_KEY, newPin);
+
+    setSaving(true); setMsg(null);
+    const { error } = await supabase
+      .from("keuangan_pin")
+      .update({ pin: newPin, updated_at: new Date().toISOString() })
+      .eq("id", 1);
+    setSaving(false);
+    if (error) { setMsg({ type: "err", text: "Gagal menyimpan PIN: " + error.message }); return; }
+    onChanged(newPin);
     setMsg({ type: "ok", text: "PIN berhasil diubah!" });
     setTimeout(onClose, 1200);
   }
@@ -379,10 +600,11 @@ function ChangePinModal({ open, onClose }: { open: boolean; onClose: () => void 
           </button>
           <button
             onClick={save}
-            className="flex-1 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90"
+            disabled={saving}
+            className="flex-1 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-50"
             style={{ backgroundColor: "#C99A36" }}
           >
-            Simpan PIN
+            {saving ? "Menyimpan..." : "Simpan PIN"}
           </button>
         </div>
       </div>
@@ -450,7 +672,11 @@ function PrintHeader({ label }: { label: string }) {
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: KONTEN UTAMA KEUANGAN
 ═══════════════════════════════════════════════════════ */
-function KeuanganContent({ onLock }: { onLock: () => void }) {
+function KeuanganContent({ onLock, currentPin, onPinChanged }: {
+  onLock: () => void;
+  currentPin: string;
+  onPinChanged: (newPin: string) => void;
+}) {
   const supabase = createClient();
 
   /* ── Filter ── */
@@ -575,6 +801,16 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
 
   const gramMasuk = stokMasuk.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
   const nilaiMasuk = stokMasuk.reduce((s, r) => s + (r.harga_beli || 0) * r.jumlah, 0);
+
+  // Pisahkan buyback emas rosok dari pembelian stok biasa — supaya kas yang dibayarkan
+  // tunai ke customer untuk buyback rosok kelihatan jelas sebagai pengeluaran sendiri,
+  // bukan tercampur generik dengan pembelian stok dari supplier.
+  const stokMasukRosok = stokMasuk.filter((r) => r.sub_jenis_aset === "Emas Rosok");
+  const stokMasukReguler = stokMasuk.filter((r) => r.sub_jenis_aset !== "Emas Rosok");
+  const gramMasukRosok = stokMasukRosok.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+  const nilaiMasukRosok = stokMasukRosok.reduce((s, r) => s + (r.harga_beli || 0) * r.jumlah, 0);
+  const gramMasukReguler = stokMasukReguler.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+  const nilaiMasukReguler = stokMasukReguler.reduce((s, r) => s + (r.harga_beli || 0) * r.jumlah, 0);
 
   const gramKeluar = stokKeluar.reduce((s, k) => s + k.berat_gram * k.jumlah_keluar, 0);
   const keluarTerjual = stokKeluar.filter((k) => k.status_baru === "Terjual");
@@ -982,8 +1218,8 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                       );
                       if (rows.length === 0) return null;
                       const tBerat = rows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
-                      const tModal = rows.reduce((s, r) => s + (r.harga_beli || 0) * r.jumlah, 0);
-                      const tJual = rows.reduce((s, r) => s + (r.harga_jual || 0) * r.jumlah, 0);
+                      const tModalPersen = weightedAvgPersen(rows, "persen_modal");
+                      const tJualPersen = weightedAvgPersen(rows, "persen_jual");
                       return (
                         <div key={jenis} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
                           <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
@@ -995,15 +1231,15 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                               </p>
                             </div>
                             <div className="text-sm text-right">
-                              <p className="text-gray-600">Modal: <span className="font-bold">{fmtRp(tModal)}</span></p>
-                              <p className="text-green-700">Nilai Jual: <span className="font-bold">{fmtRp(tJual)}</span></p>
+                              <p className="text-gray-600">Rata-rata % Modal: <span className="font-bold">{fmtPersen(tModalPersen)}</span></p>
+                              <p className="text-green-700">Rata-rata % Jual: <span className="font-bold">{fmtPersen(tJualPersen)}</span></p>
                             </div>
                           </div>
                           <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                               <thead className="bg-gray-50">
                                 <tr>
-                                  {["No.", "Kode", "Nama Barang", "Kadar", "Berat/unit", "Jml", "Total Berat", "Harga Modal", "Harga Jual"].map((h) => (
+                                  {["No.", "Kode", "Nama Barang", "Kadar", "Berat/unit", "Jml", "Total Berat", "% Modal", "% Jual"].map((h) => (
                                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                                   ))}
                                 </tr>
@@ -1022,8 +1258,8 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                                     <td className="px-4 py-3 text-gray-600">{fmtGram(r.berat_gram)}</td>
                                     <td className="px-4 py-3 font-bold text-gray-900 text-center">{r.jumlah}</td>
                                     <td className="px-4 py-3 font-bold text-gray-900">{fmtGram(r.berat_gram * r.jumlah)}</td>
-                                    <td className="px-4 py-3 text-gray-600">{fmtRp(r.harga_beli || 0)}</td>
-                                    <td className="px-4 py-3 font-semibold text-green-700">{fmtRp(r.harga_jual || 0)}</td>
+                                    <td className="px-4 py-3 text-gray-600">{fmtPersen(r.persen_modal)}</td>
+                                    <td className="px-4 py-3 font-semibold text-green-700">{fmtPersen(r.persen_jual)}</td>
                                   </tr>
                                 ))}
                               </tbody>
@@ -1033,8 +1269,8 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                                     SUBTOTAL {jenis}
                                   </td>
                                   <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(tBerat)}</td>
-                                  <td className="px-4 py-3 font-bold text-gray-700">{fmtRp(tModal)}</td>
-                                  <td className="px-4 py-3 font-bold text-green-700">{fmtRp(tJual)}</td>
+                                  <td className="px-4 py-3 font-bold text-gray-700">{fmtPersen(tModalPersen)}</td>
+                                  <td className="px-4 py-3 font-bold text-green-700">{fmtPersen(tJualPersen)}</td>
                                 </tr>
                               </tfoot>
                             </table>
@@ -1094,7 +1330,7 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                             <table className="w-full text-sm">
                               <thead className="bg-orange-50">
                                 <tr>
-                                  {["No.", "Kode", "Nama Barang", "Kadar", "Berat", "Jml", "Tgl Masuk", "Hari di Toko", "Harga Modal"].map((h) => (
+                                  {["No.", "Kode", "Nama Barang", "Kadar", "Berat", "Jml", "Tgl Masuk", "Hari di Toko", "% Modal"].map((h) => (
                                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-orange-700 whitespace-nowrap">{h}</th>
                                   ))}
                                 </tr>
@@ -1118,7 +1354,7 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                                           {hari} hari
                                         </span>
                                       </td>
-                                      <td className="px-4 py-3 text-gray-700">{fmtRp(r.harga_beli || 0)}</td>
+                                      <td className="px-4 py-3 text-gray-700">{fmtPersen(r.persen_modal)}</td>
                                     </tr>
                                   );
                                 })}
@@ -1162,7 +1398,7 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                         <table className="w-full text-sm">
                           <thead className="bg-blue-50">
                             <tr>
-                              {["No.", "Tanggal", "Kode", "Nama Barang", "Kadar", "Berat", "Jml", "Total Berat", "Harga Beli", "Supplier"].map((h) => (
+                              {["No.", "Tanggal", "Kode", "Nama Barang", "Kadar", "Berat", "Jml", "Total Berat", "% Modal", "Supplier"].map((h) => (
                                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                               ))}
                             </tr>
@@ -1180,7 +1416,7 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                                 <td className="px-4 py-3 text-gray-600">{fmtGram(r.berat_gram)}</td>
                                 <td className="px-4 py-3 font-bold text-center">{r.jumlah}</td>
                                 <td className="px-4 py-3 font-bold text-blue-700">{fmtGram(r.berat_gram * r.jumlah)}</td>
-                                <td className="px-4 py-3 text-gray-700">{fmtRp(r.harga_beli || 0)}</td>
+                                <td className="px-4 py-3 text-gray-700">{fmtPersen(r.persen_modal)}</td>
                                 <td className="px-4 py-3 text-xs text-gray-500">{(r as StokRow & { supplier?: string }).supplier ?? "—"}</td>
                               </tr>
                             ))}
@@ -1465,9 +1701,14 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                     <div>
                       {[
                         {
-                          label: "Pembelian Stok Baru",
-                          value: nilaiMasuk,
-                          detail: `${stokMasuk.length} item dibeli &bull; ${fmtGram(gramMasuk)} total`,
+                          label: "Pembelian Stok dari Supplier",
+                          value: nilaiMasukReguler,
+                          detail: `${stokMasukReguler.length} item dibeli &bull; ${fmtGram(gramMasukReguler)} total`,
+                        },
+                        {
+                          label: "Buyback Emas Rosok",
+                          value: nilaiMasukRosok,
+                          detail: `${stokMasukRosok.length} item dibeli &bull; ${fmtGram(gramMasukRosok)} total`,
                         },
                       ].map((item) => (
                         <div key={item.label} className="px-5 py-4 flex items-center justify-between border-b border-gray-50 last:border-0">
@@ -1545,7 +1786,7 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                       <table className="w-full text-sm">
                         <thead className="bg-amber-50">
                           <tr>
-                            {["Kadar", "Jumlah Item", "Total Unit", "Total Gram", "Nilai Modal", "Nilai Jual Est.", "Potensi Laba"].map((h) => (
+                            {["Kadar", "Jumlah Item", "Total Unit", "Total Gram", "Rata-rata % Modal", "Rata-rata % Jual", "Margin %"].map((h) => (
                               <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
@@ -1553,29 +1794,30 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                         <tbody className="divide-y divide-gray-50">
                           {(() => {
                             const byKadar = sisaStok.reduce((acc, r) => {
-                              if (!acc[r.kadar]) acc[r.kadar] = { items: 0, units: 0, gram: 0, modal: 0, jual: 0 };
-                              acc[r.kadar].items += 1;
-                              acc[r.kadar].units += r.jumlah;
-                              acc[r.kadar].gram += r.berat_gram * r.jumlah;
-                              acc[r.kadar].modal += (r.harga_beli || 0) * r.jumlah;
-                              acc[r.kadar].jual += (r.harga_jual || 0) * r.jumlah;
+                              if (!acc[r.kadar]) acc[r.kadar] = [];
+                              acc[r.kadar].push(r);
                               return acc;
-                            }, {} as Record<string, { items: number; units: number; gram: number; modal: number; jual: number }>);
+                            }, {} as Record<string, StokRow[]>);
                             return Object.entries(byKadar)
                               .sort((a, b) => parseInt(b[0]) - parseInt(a[0]))
-                              .map(([kadar, v]) => (
-                                <tr key={kadar} className="hover:bg-amber-50/30">
-                                  <td className="px-4 py-3">
-                                    <span className="px-3 py-1 rounded-full font-black text-sm bg-amber-100 text-amber-900">{kadar}</span>
-                                  </td>
-                                  <td className="px-4 py-3 text-gray-700">{v.items}</td>
-                                  <td className="px-4 py-3 font-semibold text-gray-800">{v.units}</td>
-                                  <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(v.gram)}</td>
-                                  <td className="px-4 py-3 text-gray-600">{fmtRp(v.modal)}</td>
-                                  <td className="px-4 py-3 font-semibold text-green-700">{fmtRp(v.jual)}</td>
-                                  <td className="px-4 py-3 font-semibold text-blue-700">{fmtRp(v.jual - v.modal)}</td>
-                                </tr>
-                              ));
+                              .map(([kadar, rows]) => {
+                                const gram = rows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+                                const modalPersen = weightedAvgPersen(rows, "persen_modal");
+                                const jualPersen = weightedAvgPersen(rows, "persen_jual");
+                                return (
+                                  <tr key={kadar} className="hover:bg-amber-50/30">
+                                    <td className="px-4 py-3">
+                                      <span className="px-3 py-1 rounded-full font-black text-sm bg-amber-100 text-amber-900">{kadar}</span>
+                                    </td>
+                                    <td className="px-4 py-3 text-gray-700">{rows.length}</td>
+                                    <td className="px-4 py-3 font-semibold text-gray-800">{rows.reduce((s, r) => s + r.jumlah, 0)}</td>
+                                    <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(gram)}</td>
+                                    <td className="px-4 py-3 text-gray-600">{fmtPersen(modalPersen)}</td>
+                                    <td className="px-4 py-3 font-semibold text-green-700">{fmtPersen(jualPersen)}</td>
+                                    <td className="px-4 py-3 font-semibold text-blue-700">{fmtPersen(jualPersen - modalPersen)}</td>
+                                  </tr>
+                                );
+                              });
                           })()}
                         </tbody>
                         <tfoot style={{ backgroundColor: "#FEF9C3", borderTop: "2px solid #FDE047" }}>
@@ -1584,9 +1826,11 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                             <td className="px-4 py-3 font-extrabold text-gray-800">{sisaStok.length}</td>
                             <td className="px-4 py-3 font-extrabold text-gray-800">{sisaStok.reduce((s, r) => s + r.jumlah, 0)}</td>
                             <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(totalGramSisa)}</td>
-                            <td className="px-4 py-3 font-extrabold text-gray-700">{fmtRp(totalNilaiModal)}</td>
-                            <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalNilaiJual)}</td>
-                            <td className="px-4 py-3 font-extrabold text-blue-700">{fmtRp(totalPotensiLaba)}</td>
+                            <td className="px-4 py-3 font-extrabold text-gray-700">{fmtPersen(weightedAvgPersen(sisaStok, "persen_modal"))}</td>
+                            <td className="px-4 py-3 font-extrabold text-green-700">{fmtPersen(weightedAvgPersen(sisaStok, "persen_jual"))}</td>
+                            <td className="px-4 py-3 font-extrabold text-blue-700">
+                              {fmtPersen(weightedAvgPersen(sisaStok, "persen_jual") - weightedAvgPersen(sisaStok, "persen_modal"))}
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
@@ -1602,7 +1846,7 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                       <table className="w-full text-sm">
                         <thead className="bg-gray-50">
                           <tr>
-                            {["Kategori", "Jumlah Item", "Total Unit", "Total Gram", "Nilai Modal", "Nilai Jual Est.", "Potensi Laba"].map((h) => (
+                            {["Kategori", "Jumlah Item", "Total Unit", "Total Gram", "Rata-rata % Modal", "Rata-rata % Jual", "Margin %"].map((h) => (
                               <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                             ))}
                           </tr>
@@ -1611,27 +1855,32 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                           {(() => {
                             const byKat = sisaStok.reduce((acc, r) => {
                               const k = r.kategori || "Lainnya";
-                              if (!acc[k]) acc[k] = { items: 0, units: 0, gram: 0, modal: 0, jual: 0 };
-                              acc[k].items += 1;
-                              acc[k].units += r.jumlah;
-                              acc[k].gram += r.berat_gram * r.jumlah;
-                              acc[k].modal += (r.harga_beli || 0) * r.jumlah;
-                              acc[k].jual += (r.harga_jual || 0) * r.jumlah;
+                              if (!acc[k]) acc[k] = [];
+                              acc[k].push(r);
                               return acc;
-                            }, {} as Record<string, { items: number; units: number; gram: number; modal: number; jual: number }>);
+                            }, {} as Record<string, StokRow[]>);
                             return Object.entries(byKat)
-                              .sort((a, b) => b[1].gram - a[1].gram)
-                              .map(([kat, v]) => (
-                                <tr key={kat} className="hover:bg-gray-50/60">
-                                  <td className="px-4 py-3 font-semibold text-gray-800">{kat}</td>
-                                  <td className="px-4 py-3 text-gray-700">{v.items}</td>
-                                  <td className="px-4 py-3 font-semibold text-gray-800">{v.units}</td>
-                                  <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(v.gram)}</td>
-                                  <td className="px-4 py-3 text-gray-600">{fmtRp(v.modal)}</td>
-                                  <td className="px-4 py-3 font-semibold text-green-700">{fmtRp(v.jual)}</td>
-                                  <td className="px-4 py-3 font-semibold text-blue-700">{fmtRp(v.jual - v.modal)}</td>
-                                </tr>
-                              ));
+                              .sort((a, b) => {
+                                const gramA = a[1].reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+                                const gramB = b[1].reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+                                return gramB - gramA;
+                              })
+                              .map(([kat, rows]) => {
+                                const gram = rows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+                                const modalPersen = weightedAvgPersen(rows, "persen_modal");
+                                const jualPersen = weightedAvgPersen(rows, "persen_jual");
+                                return (
+                                  <tr key={kat} className="hover:bg-gray-50/60">
+                                    <td className="px-4 py-3 font-semibold text-gray-800">{kat}</td>
+                                    <td className="px-4 py-3 text-gray-700">{rows.length}</td>
+                                    <td className="px-4 py-3 font-semibold text-gray-800">{rows.reduce((s, r) => s + r.jumlah, 0)}</td>
+                                    <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(gram)}</td>
+                                    <td className="px-4 py-3 text-gray-600">{fmtPersen(modalPersen)}</td>
+                                    <td className="px-4 py-3 font-semibold text-green-700">{fmtPersen(jualPersen)}</td>
+                                    <td className="px-4 py-3 font-semibold text-blue-700">{fmtPersen(jualPersen - modalPersen)}</td>
+                                  </tr>
+                                );
+                              });
                           })()}
                         </tbody>
                         <tfoot className="bg-gray-100" style={{ borderTop: "2px solid #E5E7EB" }}>
@@ -1640,9 +1889,11 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                             <td className="px-4 py-3 font-extrabold text-gray-800">{sisaStok.length}</td>
                             <td className="px-4 py-3 font-extrabold text-gray-800">{sisaStok.reduce((s, r) => s + r.jumlah, 0)}</td>
                             <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(totalGramSisa)}</td>
-                            <td className="px-4 py-3 font-extrabold text-gray-700">{fmtRp(totalNilaiModal)}</td>
-                            <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalNilaiJual)}</td>
-                            <td className="px-4 py-3 font-extrabold text-blue-700">{fmtRp(totalPotensiLaba)}</td>
+                            <td className="px-4 py-3 font-extrabold text-gray-700">{fmtPersen(weightedAvgPersen(sisaStok, "persen_modal"))}</td>
+                            <td className="px-4 py-3 font-extrabold text-green-700">{fmtPersen(weightedAvgPersen(sisaStok, "persen_jual"))}</td>
+                            <td className="px-4 py-3 font-extrabold text-blue-700">
+                              {fmtPersen(weightedAvgPersen(sisaStok, "persen_jual") - weightedAvgPersen(sisaStok, "persen_modal"))}
+                            </td>
                           </tr>
                         </tfoot>
                       </table>
@@ -1782,13 +2033,26 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
                     <h3 className="font-extrabold text-gray-900 mb-4">Ringkasan Modal Keseluruhan</h3>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       {[
-                        { label: "Modal dalam Stok", value: totalNilaiModal, color: "bg-amber-50 text-amber-900", border: "border-amber-200" },
-                        { label: "Estimasi Nilai Jual Stok", value: totalNilaiJual, color: "bg-green-50 text-green-800", border: "border-green-200" },
-                        { label: "Potensi Laba dari Stok", value: totalPotensiLaba, color: "bg-blue-50 text-blue-800", border: "border-blue-200" },
+                        {
+                          label: "Modal dalam Stok", value: totalNilaiModal,
+                          persen: weightedAvgPersen(sisaStok, "persen_modal"),
+                          color: "bg-amber-50 text-amber-900", border: "border-amber-200",
+                        },
+                        {
+                          label: "Estimasi Nilai Jual Stok", value: totalNilaiJual,
+                          persen: weightedAvgPersen(sisaStok, "persen_jual"),
+                          color: "bg-green-50 text-green-800", border: "border-green-200",
+                        },
+                        {
+                          label: "Potensi Laba dari Stok", value: totalPotensiLaba,
+                          persen: weightedAvgPersen(sisaStok, "persen_jual") - weightedAvgPersen(sisaStok, "persen_modal"),
+                          color: "bg-blue-50 text-blue-800", border: "border-blue-200",
+                        },
                       ].map((c) => (
                         <div key={c.label} className={`rounded-xl p-4 border ${c.color} ${c.border}`}>
                           <p className="text-xs font-semibold opacity-70 mb-1.5">{c.label}</p>
                           <p className="text-xl font-black">{fmtRp(c.value)}</p>
+                          <p className="text-xs font-semibold opacity-70 mt-1">Rata-rata: {fmtPersen(c.persen)}</p>
                         </div>
                       ))}
                     </div>
@@ -1963,7 +2227,12 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
         </div>
       </AppLayout>
 
-      <ChangePinModal open={showChangePin} onClose={() => setShowChangePin(false)} />
+      <ChangePinModal
+        open={showChangePin}
+        onClose={() => setShowChangePin(false)}
+        currentPin={currentPin}
+        onChanged={onPinChanged}
+      />
     </>
   );
 }
@@ -1972,22 +2241,50 @@ function KeuanganContent({ onLock }: { onLock: () => void }) {
    EXPORT UTAMA — Gate PIN
 ═══════════════════════════════════════════════════════ */
 export default function KeuanganPage() {
+  const supabase = createClient();
   const [unlocked, setUnlocked] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [pinLoaded, setPinLoaded] = useState(false);
+  const [currentPin, setCurrentPin] = useState(DEFAULT_PIN);
 
   useEffect(() => {
     setMounted(true);
     try {
       if (sessionStorage.getItem(SESSION_KEY) === "1") setUnlocked(true);
     } catch { /* ignore */ }
-  }, []);
+    supabase
+      .from("keuangan_pin")
+      .select("pin")
+      .eq("id", 1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.pin) setCurrentPin(data.pin);
+        setPinLoaded(true);
+      });
 
-  if (!mounted) return null;
+    // Kunci ulang begitu halaman ini ditinggalkan (pindah menu), agar PIN
+    // wajib dimasukkan lagi tiap kali halaman Keuangan dibuka.
+    return () => {
+      try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!unlocked) return <PinLockScreen onUnlock={() => setUnlocked(true)} />;
+  if (!mounted || !pinLoaded) return null;
+
+  if (!unlocked) {
+    return (
+      <PinLockScreen
+        storedPin={currentPin}
+        onUnlock={() => setUnlocked(true)}
+        onPinReset={setCurrentPin}
+      />
+    );
+  }
 
   return (
     <KeuanganContent
+      currentPin={currentPin}
+      onPinChanged={setCurrentPin}
       onLock={() => {
         try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
         setUnlocked(false);
