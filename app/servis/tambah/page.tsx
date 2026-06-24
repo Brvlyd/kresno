@@ -7,8 +7,11 @@ import { createClient } from "@/lib/supabase/client";
 import {
   JENIS_PERHIASAN_OPTIONS, KADAR_OPTIONS, JENIS_KERUSAKAN_OPTIONS, JENIS_TINDAKAN_OPTIONS,
   PRIORITAS_OPTIONS, ESTIMASI_WAKTU_OPTIONS, fmtRupiah,
-  generateNoServis, hitungEstimasiSelesai, cetakInvoiceServis,
+  generateNoServis, hitungEstimasiSelesai,
 } from "@/lib/servis";
+import type { InvoiceServisData } from "@/lib/servis";
+import { InvoiceServis } from "@/components/InvoiceServis";
+import { printClean } from "@/lib/print";
 
 interface FormData {
   pelanggan_nama: string;
@@ -64,6 +67,7 @@ function TambahServisContent() {
   const [msg, setMsg] = useState("");
   const [savedNoServis, setSavedNoServis] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   const estimasiTouchedRef = useRef(false);
 
   const set = <K extends keyof FormData>(key: K, val: FormData[K]) =>
@@ -169,39 +173,47 @@ function TambahServisContent() {
     if (result) setMsg("✓ Servis berhasil disimpan!");
   };
 
-  const cetak = async () => {
-    let noServis = savedNoServis;
-    if (!noServis) {
-      const result = await simpan();
-      if (!result) return;
-      noServis = result.no_servis;
-    }
-    cetakInvoiceServis({
-      no_servis: noServis,
-      tanggal_masuk: form.tanggal_masuk,
-      jenis_servis: jenisServis as "Cuci" | "Perbaikan",
-      pelanggan_nama: form.pelanggan_nama.trim(),
-      pelanggan_alamat: form.pelanggan_alamat.trim(),
-      pelanggan_hp: form.pelanggan_hp.trim(),
-      jenis_perhiasan: form.jenis_perhiasan,
-      nama_barang: form.nama_barang.trim(),
-      berat_gram: parseFloat(form.berat_gram) || 0,
-      kadar: form.kadar,
-      kondisi_awal: form.kondisi_awal.trim(),
-      jenis_kerusakan: jenisServis === "Perbaikan" ? form.jenis_kerusakan : undefined,
-      jenis_tindakan: jenisServis === "Perbaikan" ? form.jenis_tindakan : undefined,
-      prioritas: jenisServis === "Perbaikan" ? form.prioritas : undefined,
-      estimasi_biaya: Math.round(parseFloat(form.estimasi_biaya) || 0),
-      uang_muka: Math.round(parseFloat(form.uang_muka) || 0),
-      estimasi_selesai: form.estimasi_selesai,
-    });
+  const invoiceData: InvoiceServisData = {
+    no_servis: savedNoServis ?? "",
+    tanggal_masuk: form.tanggal_masuk,
+    jenis_servis: (jenisServis ?? "Cuci") as "Cuci" | "Perbaikan",
+    nama_barang: form.nama_barang.trim(),
+    berat_gram: parseFloat(form.berat_gram) || 0,
+    kadar: form.kadar,
+    estimasi_selesai: form.estimasi_selesai,
+    estimasi_biaya: Math.round(parseFloat(form.estimasi_biaya) || 0),
+    uang_muka: Math.round(parseFloat(form.uang_muka) || 0),
+  };
+
+  const mulaiServisBaru = () => {
+    setForm(emptyForm);
+    setJenisServis(null);
+    setSavedId(null);
+    setSavedNoServis(null);
+    setShowPreviewModal(false);
+    setMsg("");
+    estimasiTouchedRef.current = false;
   };
 
   const sisaPembayaran = (Math.round(parseFloat(form.estimasi_biaya) || 0)) - (Math.round(parseFloat(form.uang_muka) || 0));
 
   return (
-    <AppLayout>
-      <div className="flex-1 flex flex-col bg-white min-h-screen">
+    <>
+      {/* Print CSS */}
+      <style>{`
+        @media print {
+          aside, nav, #servis-form-screen, #servis-preview-overlay { display: none !important; }
+          #invoice-print { display: block !important; }
+          html, body { background: white !important; margin: 0; }
+          @page { size: A5 landscape; margin: 10mm; }
+        }
+      `}</style>
+
+      {/* Invoice — hidden on screen, visible on print */}
+      {savedNoServis && <InvoiceServis mode="print" data={invoiceData} />}
+
+      <AppLayout>
+      <div id="servis-form-screen" className="flex-1 flex flex-col bg-white min-h-screen">
         <div className="px-4 sm:px-6 pt-6 pb-10 max-w-5xl mx-auto w-full flex flex-col gap-5">
           <div>
             <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
@@ -211,6 +223,40 @@ function TambahServisContent() {
               Pilih jenis layanan, lalu isi data servis di bawah ini.
             </p>
           </div>
+
+          {savedNoServis ? (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center space-y-3">
+              <p className="text-4xl">✅</p>
+              <p className="text-lg font-bold text-gray-800">Servis berhasil disimpan!</p>
+              <p className="text-sm text-gray-500">
+                No. Servis: <span className="font-mono font-semibold">{savedNoServis}</span>
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center pt-2">
+                <button
+                  onClick={() => setShowPreviewModal(true)}
+                  className="px-6 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                  style={{ backgroundColor: "#C99A36" }}
+                >
+                  🖨️ Lihat / Cetak Invoice
+                </button>
+                <button
+                  onClick={mulaiServisBaru}
+                  className="px-6 py-3 rounded-xl border-2 font-bold hover:bg-amber-50 transition-all"
+                  style={{ borderColor: "#C99A36", color: "#C99A36" }}
+                >
+                  + Servis Baru
+                </button>
+              </div>
+              <div className="pt-1">
+                <button
+                  onClick={() => router.push("/servis")}
+                  className="text-sm font-semibold text-[#C99A36] hover:underline"
+                >
+                  Kembali ke Daftar Servis
+                </button>
+              </div>
+            </div>
+          ) : (<>
 
           {/* Pilih jenis servis */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -628,14 +674,6 @@ function TambahServisContent() {
               Batal
             </button>
             <button
-              onClick={cetak}
-              disabled={saving || !jenisServis}
-              className="flex-1 py-3.5 rounded-xl border-2 font-semibold text-base transition-colors hover:bg-amber-50 disabled:opacity-50"
-              style={{ borderColor: "#C99A36", color: "#C99A36" }}
-            >
-              Cetak Invoice Servis
-            </button>
-            <button
               onClick={simpanServis}
               disabled={saving || !jenisServis}
               className="flex-1 py-3.5 rounded-xl text-white font-semibold text-base transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
@@ -645,19 +683,51 @@ function TambahServisContent() {
             </button>
           </div>
 
-          {savedNoServis && (
-            <div className="flex justify-center">
-              <button
-                onClick={() => router.push("/servis")}
-                className="text-sm font-semibold text-[#C99A36] hover:underline"
-              >
-                Kembali ke Daftar Servis
-              </button>
-            </div>
-          )}
+          </>)}
         </div>
       </div>
-    </AppLayout>
+      </AppLayout>
+
+      {/* ── MODAL: PREVIEW / CETAK INVOICE ── */}
+      {showPreviewModal && savedNoServis && (
+        <div id="servis-preview-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Preview Invoice Servis</h2>
+                <p className="text-xs text-gray-400">Periksa kembali sebelum dicetak.</p>
+              </div>
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
+                <InvoiceServis mode="preview" data={invoiceData} />
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
+              <button
+                onClick={() => setShowPreviewModal(false)}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+              >
+                ✕ Tutup
+              </button>
+              <button
+                onClick={() => printClean()}
+                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                🖨️ Cetak Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -20,6 +20,10 @@ export const JANGKA_WAKTU_OPTIONS = [1, 3, 6, 12];
 export const STATUS_AWAL_OPTIONS = ["Menunggu", "Diproses", "Aktif"];
 
 export const fmtRupiah = (n: number) => "Rp " + new Intl.NumberFormat("id-ID").format(n);
+export const fmtGram = (n: number) => (n || 0).toFixed(2) + " gr";
+
+export const tglIndo = (iso: string) =>
+  iso ? new Date(iso).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }) : "";
 
 /** Buat nomor gadai unik: G-YYYYMMDD-XXX */
 export function generateNoGadai(): string {
@@ -68,104 +72,48 @@ export function buildCicilanSchedule(
   return schedule;
 }
 
-const tglIndo = (iso: string) =>
-  new Date(iso).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
-
 export interface InvoiceGadaiData {
   no_gadai: string;
-  tanggal_gadai: string;
-  pelanggan_nama: string;
-  pelanggan_alamat: string;
-  pelanggan_hp: string;
   jenis_perhiasan: string;
   nama_barang: string;
   berat_gram: number;
   kadar: string;
-  nilai_taksiran: number;
   nilai_pinjaman: number;
   bunga_persen: number;
-  jangka_waktu_bulan: number;
+  tanggal_gadai: string;
   tanggal_jatuh_tempo: string;
-  opsi_pembayaran: "Tunai" | "Cicilan";
-  cicilanPerBulan?: number;
+  catatan?: string;
 }
 
-/** Cetak invoice gadai (A5) — pola sama dengan cetakBarcode di app/inventori/page.tsx */
-export function cetakInvoiceGadai(data: InvoiceGadaiData) {
-  const w = window.open("", "_blank", "width=600,height=800");
-  if (!w) return;
-
-  const cicilanRow = data.opsi_pembayaran === "Cicilan" && data.cicilanPerBulan
-    ? `<tr><td>Cicilan per Bulan</td><td>${data.jangka_waktu_bulan}x ${fmtRupiah(data.cicilanPerBulan)}</td></tr>`
-    : "";
-
-  w.document.write(`
-    <html><head><title>Invoice ${data.no_gadai}</title>
-    <style>
-      @page { size: A5; margin: 10mm; }
-      * { box-sizing: border-box; }
-      body { margin: 0; font-family: Arial, sans-serif; font-size: 12px; color: #222; }
-      .header { text-align: center; margin-bottom: 10px; }
-      .header .toko { font-size: 16px; font-weight: bold; }
-      .header .judul { font-size: 13px; font-weight: bold; margin-top: 4px; letter-spacing: 1px; }
-      .header .nomor { font-size: 11px; color: #555; margin-top: 2px; }
-      hr { border: none; border-top: 1px solid #999; margin: 8px 0; }
-      h3 { font-size: 12px; margin: 10px 0 4px; text-transform: uppercase; letter-spacing: 0.5px; }
-      table { width: 100%; border-collapse: collapse; }
-      table td { padding: 2px 0; vertical-align: top; }
-      table td:first-child { width: 45%; color: #555; }
-      .ketentuan { font-size: 10px; color: #444; margin-top: 4px; padding-left: 16px; }
-      .ketentuan li { margin-bottom: 3px; }
-      .ttd { display: flex; justify-content: space-between; margin-top: 30px; text-align: center; font-size: 11px; }
-      .ttd div { width: 45%; }
-      .ttd .line { margin-top: 40px; border-top: 1px solid #333; padding-top: 4px; }
-    </style></head>
-    <body>
-      <div class="header">
-        <div class="toko">Toko Mas Kresno</div>
-        <div class="judul">INVOICE GADAI</div>
-        <div class="nomor">No. ${data.no_gadai} • ${tglIndo(data.tanggal_gadai)}</div>
-      </div>
-      <hr/>
-
-      <h3>Data Pelanggan</h3>
-      <table>
-        <tr><td>Nama</td><td>${data.pelanggan_nama}</td></tr>
-        <tr><td>Alamat</td><td>${data.pelanggan_alamat || "-"}</td></tr>
-        <tr><td>No. HP</td><td>${data.pelanggan_hp || "-"}</td></tr>
-      </table>
-
-      <h3>Data Barang</h3>
-      <table>
-        <tr><td>Jenis Barang</td><td>${data.jenis_perhiasan} — ${data.nama_barang}</td></tr>
-        <tr><td>Berat</td><td>${data.berat_gram} gram</td></tr>
-        <tr><td>Kadar</td><td>${data.kadar}</td></tr>
-      </table>
-
-      <h3>Data Pinjaman</h3>
-      <table>
-        <tr><td>Nilai Taksiran</td><td>${fmtRupiah(data.nilai_taksiran)}</td></tr>
-        <tr><td>Nilai Pinjaman</td><td>${fmtRupiah(data.nilai_pinjaman)}</td></tr>
-        <tr><td>Bunga</td><td>${data.bunga_persen}% / bulan</td></tr>
-        <tr><td>Jangka Waktu</td><td>${data.jangka_waktu_bulan} bulan</td></tr>
-        <tr><td>Tanggal Jatuh Tempo</td><td>${tglIndo(data.tanggal_jatuh_tempo)}</td></tr>
-        <tr><td>Opsi Pembayaran</td><td>${data.opsi_pembayaran}</td></tr>
-        ${cicilanRow}
-      </table>
-
-      <h3>Ketentuan</h3>
-      <ul class="ketentuan">
-        <!-- Placeholder — ketentuan resmi menyusul dari pihak toko -->
-        <li>Ketentuan gadai akan diinformasikan menyusul oleh pihak toko.</li>
-      </ul>
-
-      <div class="ttd">
-        <div><div class="line">Pelanggan</div></div>
-        <div><div class="line">Petugas</div></div>
-      </div>
-
-      <script>window.onload = function () { window.print(); };</script>
-    </body></html>
-  `);
-  w.document.close();
+/** Terbilang sederhana (Bahasa Indonesia) — dipakai untuk baris "Rp (...)" di nota gadai. */
+export function terbilang(angka: number): string {
+  const satuan = [
+    "", "satu", "dua", "tiga", "empat", "lima",
+    "enam", "tujuh", "delapan", "sembilan", "sepuluh",
+    "sebelas", "dua belas", "tiga belas", "empat belas", "lima belas",
+    "enam belas", "tujuh belas", "delapan belas", "sembilan belas",
+  ];
+  if (angka === 0) return "nol";
+  if (angka < 0) return "minus " + terbilang(-angka);
+  let r = "";
+  if (angka >= 1_000_000_000) { r += terbilang(Math.floor(angka / 1_000_000_000)) + " miliar "; angka %= 1_000_000_000; }
+  if (angka >= 1_000_000)     { r += terbilang(Math.floor(angka / 1_000_000))     + " juta ";   angka %= 1_000_000; }
+  if (angka >= 1_000) {
+    const rb = Math.floor(angka / 1_000);
+    r += (rb === 1 ? "se" : terbilang(rb) + " ") + "ribu ";
+    angka %= 1_000;
+  }
+  if (angka >= 100) {
+    const rt = Math.floor(angka / 100);
+    r += (rt === 1 ? "se" : terbilang(rt) + " ") + "ratus ";
+    angka %= 100;
+  }
+  if (angka > 0) {
+    if (angka < 20) r += satuan[angka];
+    else {
+      r += satuan[Math.floor(angka / 10)] + " puluh";
+      if (angka % 10 > 0) r += " " + satuan[angka % 10];
+    }
+  }
+  return r.trim();
 }

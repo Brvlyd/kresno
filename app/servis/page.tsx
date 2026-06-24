@@ -4,7 +4,10 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { fmtRupiah, cetakInvoiceServis } from "@/lib/servis";
+import { fmtRupiah } from "@/lib/servis";
+import type { InvoiceServisData } from "@/lib/servis";
+import { InvoiceServis } from "@/components/InvoiceServis";
+import { printClean } from "@/lib/print";
 
 /* ─── Types ─── */
 interface ServisRow {
@@ -65,6 +68,7 @@ function DetailServisPopup({
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [showInvoicePreview, setShowInvoicePreview] = useState(false);
 
   useEffect(() => {
     if (open) setMsg("");
@@ -98,30 +102,33 @@ function DetailServisPopup({
     onClose();
   };
 
-  const cetak = () => {
-    cetakInvoiceServis({
-      no_servis: item.no_servis,
-      tanggal_masuk: item.tanggal_masuk,
-      jenis_servis: item.jenis_servis,
-      pelanggan_nama: item.pelanggan_nama,
-      pelanggan_alamat: item.pelanggan_alamat ?? "",
-      pelanggan_hp: item.pelanggan_hp ?? "",
-      jenis_perhiasan: item.jenis_perhiasan,
-      nama_barang: item.nama_barang,
-      berat_gram: item.berat_gram,
-      kadar: item.kadar,
-      kondisi_awal: item.kondisi_awal ?? "",
-      jenis_kerusakan: item.jenis_kerusakan ?? undefined,
-      jenis_tindakan: item.jenis_tindakan ?? undefined,
-      prioritas: item.prioritas ?? undefined,
-      estimasi_biaya: item.estimasi_biaya,
-      uang_muka: item.uang_muka,
-      estimasi_selesai: item.estimasi_selesai ?? item.tanggal_masuk,
-    });
+  const invoiceData: InvoiceServisData = {
+    no_servis: item.no_servis,
+    tanggal_masuk: item.tanggal_masuk,
+    jenis_servis: item.jenis_servis,
+    nama_barang: item.nama_barang,
+    berat_gram: item.berat_gram,
+    kadar: item.kadar,
+    estimasi_selesai: item.estimasi_selesai ?? item.tanggal_masuk,
+    estimasi_biaya: item.estimasi_biaya,
+    uang_muka: item.uang_muka,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <>
+      {/* Print CSS */}
+      <style>{`
+        @media print {
+          aside, nav, #servis-screen, #servis-detail-overlay, #servis-invoice-preview-overlay { display: none !important; }
+          #invoice-print { display: block !important; }
+          html, body { background: white !important; margin: 0; }
+          @page { size: A5 landscape; margin: 10mm; }
+        }
+      `}</style>
+      {/* Invoice — hidden on screen, visible on print */}
+      <InvoiceServis mode="print" data={invoiceData} />
+
+    <div id="servis-detail-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
@@ -229,11 +236,11 @@ function DetailServisPopup({
           {/* Actions */}
           <div className="flex gap-3 pt-2 border-t border-gray-100">
             <button
-              onClick={cetak}
+              onClick={() => setShowInvoicePreview(true)}
               className="flex-1 py-3 rounded-xl border-2 font-semibold text-base transition-colors hover:bg-amber-50"
               style={{ borderColor: "#C99A36", color: "#C99A36" }}
             >
-              Cetak Invoice Servis
+              🖨️ Cetak Invoice Servis
             </button>
             {(item.status === "Menunggu" || item.status === "Diproses") && (
               <button
@@ -271,6 +278,47 @@ function DetailServisPopup({
         </div>
       </div>
     </div>
+
+      {/* ── MODAL: PREVIEW / CETAK INVOICE ── */}
+      {showInvoicePreview && (
+        <div id="servis-invoice-preview-overlay" className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Preview Invoice Servis</h2>
+                <p className="text-xs text-gray-400">{item.no_servis}</p>
+              </div>
+              <button
+                onClick={() => setShowInvoicePreview(false)}
+                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
+                <InvoiceServis mode="preview" data={invoiceData} />
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
+              <button
+                onClick={() => setShowInvoicePreview(false)}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+              >
+                ✕ Tutup
+              </button>
+              <button
+                onClick={() => printClean()}
+                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                🖨️ Cetak Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -446,7 +494,7 @@ export default function ServisPage() {
 
   return (
     <AppLayout>
-      <div className="flex-1 flex flex-col bg-white min-h-screen">
+      <div id="servis-screen" className="flex-1 flex flex-col bg-white min-h-screen">
         <div className="px-4 sm:px-6 pb-8 space-y-6 pt-4">
 
           {/* Title */}

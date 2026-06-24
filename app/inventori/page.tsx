@@ -7,6 +7,10 @@ import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { prefixForKategori, buildPrefixCounters, nextId } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
+import { generateNoBuyback } from "@/lib/buyback";
+import type { InvoiceBuybackData } from "@/lib/buyback";
+import { InvoiceBuyback } from "@/components/InvoiceBuyback";
+import { printClean } from "@/lib/print";
 import JsBarcode from "jsbarcode";
 
 /* ─── Types ─── */
@@ -31,6 +35,7 @@ interface BarangRow {
   gambar_url?: string;
   jenis_inventori: string;
   sub_jenis_aset?: string | null;
+  no_buyback?: string | null;
 }
 
 interface FormData {
@@ -361,7 +366,7 @@ function BarcodePreviewModal({
 
 /* ─── Popup Detail Barang ─── */
 function DetailBarangPopup({
-  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmasByKarat,
+  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmasByKarat, onBuybackSaved,
 }: {
   open: boolean;
   onClose: () => void;
@@ -374,6 +379,7 @@ function DetailBarangPopup({
   onDeleteJenis: (nama: string) => void;
   defaultJenisInventori?: string;
   hargaEmasByKarat: Record<number, HargaEmasKarat>;
+  onBuybackSaved?: (data: InvoiceBuybackData) => void;
 }) {
   const supabase = createClient();
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -485,6 +491,9 @@ function DetailBarangPopup({
     const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaKarat.harga_beli);
     const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaKarat.harga_jual);
 
+    const isBuyback = !editData && form.jenis_inventori === "Aset" && form.sub_jenis_aset === "Emas Rosok";
+    const noBuyback = isBuyback ? generateNoBuyback() : null;
+
     const payload = {
       id_item:           form.id_item.trim().toUpperCase(),
       jenis_barang:      form.jenis_barang,
@@ -506,6 +515,7 @@ function DetailBarangPopup({
       updated_at:        new Date().toISOString(),
       jenis_inventori:   form.jenis_inventori,
       sub_jenis_aset:    form.jenis_inventori === "Aset" ? (form.sub_jenis_aset || null) : null,
+      no_buyback:        noBuyback,
     };
 
     const { error } = editData
@@ -513,6 +523,23 @@ function DetailBarangPopup({
       : await supabase.from("inventori").insert(payload);
 
     if (error) { setSaving(false); setMsg("Gagal menyimpan: " + error.message); return; }
+
+    if (isBuyback && noBuyback) {
+      setSaving(false);
+      onSaved();
+      onBuybackSaved?.({
+        no_buyback: noBuyback,
+        tanggal: payload.tanggal_masuk,
+        nama_barang: payload.nama_produk,
+        kadar: payload.kadar,
+        berat_gram: payload.berat_gram,
+        jumlah: payload.jumlah,
+        harga_per_gram: beratGramNum > 0 ? Math.round(hargaBeliRp / beratGramNum) : 0,
+        total: Math.round(hargaBeliRp * payload.jumlah),
+      });
+      onClose();
+      return;
+    }
 
     if (!editData && catatHutang && payload.supplier) {
       const jatuhTempo = new Date();
@@ -1033,6 +1060,8 @@ function InventoriContent() {
   const [customJenis, setCustomJenis] = useState<string[]>([]);
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
   const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
+  const [buybackReady, setBuybackReady] = useState<InvoiceBuybackData | null>(null);
+  const [showBuybackPreview, setShowBuybackPreview] = useState(false);
 
   const allJenis = [...JENIS, ...customJenis];
 
@@ -1156,8 +1185,22 @@ function InventoriContent() {
   const openEdit = (item: BarangRow) => { setEditItem(item); setShowPopup(true); };
 
   return (
-    <AppLayout>
-      <div className="flex-1 flex flex-col bg-white min-h-screen">
+    <>
+      {/* Print CSS */}
+      <style>{`
+        @media print {
+          aside, nav, #inventori-screen, #buyback-preview-overlay { display: none !important; }
+          #invoice-print { display: block !important; }
+          html, body { background: white !important; margin: 0; }
+          @page { size: A5 landscape; margin: 10mm; }
+        }
+      `}</style>
+
+      {/* Invoice buyback — hidden on screen, visible on print */}
+      {buybackReady && <InvoiceBuyback mode="print" data={buybackReady} />}
+
+      <AppLayout>
+      <div id="inventori-screen" className="flex-1 flex flex-col bg-white min-h-screen">
         <div className="px-4 sm:px-6 pt-6 pb-8 flex flex-col gap-5">
           {/* Title */}
           <div>
@@ -1168,6 +1211,31 @@ function InventoriContent() {
               Lihat, tambah, dan kelola semua barang emas yang ada di toko.
             </p>
           </div>
+
+          {/* Notifikasi: Buyback berhasil disimpan */}
+          {buybackReady && (
+            <div className="flex items-center justify-between gap-4 bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex-wrap">
+              <div>
+                <p className="font-bold text-green-800">✅ Buyback emas berhasil disimpan!</p>
+                <p className="text-sm text-green-700">No. Nota: <span className="font-mono font-semibold">{buybackReady.no_buyback}</span></p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowBuybackPreview(true)}
+                  className="px-4 py-2.5 rounded-xl text-white font-semibold text-sm hover:opacity-90 transition-all"
+                  style={{ backgroundColor: "#C99A36" }}
+                >
+                  🖨️ Lihat / Cetak Invoice
+                </button>
+                <button
+                  onClick={() => setBuybackReady(null)}
+                  className="px-4 py-2.5 rounded-xl border border-green-300 text-green-700 font-semibold text-sm hover:bg-green-100 transition-colors"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* 3 Tab Jenis Inventori */}
           <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-2xl">
@@ -1693,6 +1761,7 @@ function InventoriContent() {
         onDeleteJenis={deleteCustomJenis}
         defaultJenisInventori={activeTab}
         hargaEmasByKarat={hargaEmasByKarat}
+        onBuybackSaved={setBuybackReady}
       />
       <HapusPopup
         open={!!hapusItem}
@@ -1700,7 +1769,48 @@ function InventoriContent() {
         onClose={() => setHapusItem(null)}
         onConfirm={hapus}
       />
-    </AppLayout>
+      </AppLayout>
+
+      {/* ── MODAL: PREVIEW / CETAK INVOICE BUYBACK ── */}
+      {showBuybackPreview && buybackReady && (
+        <div id="buyback-preview-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Preview Invoice Buyback</h2>
+                <p className="text-xs text-gray-400">Periksa kembali sebelum dicetak.</p>
+              </div>
+              <button
+                onClick={() => setShowBuybackPreview(false)}
+                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
+                <InvoiceBuyback mode="preview" data={buybackReady} />
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
+              <button
+                onClick={() => setShowBuybackPreview(false)}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+              >
+                ✕ Tutup
+              </button>
+              <button
+                onClick={() => printClean()}
+                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                🖨️ Cetak Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

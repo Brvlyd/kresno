@@ -4,7 +4,10 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { fmtRupiah, cetakInvoiceGadai, type CicilanItem } from "@/lib/gadai";
+import { fmtRupiah, type CicilanItem } from "@/lib/gadai";
+import type { InvoiceGadaiData } from "@/lib/gadai";
+import { InvoiceGadai } from "@/components/InvoiceGadai";
+import { printClean } from "@/lib/print";
 
 /* ─── Types ─── */
 interface GadaiRow {
@@ -66,6 +69,7 @@ function DetailGadaiPopup({
   const [loadingCicilan, setLoadingCicilan] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [showInvoicePreview, setShowInvoicePreview] = useState(false);
 
   useEffect(() => {
     if (!open || !item) return;
@@ -120,30 +124,34 @@ function DetailGadaiPopup({
     onClose();
   };
 
-  const cetak = () => {
-    const cicilanPertama = cicilan[0]?.jumlah_bayar as number | undefined;
-    cetakInvoiceGadai({
-      no_gadai: item.no_gadai,
-      tanggal_gadai: item.tanggal_gadai,
-      pelanggan_nama: item.pelanggan_nama,
-      pelanggan_alamat: item.pelanggan_alamat ?? "",
-      pelanggan_hp: item.pelanggan_hp ?? "",
-      jenis_perhiasan: item.jenis_perhiasan,
-      nama_barang: item.nama_barang,
-      berat_gram: item.berat_gram,
-      kadar: item.kadar,
-      nilai_taksiran: item.nilai_taksiran,
-      nilai_pinjaman: item.nilai_pinjaman,
-      bunga_persen: item.bunga_persen,
-      jangka_waktu_bulan: item.jangka_waktu_bulan,
-      tanggal_jatuh_tempo: item.tanggal_jatuh_tempo,
-      opsi_pembayaran: item.opsi_pembayaran,
-      cicilanPerBulan: cicilanPertama,
-    });
+  const invoiceData: InvoiceGadaiData = {
+    no_gadai: item.no_gadai,
+    jenis_perhiasan: item.jenis_perhiasan,
+    nama_barang: item.nama_barang,
+    berat_gram: item.berat_gram,
+    kadar: item.kadar,
+    nilai_pinjaman: item.nilai_pinjaman,
+    bunga_persen: item.bunga_persen,
+    tanggal_gadai: item.tanggal_gadai,
+    tanggal_jatuh_tempo: item.tanggal_jatuh_tempo,
+    catatan: item.catatan ?? undefined,
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <>
+      {/* Print CSS */}
+      <style>{`
+        @media print {
+          aside, nav, #pegadaian-screen, #gadai-detail-overlay, #gadai-invoice-preview-overlay { display: none !important; }
+          #invoice-print { display: block !important; }
+          html, body { background: white !important; margin: 0; }
+          @page { size: A5 landscape; margin: 10mm; }
+        }
+      `}</style>
+      {/* Invoice — hidden on screen, visible on print */}
+      <InvoiceGadai mode="print" data={invoiceData} />
+
+    <div id="gadai-detail-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
@@ -264,11 +272,11 @@ function DetailGadaiPopup({
           {/* Actions */}
           <div className="flex gap-3 pt-2 border-t border-gray-100">
             <button
-              onClick={cetak}
+              onClick={() => setShowInvoicePreview(true)}
               className="flex-1 py-3 rounded-xl border-2 font-semibold text-base transition-colors hover:bg-amber-50"
               style={{ borderColor: "#C99A36", color: "#C99A36" }}
             >
-              Cetak Invoice
+              🖨️ Cetak Invoice
             </button>
             {item.status !== "Lunas" && (
               <button
@@ -296,6 +304,47 @@ function DetailGadaiPopup({
         </div>
       </div>
     </div>
+
+      {/* ── MODAL: PREVIEW / CETAK INVOICE ── */}
+      {showInvoicePreview && (
+        <div id="gadai-invoice-preview-overlay" className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Preview Invoice Gadai</h2>
+                <p className="text-xs text-gray-400">{item.no_gadai}</p>
+              </div>
+              <button
+                onClick={() => setShowInvoicePreview(false)}
+                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
+                <InvoiceGadai mode="preview" data={invoiceData} />
+              </div>
+            </div>
+            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
+              <button
+                onClick={() => setShowInvoicePreview(false)}
+                className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+              >
+                ✕ Tutup
+              </button>
+              <button
+                onClick={() => printClean()}
+                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                style={{ backgroundColor: "#C99A36" }}
+              >
+                🖨️ Cetak Invoice
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -424,7 +473,7 @@ export default function PegadaianPage() {
 
   return (
     <AppLayout>
-      <div className="flex-1 flex flex-col bg-white min-h-screen">
+      <div id="pegadaian-screen" className="flex-1 flex flex-col bg-white min-h-screen">
         <div className="px-4 sm:px-6 pb-8 space-y-6 pt-4">
 
           {/* Title + date filter */}
