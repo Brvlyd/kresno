@@ -6,17 +6,15 @@ import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import {
   JENIS_PERHIASAN_OPTIONS, KADAR_OPTIONS, JANGKA_WAKTU_OPTIONS, STATUS_AWAL_OPTIONS,
-  generateNoGadai, hitungJatuhTempo, buildCicilanSchedule,
+  generateNoGadai, hitungJatuhTempo, buildCicilanSchedule, summarizeBarang,
 } from "@/lib/gadai";
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { printClean } from "@/lib/print";
+import { AddJenisModal } from "@/components/AddJenisModal";
+import { useJenisBarang } from "@/lib/useJenisBarang";
 
-interface FormData {
-  pelanggan_nama: string;
-  pelanggan_hp: string;
-  pelanggan_alamat: string;
-  foto_ktp_url: string;
+interface BarangItemForm {
   jenis_perhiasan: string;
   nama_barang: string;
   berat_gram: string;
@@ -24,6 +22,14 @@ interface FormData {
   kondisi_barang: string;
   deskripsi: string;
   foto_barang_url: string;
+}
+
+interface FormData {
+  pelanggan_nama: string;
+  pelanggan_hp: string;
+  pelanggan_alamat: string;
+  foto_ktp_url: string;
+  items: BarangItemForm[];
   nilai_taksiran: string;
   nilai_pinjaman: string;
   bunga_persen: string;
@@ -37,11 +43,15 @@ interface FormData {
 
 const today = () => new Date().toISOString().split("T")[0];
 
-const emptyForm: FormData = {
-  pelanggan_nama: "", pelanggan_hp: "", pelanggan_alamat: "", foto_ktp_url: "",
+const emptyBarangItem = (): BarangItemForm => ({
   jenis_perhiasan: JENIS_PERHIASAN_OPTIONS[0], nama_barang: "", berat_gram: "",
   kadar: "", kondisi_barang: "", deskripsi: "", foto_barang_url: "",
-  nilai_taksiran: "", nilai_pinjaman: "", bunga_persen: "",
+});
+
+const emptyForm: FormData = {
+  pelanggan_nama: "", pelanggan_hp: "", pelanggan_alamat: "", foto_ktp_url: "",
+  items: [emptyBarangItem()],
+  nilai_taksiran: "", nilai_pinjaman: "", bunga_persen: "2.5",
   jangka_waktu_bulan: JANGKA_WAKTU_OPTIONS[0],
   tanggal_gadai: today(), tanggal_jatuh_tempo: hitungJatuhTempo(today(), JANGKA_WAKTU_OPTIONS[0]),
   opsi_pembayaran: "Tunai", status: STATUS_AWAL_OPTIONS[0], catatan: "",
@@ -54,15 +64,27 @@ export default function TambahPengajuanGadaiPage() {
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [uploadingKtp, setUploadingKtp] = useState(false);
-  const [uploadingBarang, setUploadingBarang] = useState(false);
+  const [uploadingBarangIdx, setUploadingBarangIdx] = useState<number | null>(null);
   const [msg, setMsg] = useState("");
   const [savedNoGadai, setSavedNoGadai] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showAddJenis, setShowAddJenis] = useState(false);
+  const [addJenisForIdx, setAddJenisForIdx] = useState<number | null>(null);
   const jatuhTempoTouchedRef = useRef(false);
+
+  const { allJenis: jenisOptions, addCustomJenis } = useJenisBarang(JENIS_PERHIASAN_OPTIONS);
 
   const set = <K extends keyof FormData>(key: K, val: FormData[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
+
+  const setItem = <K extends keyof BarangItemForm>(idx: number, key: K, val: BarangItemForm[K]) =>
+    setForm((f) => ({ ...f, items: f.items.map((it, i) => (i === idx ? { ...it, [key]: val } : it)) }));
+
+  const addItem = () => setForm((f) => ({ ...f, items: [...f.items, emptyBarangItem()] }));
+
+  const removeItem = (idx: number) =>
+    setForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
 
   // Tanggal jatuh tempo otomatis = tanggal gadai + jangka waktu, kecuali sudah diubah manual
   useEffect(() => {
@@ -70,24 +92,42 @@ export default function TambahPengajuanGadaiPage() {
     setForm((f) => ({ ...f, tanggal_jatuh_tempo: hitungJatuhTempo(f.tanggal_gadai, f.jangka_waktu_bulan) }));
   }, [form.tanggal_gadai, form.jangka_waktu_bulan]);
 
-  const uploadFoto = async (file: File, target: "foto_ktp_url" | "foto_barang_url") => {
-    const setUploading = target === "foto_ktp_url" ? setUploadingKtp : setUploadingBarang;
-    setUploading(true);
+  const uploadFotoKtp = async (file: File) => {
+    setUploadingKtp(true);
     setMsg("");
     const ext = file.name.split(".").pop() || "jpg";
-    const path = `${target === "foto_ktp_url" ? "ktp" : "barang"}-${Date.now()}.${ext}`;
+    const path = `ktp-${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from("pegadaian-images").upload(path, file, {
       cacheControl: "3600",
       upsert: true,
     });
     if (error) {
       setMsg("Gagal upload foto: " + error.message);
-      setUploading(false);
+      setUploadingKtp(false);
       return;
     }
     const { data } = supabase.storage.from("pegadaian-images").getPublicUrl(path);
-    set(target, data.publicUrl);
-    setUploading(false);
+    set("foto_ktp_url", data.publicUrl);
+    setUploadingKtp(false);
+  };
+
+  const uploadFotoBarang = async (file: File, idx: number) => {
+    setUploadingBarangIdx(idx);
+    setMsg("");
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `barang-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("pegadaian-images").upload(path, file, {
+      cacheControl: "3600",
+      upsert: true,
+    });
+    if (error) {
+      setMsg("Gagal upload foto: " + error.message);
+      setUploadingBarangIdx(null);
+      return;
+    }
+    const { data } = supabase.storage.from("pegadaian-images").getPublicUrl(path);
+    setItem(idx, "foto_barang_url", data.publicUrl);
+    setUploadingBarangIdx(null);
   };
 
   const missingFields = (): string[] => {
@@ -95,39 +135,49 @@ export default function TambahPengajuanGadaiPage() {
     if (!form.pelanggan_nama.trim()) missing.push("Nama Pelanggan");
     if (!form.pelanggan_hp.trim()) missing.push("No. HP");
     if (!form.pelanggan_alamat.trim()) missing.push("Alamat");
-    if (!form.nama_barang.trim()) missing.push("Nama Barang");
-    if (!form.berat_gram.trim() || (parseFloat(form.berat_gram) || 0) <= 0) missing.push("Berat (gram)");
-    if (!form.kadar.trim()) missing.push("Kadar Emas");
+    form.items.forEach((it, i) => {
+      const n = form.items.length > 1 ? ` #${i + 1}` : "";
+      if (!it.nama_barang.trim()) missing.push(`Nama Barang${n}`);
+      if (!it.berat_gram.trim() || (parseFloat(it.berat_gram) || 0) <= 0) missing.push(`Berat (gram)${n}`);
+      if (!it.kadar.trim()) missing.push(`Kadar Emas${n}`);
+    });
     if (!form.nilai_taksiran.trim() || (parseFloat(form.nilai_taksiran) || 0) <= 0) missing.push("Nilai Taksiran");
     if (!form.nilai_pinjaman.trim() || (parseFloat(form.nilai_pinjaman) || 0) <= 0) missing.push("Nilai Pinjaman");
     if (!form.bunga_persen.trim()) missing.push("Bunga (%)");
     return missing;
   };
 
-  const buildPayload = (noGadai: string) => ({
-    no_gadai: noGadai,
-    pelanggan_nama: form.pelanggan_nama.trim(),
-    pelanggan_hp: form.pelanggan_hp.trim(),
-    pelanggan_alamat: form.pelanggan_alamat.trim(),
-    foto_ktp_url: form.foto_ktp_url.trim() || null,
-    jenis_perhiasan: form.jenis_perhiasan,
-    nama_barang: form.nama_barang.trim(),
-    berat_gram: parseFloat(form.berat_gram) || 0,
-    kadar: form.kadar,
-    kondisi_barang: form.kondisi_barang.trim() || null,
-    deskripsi: form.deskripsi.trim() || null,
-    foto_barang_url: form.foto_barang_url.trim() || null,
-    nilai_taksiran: Math.round(parseFloat(form.nilai_taksiran) || 0),
-    nilai_pinjaman: Math.round(parseFloat(form.nilai_pinjaman) || 0),
-    bunga_persen: parseFloat(form.bunga_persen) || 0,
-    jangka_waktu_bulan: form.jangka_waktu_bulan,
-    tanggal_gadai: form.tanggal_gadai,
-    tanggal_jatuh_tempo: form.tanggal_jatuh_tempo,
-    opsi_pembayaran: form.opsi_pembayaran,
-    status: form.status,
-    catatan: form.catatan.trim() || null,
-    updated_at: new Date().toISOString(),
-  });
+  const itemsNumeric = () => form.items.map((it) => ({
+    jenis_perhiasan: it.jenis_perhiasan,
+    nama_barang: it.nama_barang.trim(),
+    berat_gram: parseFloat(it.berat_gram) || 0,
+    kadar: it.kadar,
+    kondisi_barang: it.kondisi_barang.trim() || null,
+    deskripsi: it.deskripsi.trim() || null,
+    foto_barang_url: it.foto_barang_url.trim() || null,
+  }));
+
+  const buildPayload = (noGadai: string) => {
+    const summary = summarizeBarang(itemsNumeric());
+    return {
+      no_gadai: noGadai,
+      pelanggan_nama: form.pelanggan_nama.trim(),
+      pelanggan_hp: form.pelanggan_hp.trim(),
+      pelanggan_alamat: form.pelanggan_alamat.trim(),
+      foto_ktp_url: form.foto_ktp_url.trim() || null,
+      ...summary,
+      nilai_taksiran: Math.round(parseFloat(form.nilai_taksiran) || 0),
+      nilai_pinjaman: Math.round(parseFloat(form.nilai_pinjaman) || 0),
+      bunga_persen: parseFloat(form.bunga_persen) || 0,
+      jangka_waktu_bulan: form.jangka_waktu_bulan,
+      tanggal_gadai: form.tanggal_gadai,
+      tanggal_jatuh_tempo: form.tanggal_jatuh_tempo,
+      opsi_pembayaran: form.opsi_pembayaran,
+      status: form.status,
+      catatan: form.catatan.trim() || null,
+      updated_at: new Date().toISOString(),
+    };
+  };
 
   const simpan = async (): Promise<{ id: string; no_gadai: string } | null> => {
     const missing = missingFields();
@@ -148,6 +198,18 @@ export default function TambahPengajuanGadaiPage() {
     if (error) {
       setSaving(false);
       setMsg("Gagal menyimpan: " + error.message);
+      return null;
+    }
+
+    if (savedId) {
+      await supabase.from("gadai_barang").delete().eq("gadai_id", savedId);
+    }
+    const { error: barangError } = await supabase.from("gadai_barang").insert(
+      itemsNumeric().map((it, i) => ({ ...it, gadai_id: data.id, urutan: i + 1 }))
+    );
+    if (barangError) {
+      setSaving(false);
+      setMsg("Pengajuan tersimpan, tapi gagal menyimpan data barang: " + barangError.message);
       return null;
     }
 
@@ -181,10 +243,7 @@ export default function TambahPengajuanGadaiPage() {
 
   const invoiceData: InvoiceGadaiData = {
     no_gadai: savedNoGadai ?? "",
-    jenis_perhiasan: form.jenis_perhiasan,
-    nama_barang: form.nama_barang.trim(),
-    berat_gram: parseFloat(form.berat_gram) || 0,
-    kadar: form.kadar,
+    items: itemsNumeric(),
     nilai_pinjaman: Math.round(parseFloat(form.nilai_pinjaman) || 0),
     bunga_persen: parseFloat(form.bunga_persen) || 0,
     tanggal_gadai: form.tanggal_gadai,
@@ -325,7 +384,7 @@ export default function TambahPengajuanGadaiPage() {
                       capture="environment"
                       className="hidden"
                       disabled={uploadingKtp}
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "foto_ktp_url"); }}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFotoKtp(f); }}
                     />
                   </label>
                 </div>
@@ -334,122 +393,163 @@ export default function TambahPengajuanGadaiPage() {
           </div>
 
           {/* ── Data Barang Gadai ── */}
-          <div className="border border-gray-200 rounded-xl p-5 space-y-4">
-            <h2 className="text-lg font-bold text-gray-800" style={{ fontFamily: "var(--font-playfair)" }}>Data Barang Gadai</h2>
-
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">Jenis Perhiasan</label>
-              <div className="flex flex-wrap gap-2">
-                {JENIS_PERHIASAN_OPTIONS.map((j) => (
+          {form.items.map((item, idx) => (
+            <div key={idx} className="border border-gray-200 rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-gray-800" style={{ fontFamily: "var(--font-playfair)" }}>
+                  Data Barang Gadai {form.items.length > 1 ? `#${idx + 1}` : ""}
+                </h2>
+                {form.items.length > 1 && (
                   <button
-                    key={j}
                     type="button"
-                    onClick={() => set("jenis_perhiasan", j)}
-                    className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
-                      form.jenis_perhiasan === j
-                        ? "bg-[#C99A36] border-[#C99A36] text-white"
-                        : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                    }`}
+                    onClick={() => removeItem(idx)}
+                    className="text-sm font-semibold text-red-500 hover:underline"
                   >
-                    {j}
+                    Hapus
                   </button>
-                ))}
+                )}
               </div>
-            </div>
 
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Barang</label>
-              <input
-                value={form.nama_barang}
-                onChange={(e) => set("nama_barang", e.target.value)}
-                placeholder="Contoh: Gelang Rantai Singapur"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Berat (gram)</label>
-                <input
-                  type="number"
-                  value={form.berat_gram}
-                  onChange={(e) => set("berat_gram", e.target.value)}
-                  placeholder="3.50"
-                  min="0"
-                  step="0.01"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Kadar Emas</label>
-                <input
-                  type="text"
-                  list="kadar-gadai-options"
-                  value={form.kadar}
-                  onChange={(e) => set("kadar", e.target.value)}
-                  placeholder="Contoh: 24K, 18K"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
-                />
-                <datalist id="kadar-gadai-options">
-                  {KADAR_OPTIONS.map((k) => <option key={k} value={k} />)}
-                </datalist>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">Kondisi Barang <span className="text-gray-400 font-normal">(opsional)</span></label>
-              <input
-                value={form.kondisi_barang}
-                onChange={(e) => set("kondisi_barang", e.target.value)}
-                placeholder="Contoh: Baik, sedikit baret"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">Deskripsi Singkat <span className="text-gray-400 font-normal">(opsional)</span></label>
-              <textarea
-                value={form.deskripsi}
-                onChange={(e) => set("deskripsi", e.target.value)}
-                placeholder="Catatan tambahan tentang barang..."
-                rows={2}
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] resize-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-1.5">Foto Barang <span className="text-gray-400 font-normal">(opsional)</span></label>
-              <div className="flex items-center gap-3">
-                <div className="w-20 h-20 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {form.foto_barang_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={form.foto_barang_url} alt="Foto Barang" className="w-full h-full object-cover" />
-                  ) : (
-                    <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                    </svg>
-                  )}
-                </div>
-                <div className="flex-1 space-y-2">
-                  <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-base font-semibold border-2 cursor-pointer transition-colors hover:bg-amber-50 w-full justify-center"
-                    style={{ borderColor: "#C99A36", color: "#C99A36" }}>
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                    </svg>
-                    {uploadingBarang ? "Mengunggah foto..." : "Ambil / Pilih Foto Barang"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      disabled={uploadingBarang}
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFoto(f, "foto_barang_url"); }}
-                    />
-                  </label>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">Jenis Perhiasan</label>
+                <div className="flex flex-wrap gap-2">
+                  {jenisOptions.map((j) => (
+                    <button
+                      key={j}
+                      type="button"
+                      onClick={() => setItem(idx, "jenis_perhiasan", j)}
+                      className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
+                        item.jenis_perhiasan === j
+                          ? "bg-[#C99A36] border-[#C99A36] text-white"
+                          : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                      }`}
+                    >
+                      {j}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => { setAddJenisForIdx(idx); setShowAddJenis(true); }}
+                    className="px-4 py-2.5 rounded-full text-base font-semibold border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#C99A36] hover:text-[#C99A36] transition-colors"
+                  >
+                    + Jenis Baru
+                  </button>
                 </div>
               </div>
+
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Barang</label>
+                <input
+                  value={item.nama_barang}
+                  onChange={(e) => setItem(idx, "nama_barang", e.target.value)}
+                  placeholder="Contoh: Gelang Rantai Singapur"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Berat (gram)</label>
+                  <input
+                    type="number"
+                    value={item.berat_gram}
+                    onChange={(e) => setItem(idx, "berat_gram", e.target.value)}
+                    placeholder="3.50"
+                    min="0"
+                    step="0.01"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-600 mb-1.5">Kadar Emas</label>
+                  <input
+                    type="text"
+                    list="kadar-gadai-options"
+                    value={item.kadar}
+                    onChange={(e) => setItem(idx, "kadar", e.target.value)}
+                    placeholder="Contoh: 24K, 18K"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                  />
+                  <datalist id="kadar-gadai-options">
+                    {KADAR_OPTIONS.map((k) => <option key={k} value={k} />)}
+                  </datalist>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">Kondisi Barang <span className="text-gray-400 font-normal">(opsional)</span></label>
+                <input
+                  value={item.kondisi_barang}
+                  onChange={(e) => setItem(idx, "kondisi_barang", e.target.value)}
+                  placeholder="Contoh: Baik, sedikit baret"
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">Deskripsi Singkat <span className="text-gray-400 font-normal">(opsional)</span></label>
+                <textarea
+                  value={item.deskripsi}
+                  onChange={(e) => setItem(idx, "deskripsi", e.target.value)}
+                  placeholder="Catatan tambahan tentang barang..."
+                  rows={2}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base font-semibold text-gray-700 mb-1.5">Foto Barang <span className="text-gray-400 font-normal">(opsional)</span></label>
+                <div className="flex items-center gap-3">
+                  <div className="w-20 h-20 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                    {item.foto_barang_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={item.foto_barang_url} alt="Foto Barang" className="w-full h-full object-cover" />
+                    ) : (
+                      <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                      </svg>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-base font-semibold border-2 cursor-pointer transition-colors hover:bg-amber-50 w-full justify-center"
+                      style={{ borderColor: "#C99A36", color: "#C99A36" }}>
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                      </svg>
+                      {uploadingBarangIdx === idx ? "Mengunggah foto..." : "Ambil / Pilih Foto Barang"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        className="hidden"
+                        disabled={uploadingBarangIdx === idx}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFotoBarang(f, idx); }}
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          ))}
+
+          <AddJenisModal
+            open={showAddJenis}
+            onClose={() => setShowAddJenis(false)}
+            onAdd={async (nama) => {
+              const result = await addCustomJenis(nama);
+              if (result && addJenisForIdx !== null) setItem(addJenisForIdx, "jenis_perhiasan", result);
+              return result;
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={addItem}
+            className="w-full py-3 rounded-xl border-2 border-dashed font-semibold text-base transition-colors hover:bg-amber-50"
+            style={{ borderColor: "#C99A36", color: "#C99A36" }}
+          >
+            + Tambah Barang Lain
+          </button>
 
           {/* ── Data Pinjaman ── */}
           <div className="border border-gray-200 rounded-xl p-5 space-y-4">

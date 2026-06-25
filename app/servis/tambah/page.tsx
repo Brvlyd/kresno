@@ -12,6 +12,8 @@ import {
 import type { InvoiceServisData } from "@/lib/servis";
 import { InvoiceServis } from "@/components/InvoiceServis";
 import { printClean } from "@/lib/print";
+import { AddJenisModal } from "@/components/AddJenisModal";
+import { useJenisBarang } from "@/lib/useJenisBarang";
 
 interface FormData {
   pelanggan_nama: string;
@@ -68,7 +70,10 @@ function TambahServisContent() {
   const [savedNoServis, setSavedNoServis] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [showAddJenis, setShowAddJenis] = useState(false);
   const estimasiTouchedRef = useRef(false);
+
+  const { allJenis: jenisOptions, addCustomJenis } = useJenisBarang(JENIS_PERHIASAN_OPTIONS);
 
   const set = <K extends keyof FormData>(key: K, val: FormData[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -373,7 +378,7 @@ function TambahServisContent() {
             <div>
               <label className="block text-base font-semibold text-gray-700 mb-1.5">Jenis Perhiasan</label>
               <div className="flex flex-wrap gap-2">
-                {JENIS_PERHIASAN_OPTIONS.map((j) => (
+                {jenisOptions.map((j) => (
                   <button
                     key={j}
                     type="button"
@@ -387,7 +392,24 @@ function TambahServisContent() {
                     {j}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setShowAddJenis(true)}
+                  className="px-4 py-2.5 rounded-full text-base font-semibold border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#C99A36] hover:text-[#C99A36] transition-colors"
+                >
+                  + Jenis Baru
+                </button>
               </div>
+
+              <AddJenisModal
+                open={showAddJenis}
+                onClose={() => setShowAddJenis(false)}
+                onAdd={async (nama) => {
+                  const result = await addCustomJenis(nama);
+                  if (result) set("jenis_perhiasan", result);
+                  return result;
+                }}
+              />
             </div>
 
             <div>

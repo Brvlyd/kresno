@@ -11,7 +11,12 @@ const MIN_ROWS = 5;
 
 export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
   const isPrint = mode === "print";
-  const emptyRows = Math.max(0, MIN_ROWS - 1);
+  const items = data.items;
+  const showTotal = items.length > 1;
+  const emptyRows = Math.max(0, MIN_ROWS - items.length - (showTotal ? 1 : 0));
+  const totalBerat = items.reduce((s, it) => s + (it.berat_gram || 0), 0);
+  const kadarUnik = new Set(items.map((it) => it.kadar));
+  const kadarTotal = kadarUnik.size === 1 ? items[0]?.kadar ?? "" : "Campuran";
 
   return (
     <div
@@ -47,14 +52,23 @@ export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>1</td>
-            <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}` }}>
-              {data.jenis_perhiasan}{data.nama_barang ? ` — ${data.nama_barang}` : ""}
-            </td>
-            <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>{fmtGram(data.berat_gram)}</td>
-            <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>{data.kadar}</td>
-          </tr>
+          {items.map((item, i) => (
+            <tr key={"item-" + i}>
+              <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>{i + 1}</td>
+              <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}` }}>
+                {item.jenis_perhiasan}{item.nama_barang ? ` — ${item.nama_barang}` : ""}
+              </td>
+              <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>{fmtGram(item.berat_gram)}</td>
+              <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>{item.kadar}</td>
+            </tr>
+          ))}
+          {showTotal && (
+            <tr style={{ backgroundColor: INVOICE_GOLD_LT, fontWeight: 700 }}>
+              <td colSpan={2} style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "right" }}>Total Berat</td>
+              <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>{fmtGram(totalBerat)}</td>
+              <td style={{ padding: "5pt 6pt", border: `0.5pt solid ${INVOICE_GOLD_LT}`, textAlign: "center" }}>{kadarTotal}</td>
+            </tr>
+          )}
           {Array.from({ length: emptyRows }, (_, i) => (
             <tr key={"emp-" + i}>
               {[...Array(4)].map((_, j) => (

@@ -72,12 +72,35 @@ export function buildCicilanSchedule(
   return schedule;
 }
 
-export interface InvoiceGadaiData {
-  no_gadai: string;
+export interface GadaiBarangItem {
   jenis_perhiasan: string;
   nama_barang: string;
   berat_gram: number;
   kadar: string;
+  kondisi_barang?: string | null;
+  deskripsi?: string | null;
+  foto_barang_url?: string | null;
+}
+
+/**
+ * Ringkasan dipakai untuk kolom agregat di tabel `gadai` (listing/pencarian).
+ * Kadar tidak digabung jadi rata-rata — kalau campuran kadar beda, ditandai
+ * "Campuran" karena nilai per gram tiap kadar berbeda.
+ */
+export function summarizeBarang(items: GadaiBarangItem[]) {
+  const totalBerat = items.reduce((s, it) => s + (it.berat_gram || 0), 0);
+  const kadarUnik = new Set(items.map((it) => it.kadar));
+  return {
+    jenis_perhiasan: items.length > 1 ? `${items[0].jenis_perhiasan} +${items.length - 1} lainnya` : items[0]?.jenis_perhiasan ?? "",
+    nama_barang: items.length > 1 ? `${items[0].nama_barang} +${items.length - 1} lainnya` : items[0]?.nama_barang ?? "",
+    berat_gram: totalBerat,
+    kadar: kadarUnik.size === 1 ? items[0].kadar : "Campuran",
+  };
+}
+
+export interface InvoiceGadaiData {
+  no_gadai: string;
+  items: GadaiBarangItem[];
   nilai_pinjaman: number;
   bunga_persen: number;
   tanggal_gadai: string;

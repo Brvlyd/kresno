@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { fmtRupiah, type CicilanItem } from "@/lib/gadai";
+import { fmtRupiah, type CicilanItem, type GadaiBarangItem } from "@/lib/gadai";
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { printClean } from "@/lib/print";
@@ -67,6 +67,8 @@ function DetailGadaiPopup({
   const router = useRouter();
   const [cicilan, setCicilan] = useState<(CicilanItem & { id: string; tanggal_bayar: string | null })[]>([]);
   const [loadingCicilan, setLoadingCicilan] = useState(false);
+  const [barangItems, setBarangItems] = useState<GadaiBarangItem[]>([]);
+  const [loadingBarang, setLoadingBarang] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
@@ -88,6 +90,25 @@ function DetailGadaiPopup({
     } else {
       setCicilan([]);
     }
+
+    setLoadingBarang(true);
+    supabase
+      .from("gadai_barang")
+      .select("*")
+      .eq("gadai_id", item.id)
+      .order("urutan", { ascending: true })
+      .then(({ data }) => {
+        setBarangItems(
+          data && data.length > 0
+            ? (data as GadaiBarangItem[])
+            : [{
+                jenis_perhiasan: item.jenis_perhiasan, nama_barang: item.nama_barang,
+                berat_gram: item.berat_gram, kadar: item.kadar,
+                kondisi_barang: item.kondisi_barang, deskripsi: item.deskripsi, foto_barang_url: item.foto_barang_url,
+              }]
+        );
+        setLoadingBarang(false);
+      });
   }, [open, item]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open || !item) return null;
@@ -126,10 +147,7 @@ function DetailGadaiPopup({
 
   const invoiceData: InvoiceGadaiData = {
     no_gadai: item.no_gadai,
-    jenis_perhiasan: item.jenis_perhiasan,
-    nama_barang: item.nama_barang,
-    berat_gram: item.berat_gram,
-    kadar: item.kadar,
+    items: barangItems,
     nilai_pinjaman: item.nilai_pinjaman,
     bunga_persen: item.bunga_persen,
     tanggal_gadai: item.tanggal_gadai,
@@ -191,19 +209,40 @@ function DetailGadaiPopup({
 
           {/* Data Barang */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Data Barang</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><p className="text-gray-400">Jenis</p><p className="font-semibold text-gray-800">{item.jenis_perhiasan}</p></div>
-              <div><p className="text-gray-400">Nama Barang</p><p className="font-semibold text-gray-800">{item.nama_barang}</p></div>
-              <div><p className="text-gray-400">Berat</p><p className="font-semibold text-gray-800">{item.berat_gram} gram</p></div>
-              <div><p className="text-gray-400">Kadar</p><p className="font-semibold text-gray-800">{item.kadar}</p></div>
-              {item.kondisi_barang && (
-                <div className="col-span-2"><p className="text-gray-400">Kondisi</p><p className="font-semibold text-gray-800">{item.kondisi_barang}</p></div>
-              )}
-              {item.deskripsi && (
-                <div className="col-span-2"><p className="text-gray-400">Deskripsi</p><p className="text-gray-700">{item.deskripsi}</p></div>
-              )}
-            </div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Data Barang {barangItems.length > 1 ? `(${barangItems.length} item)` : ""}
+            </h3>
+            {loadingBarang ? (
+              <div className="h-16 bg-gray-100 animate-pulse rounded-lg" />
+            ) : (
+              <div className="space-y-3">
+                {barangItems.map((b, i) => (
+                  <div key={i} className={barangItems.length > 1 ? "border border-gray-200 rounded-lg p-3" : ""}>
+                    {barangItems.length > 1 && (
+                      <p className="text-xs font-semibold text-gray-400 mb-1.5">Barang #{i + 1}</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div><p className="text-gray-400">Jenis</p><p className="font-semibold text-gray-800">{b.jenis_perhiasan}</p></div>
+                      <div><p className="text-gray-400">Nama Barang</p><p className="font-semibold text-gray-800">{b.nama_barang}</p></div>
+                      <div><p className="text-gray-400">Berat</p><p className="font-semibold text-gray-800">{b.berat_gram} gram</p></div>
+                      <div><p className="text-gray-400">Kadar</p><p className="font-semibold text-gray-800">{b.kadar}</p></div>
+                      {b.kondisi_barang && (
+                        <div className="col-span-2"><p className="text-gray-400">Kondisi</p><p className="font-semibold text-gray-800">{b.kondisi_barang}</p></div>
+                      )}
+                      {b.deskripsi && (
+                        <div className="col-span-2"><p className="text-gray-400">Deskripsi</p><p className="text-gray-700">{b.deskripsi}</p></div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {barangItems.length > 1 && (
+                  <div className="flex items-center justify-between text-sm font-semibold pt-1 border-t border-gray-100">
+                    <span className="text-gray-500">Total Berat</span>
+                    <span className="text-gray-800">{barangItems.reduce((s, b) => s + (b.berat_gram || 0), 0)} gram</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Data Pinjaman */}

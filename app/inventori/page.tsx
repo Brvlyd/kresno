@@ -7,10 +7,8 @@ import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { prefixForKategori, buildPrefixCounters, nextId } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
-import { generateNoBuyback } from "@/lib/buyback";
-import type { InvoiceBuybackData } from "@/lib/buyback";
-import { InvoiceBuyback } from "@/components/InvoiceBuyback";
-import { printClean } from "@/lib/print";
+import { AddJenisModal } from "@/components/AddJenisModal";
+import { useJenisBarang } from "@/lib/useJenisBarang";
 import JsBarcode from "jsbarcode";
 
 /* ─── Types ─── */
@@ -71,7 +69,7 @@ const JENIS = ["Gelang", "Kalung", "Cincin", "Anting", "Liontin", "Tindik Mata",
 const STATUS_INVENTORI = ["Tersedia", "Terjual", "Dalam Servis", "Retur", "Tidak Laku", "Mati Laku", "Habis Dijual", "Hilang"];
 const STATUS_LAPORAN = ["Draft", "Approval Checker", "Approval Signer", "Approved", "Rejected"];
 const JENIS_INVENTORI = ["Stock Dalam", "Stock Display", "Aset"] as const;
-const SUB_JENIS_ASET = ["Cukim", "Emas Rosok"] as const;
+const SUB_JENIS_ASET = ["Cukim"] as const;
 
 const STATUS_BADGE: Record<string, string> = {
   "Tersedia":         "bg-green-100 text-green-700",
@@ -96,74 +94,6 @@ interface HargaEmasKarat {
  */
 function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaPerGramKaratBarang: number): number {
   return Math.round(hitungHasil(beratGram, persentase) * hargaPerGramKaratBarang);
-}
-
-/* ─── Popup Tambah Jenis Barang Baru ─── */
-function AddJenisModal({
-  open, onClose, onAdd,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onAdd: (nama: string) => Promise<string | null>;
-}) {
-  const [nama, setNama] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (open) { setNama(""); setError(""); }
-  }, [open]);
-
-  if (!open) return null;
-
-  const submit = async () => {
-    const trimmed = nama.trim();
-    if (!trimmed) { setError("Nama jenis barang wajib diisi."); return; }
-    setSaving(true);
-    setError("");
-    const result = await onAdd(trimmed);
-    setSaving(false);
-    if (!result) { setError("Gagal menyimpan jenis barang baru. Coba lagi."); return; }
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-1" style={{ fontFamily: "var(--font-playfair)" }}>
-          Tambah Jenis Barang Baru
-        </h3>
-        <p className="text-sm text-gray-500 mb-4">
-          Ketik nama jenis barang baru, misalnya &ldquo;Jam Tangan&rdquo; atau &ldquo;Pin Emas&rdquo;.
-          Jenis ini akan langsung bisa dipakai untuk semua barang selanjutnya.
-        </p>
-        <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Jenis Barang</label>
-        <input
-          autoFocus
-          value={nama}
-          onChange={(e) => setNama(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
-          placeholder="Contoh: Jam Tangan"
-          className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
-        />
-        {error && <p className="text-sm font-semibold text-red-600 mt-2">{error}</p>}
-        <div className="flex gap-3 mt-5">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors">
-            Batal
-          </button>
-          <button
-            onClick={submit}
-            disabled={saving}
-            className="flex-1 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 active:scale-[0.98] disabled:opacity-50"
-            style={{ backgroundColor: "#C99A36" }}
-          >
-            {saving ? "Menyimpan..." : "Simpan Jenis Baru"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 /* ─── Input persentase harga (%) ─── */
@@ -366,7 +296,7 @@ function BarcodePreviewModal({
 
 /* ─── Popup Detail Barang ─── */
 function DetailBarangPopup({
-  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmasByKarat, onBuybackSaved,
+  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmasByKarat,
 }: {
   open: boolean;
   onClose: () => void;
@@ -379,7 +309,6 @@ function DetailBarangPopup({
   onDeleteJenis: (nama: string) => void;
   defaultJenisInventori?: string;
   hargaEmasByKarat: Record<number, HargaEmasKarat>;
-  onBuybackSaved?: (data: InvoiceBuybackData) => void;
 }) {
   const supabase = createClient();
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -491,9 +420,6 @@ function DetailBarangPopup({
     const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaKarat.harga_beli);
     const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaKarat.harga_jual);
 
-    const isBuyback = !editData && form.jenis_inventori === "Aset" && form.sub_jenis_aset === "Emas Rosok";
-    const noBuyback = isBuyback ? generateNoBuyback() : null;
-
     const payload = {
       id_item:           form.id_item.trim().toUpperCase(),
       jenis_barang:      form.jenis_barang,
@@ -515,7 +441,6 @@ function DetailBarangPopup({
       updated_at:        new Date().toISOString(),
       jenis_inventori:   form.jenis_inventori,
       sub_jenis_aset:    form.jenis_inventori === "Aset" ? (form.sub_jenis_aset || null) : null,
-      no_buyback:        noBuyback,
     };
 
     const { error } = editData
@@ -523,23 +448,6 @@ function DetailBarangPopup({
       : await supabase.from("inventori").insert(payload);
 
     if (error) { setSaving(false); setMsg("Gagal menyimpan: " + error.message); return; }
-
-    if (isBuyback && noBuyback) {
-      setSaving(false);
-      onSaved();
-      onBuybackSaved?.({
-        no_buyback: noBuyback,
-        tanggal: payload.tanggal_masuk,
-        nama_barang: payload.nama_produk,
-        kadar: payload.kadar,
-        berat_gram: payload.berat_gram,
-        jumlah: payload.jumlah,
-        harga_per_gram: beratGramNum > 0 ? Math.round(hargaBeliRp / beratGramNum) : 0,
-        total: Math.round(hargaBeliRp * payload.jumlah),
-      });
-      onClose();
-      return;
-    }
 
     if (!editData && catatHutang && payload.supplier) {
       const jatuhTempo = new Date();
@@ -720,15 +628,10 @@ function DetailBarangPopup({
                           : "border-gray-300 text-gray-600 bg-white hover:border-stone-500"
                       }`}
                     >
-                      {s === "Emas Rosok" ? "Emas Rosok (Buyback)" : s}
+                      {s}
                     </button>
                   ))}
                 </div>
-                {form.sub_jenis_aset === "Emas Rosok" && (
-                  <p className="text-sm text-amber-700 font-medium mt-2">
-                    Pembelian emas rosok ini akan dicatat sebagai <strong>Buyback Emas</strong>.
-                  </p>
-                )}
               </div>
             )}
           </div>
@@ -1057,13 +960,10 @@ function InventoriContent() {
   const [hapusItem, setHapusItem] = useState<BarangRow | null>(null);
   const [search, setSearch] = useState("");
   const [searchAllTabs, setSearchAllTabs] = useState(false);
-  const [customJenis, setCustomJenis] = useState<string[]>([]);
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
   const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
-  const [buybackReady, setBuybackReady] = useState<InvoiceBuybackData | null>(null);
-  const [showBuybackPreview, setShowBuybackPreview] = useState(false);
 
-  const allJenis = [...JENIS, ...customJenis];
+  const { allJenis, customJenis, addCustomJenis, deleteCustomJenis: deleteCustomJenisRaw } = useJenisBarang(JENIS);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1096,34 +996,16 @@ function InventoriContent() {
     setLoading(false);
   }, [searchParams]);
 
-  const loadCustomJenis = useCallback(async () => {
-    const { data } = await supabase.from("jenis_barang_custom").select("nama").order("nama");
-    setCustomJenis((data ?? []).map((d) => d.nama as string));
-  }, []);
-
-  const addCustomJenis = useCallback(async (nama: string): Promise<string | null> => {
-    const trimmed = nama.trim();
-    if (!trimmed) return null;
-    const existingMatch = allJenis.find((j) => j.toLowerCase() === trimmed.toLowerCase());
-    if (existingMatch) return existingMatch;
-    const { error } = await supabase.from("jenis_barang_custom").insert({ nama: trimmed });
-    if (error) return null;
-    setCustomJenis((prev) => [...prev, trimmed]);
-    return trimmed;
-  }, [allJenis]);
-
   const deleteCustomJenis = useCallback(async (nama: string) => {
     if (!window.confirm(`Hapus jenis barang "${nama}" dari daftar pilihan?\n\nBarang yang sudah memakai jenis ini tidak akan terhapus, hanya pilihannya saja yang dihilangkan.`)) {
       return;
     }
-    const { error } = await supabase.from("jenis_barang_custom").delete().eq("nama", nama);
-    if (error) { window.alert("Gagal menghapus jenis barang: " + error.message); return; }
-    setCustomJenis((prev) => prev.filter((j) => j !== nama));
+    const ok = await deleteCustomJenisRaw(nama);
+    if (!ok) { window.alert("Gagal menghapus jenis barang."); return; }
     if (filterJenis === nama) setFilterJenis("Pilih Jenis Inventori");
-  }, [filterJenis]);
+  }, [filterJenis, deleteCustomJenisRaw]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadCustomJenis(); }, [loadCustomJenis]);
 
   // Apply filters + sort, and keep selected in sync with latest DB data
   useEffect(() => {
@@ -1185,21 +1067,7 @@ function InventoriContent() {
   const openEdit = (item: BarangRow) => { setEditItem(item); setShowPopup(true); };
 
   return (
-    <>
-      {/* Print CSS */}
-      <style>{`
-        @media print {
-          aside, nav, #inventori-screen, #buyback-preview-overlay { display: none !important; }
-          #invoice-print { display: block !important; }
-          html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm; }
-        }
-      `}</style>
-
-      {/* Invoice buyback — hidden on screen, visible on print */}
-      {buybackReady && <InvoiceBuyback mode="print" data={buybackReady} />}
-
-      <AppLayout>
+    <AppLayout>
       <div id="inventori-screen" className="flex-1 flex flex-col bg-white min-h-screen">
         <div className="px-4 sm:px-6 pt-6 pb-8 flex flex-col gap-5">
           {/* Title */}
@@ -1211,31 +1079,6 @@ function InventoriContent() {
               Lihat, tambah, dan kelola semua barang emas yang ada di toko.
             </p>
           </div>
-
-          {/* Notifikasi: Buyback berhasil disimpan */}
-          {buybackReady && (
-            <div className="flex items-center justify-between gap-4 bg-green-50 border border-green-200 rounded-xl px-5 py-4 flex-wrap">
-              <div>
-                <p className="font-bold text-green-800">✅ Buyback emas berhasil disimpan!</p>
-                <p className="text-sm text-green-700">No. Nota: <span className="font-mono font-semibold">{buybackReady.no_buyback}</span></p>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowBuybackPreview(true)}
-                  className="px-4 py-2.5 rounded-xl text-white font-semibold text-sm hover:opacity-90 transition-all"
-                  style={{ backgroundColor: "#C99A36" }}
-                >
-                  🖨️ Lihat / Cetak Invoice
-                </button>
-                <button
-                  onClick={() => setBuybackReady(null)}
-                  className="px-4 py-2.5 rounded-xl border border-green-300 text-green-700 font-semibold text-sm hover:bg-green-100 transition-colors"
-                >
-                  Tutup
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* 3 Tab Jenis Inventori */}
           <div className="grid grid-cols-3 gap-1 p-1 bg-gray-100 rounded-2xl">
@@ -1317,14 +1160,10 @@ function InventoriContent() {
               </div>
               <div className="text-center max-w-[280px]">
                 <p className="text-xl font-bold leading-tight">
-                  {activeTab === "Aset"
-                    ? (filterSubJenis === "Emas Rosok" ? "Tambah Buyback Emas" : filterSubJenis === "Cukim" ? "Tambah Cukim" : "Tambah Aset")
-                    : `Tambah ${activeTab}`}
+                  {activeTab === "Aset" ? "Tambah Aset" : `Tambah ${activeTab}`}
                 </p>
                 <p className="text-sm font-normal opacity-90 mt-0.5">
-                  {activeTab === "Aset" && filterSubJenis === "Emas Rosok"
-                    ? "Catat pembelian emas rosok (buyback) baru"
-                    : "Masukkan satu barang baru ke daftar"}
+                  Masukkan satu barang baru ke daftar
                 </p>
               </div>
             </button>
@@ -1380,7 +1219,7 @@ function InventoriContent() {
                             : "border-gray-200 text-gray-600 hover:border-stone-500"
                         }`}
                       >
-                        {s === "Emas Rosok" ? "Emas Rosok (Buyback)" : s}
+                        {s}
                       </button>
                     ))}
                   </div>
@@ -1669,7 +1508,7 @@ function InventoriContent() {
                     </span>
                     {selected.sub_jenis_aset && (
                       <span className="px-3 py-1.5 rounded-full text-sm font-bold bg-stone-100 text-stone-700">
-                        {selected.sub_jenis_aset === "Emas Rosok" ? "Emas Rosok (Buyback)" : selected.sub_jenis_aset}
+                        {selected.sub_jenis_aset}
                       </span>
                     )}
                   </div>
@@ -1761,7 +1600,6 @@ function InventoriContent() {
         onDeleteJenis={deleteCustomJenis}
         defaultJenisInventori={activeTab}
         hargaEmasByKarat={hargaEmasByKarat}
-        onBuybackSaved={setBuybackReady}
       />
       <HapusPopup
         open={!!hapusItem}
@@ -1769,48 +1607,7 @@ function InventoriContent() {
         onClose={() => setHapusItem(null)}
         onConfirm={hapus}
       />
-      </AppLayout>
-
-      {/* ── MODAL: PREVIEW / CETAK INVOICE BUYBACK ── */}
-      {showBuybackPreview && buybackReady && (
-        <div id="buyback-preview-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-          <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">Preview Invoice Buyback</h2>
-                <p className="text-xs text-gray-400">Periksa kembali sebelum dicetak.</p>
-              </div>
-              <button
-                onClick={() => setShowBuybackPreview(false)}
-                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
-                <InvoiceBuyback mode="preview" data={buybackReady} />
-              </div>
-            </div>
-            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
-              <button
-                onClick={() => setShowBuybackPreview(false)}
-                className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
-              >
-                ✕ Tutup
-              </button>
-              <button
-                onClick={() => printClean()}
-                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
-                style={{ backgroundColor: "#C99A36" }}
-              >
-                🖨️ Cetak Invoice
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </AppLayout>
   );
 }
 

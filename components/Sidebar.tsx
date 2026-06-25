@@ -15,6 +15,10 @@ const menuItems = [
     icon: <svg viewBox="0 0 32 32" fill="none" className="w-6 h-6"><path d="M16 3L29 10v12L16 29 3 22V10L16 3z" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M3 10l13 7M16 29V17M29 10l-13 7" stroke="currentColor" strokeWidth="2"/></svg>,
   },
   {
+    href: "/pembelian", label: "Pembelian",
+    icon: <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6"><path d="M6 6h15l-1.5 9h-12L6 6z" stroke="currentColor" strokeWidth="2" fill="none" strokeLinejoin="round"/><path d="M6 6L5 3H2" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/><path d="M9 21a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM18 21a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" fill="currentColor"/></svg>,
+  },
+  {
     href: "/hutang-piutang", label: "Hutang Piutang",
     icon: <svg viewBox="0 0 24 24" fill="none" className="w-6 h-6"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="2" fill="none"/><path d="M7 9h10M7 13h10M7 17h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>,
   },

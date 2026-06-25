@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import AppLayout from "@/components/AppLayout";
@@ -1331,6 +1331,18 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                       const tBerat = rows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
                       const tModalPersen = weightedAvgPersen(rows, "persen_modal");
                       const tJualPersen = weightedAvgPersen(rows, "persen_jual");
+
+                      // Kelompokkan baris per karat (dinormalisasi) supaya tiap kelompok
+                      // bisa diberi baris subtotal sendiri, sebelum subtotal gabungan di bawah.
+                      const rowsByKadar: Record<string, typeof rows> = {};
+                      for (const r of rows) {
+                        const k = normalizeKadar(r.kadar);
+                        if (!rowsByKadar[k]) rowsByKadar[k] = [];
+                        rowsByKadar[k].push(r);
+                      }
+                      const kadarKeysJenis = sortKadarDesc(Object.keys(rowsByKadar));
+                      let rowNo = 0;
+
                       return (
                         <div key={jenis} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
                           <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
@@ -1356,28 +1368,54 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-50">
-                                {rows.map((r, idx) => (
-                                  <tr key={r.id} className="hover:bg-amber-50/30 transition-colors">
-                                    <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
-                                    <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{r.id_item}</td>
-                                    <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
-                                    <td className="px-4 py-3">
-                                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
-                                        {r.kadar}
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-3 text-gray-600">{fmtGram(r.berat_gram)}</td>
-                                    <td className="px-4 py-3 font-bold text-gray-900 text-center">{r.jumlah}</td>
-                                    <td className="px-4 py-3 font-bold text-gray-900">{fmtGram(r.berat_gram * r.jumlah)}</td>
-                                    <td className="px-4 py-3 text-gray-600">{fmtPersen(r.persen_modal)}</td>
-                                    <td className="px-4 py-3 font-semibold text-green-700">{fmtPersen(r.persen_jual)}</td>
-                                  </tr>
-                                ))}
+                                {kadarKeysJenis.map((k) => {
+                                  const groupRows = rowsByKadar[k];
+                                  const kBerat = groupRows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+                                  const kModalPersen = weightedAvgPersen(groupRows, "persen_modal");
+                                  const kJualPersen = weightedAvgPersen(groupRows, "persen_jual");
+                                  return (
+                                    <Fragment key={k}>
+                                      {groupRows.map((r) => {
+                                        rowNo += 1;
+                                        return (
+                                          <tr key={r.id} className="hover:bg-amber-50/30 transition-colors">
+                                            <td className="px-4 py-3 text-xs text-gray-400">{rowNo}</td>
+                                            <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{r.id_item}</td>
+                                            <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
+                                            <td className="px-4 py-3">
+                                              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                                                {r.kadar}
+                                              </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-600">{fmtGram(r.berat_gram)}</td>
+                                            <td className="px-4 py-3 font-bold text-gray-900 text-center">{r.jumlah}</td>
+                                            <td className="px-4 py-3 font-bold text-gray-900">{fmtGram(r.berat_gram * r.jumlah)}</td>
+                                            <td className="px-4 py-3 text-gray-600">{fmtPersen(r.persen_modal)}</td>
+                                            <td className="px-4 py-3 font-semibold text-green-700">{fmtPersen(r.persen_jual)}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                      <tr key={`subtotal-${k}`} style={{ backgroundColor: "#FFFBEB" }}>
+                                        <td colSpan={3} />
+                                        <td className="px-4 py-2 text-xs font-extrabold text-amber-800">
+                                          SUBTOTAL {k}
+                                        </td>
+                                        <td />
+                                        <td className="px-4 py-2 text-xs font-bold text-gray-600 text-center">
+                                          {groupRows.reduce((s, r) => s + r.jumlah, 0)}
+                                        </td>
+                                        <td className="px-4 py-2 text-xs font-extrabold text-gray-800">{fmtGram(kBerat)}</td>
+                                        <td className="px-4 py-2 text-xs font-bold text-gray-600">{fmtPersen(kModalPersen)}</td>
+                                        <td className="px-4 py-2 text-xs font-bold text-green-700">{fmtPersen(kJualPersen)}</td>
+                                      </tr>
+                                    </Fragment>
+                                  );
+                                })}
                               </tbody>
                               <tfoot style={{ backgroundColor: "#FEF9C3", borderTop: "2px solid #FDE047" }}>
                                 <tr>
                                   <td colSpan={6} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">
-                                    SUBTOTAL {jenis}
+                                    SUBTOTAL {jenis} (Semua Karat)
                                   </td>
                                   <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(tBerat)}</td>
                                   <td className="px-4 py-3 font-bold text-gray-700">{fmtPersen(tModalPersen)}</td>

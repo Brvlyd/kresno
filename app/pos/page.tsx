@@ -600,7 +600,7 @@ export default function POSPage() {
   const [diskon, setDiskon] = useState("");
   const [ppnEnabled, setPpnEnabled] = useState(false);
   const [ppnPercent, setPpnPercent] = useState("11");
-  const [paymentMethod, setPaymentMethod] = useState<"Tunai" | "Transfer" | "QRIS" | "">("");
+  const [paymentMethod, setPaymentMethod] = useState<"Tunai" | "Transfer" | "Debit" | "QRIS" | "">("");
   const [catatan, setCatatan] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1152,8 +1152,8 @@ export default function POSPage() {
                     <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
                     <h3 className="font-bold text-gray-800">Metode Pembayaran</h3>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 max-w-sm">
-                    {(["Tunai", "Transfer", "QRIS"] as const).map((m) => (
+                  <div className="grid grid-cols-2 gap-2 max-w-sm">
+                    {(["Tunai", "Transfer", "Debit", "QRIS"] as const).map((m) => (
                       <button
                         key={m}
                         type="button"
