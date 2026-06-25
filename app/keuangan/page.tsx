@@ -44,6 +44,33 @@ function weightedAvgPersen(
   return weighted / totalBerat;
 }
 
+/** Samakan format kadar dari berbagai sumber (inventori "24K", gadai/servis "24K (99.99%)")
+ * supaya bisa dikelompokkan jadi satu bucket yang sama saat dipecah per karat. */
+function normalizeKadar(k: string | null | undefined): string {
+  if (!k || k === "—") return "—";
+  const m = k.match(/(\d+(?:\.\d+)?)\s*[kK]/);
+  return m ? `${m[1]}K` : k.trim();
+}
+
+/** Urutkan label karat dari yang tertinggi ke terendah (24K → 9K → "—" di akhir). */
+function sortKadarDesc(keys: string[]): string[] {
+  const sortValue = (k: string) => {
+    const m = k.match(/(\d+(?:\.\d+)?)/);
+    return m ? parseFloat(m[1]) : -1;
+  };
+  return [...keys].sort((a, b) => sortValue(b) - sortValue(a));
+}
+
+/** Kelompokkan baris berdasarkan karat (sudah dinormalisasi), lalu jumlahkan nilainya. */
+function sumByKadar<T>(rows: T[], kadarOf: (r: T) => string, value: (r: T) => number): Record<string, number> {
+  const acc: Record<string, number> = {};
+  for (const r of rows) {
+    const k = normalizeKadar(kadarOf(r));
+    acc[k] = (acc[k] || 0) + value(r);
+  }
+  return acc;
+}
+
 /* ═══════════════════════════════════════════════════════
    TIPE DATA
 ═══════════════════════════════════════════════════════ */
@@ -89,6 +116,7 @@ interface ServisRow {
   jenis_servis: string;
   pelanggan_nama: string;
   nama_barang: string;
+  kadar: string;
   estimasi_biaya: number;
   status: string;
   tanggal_masuk: string;
@@ -99,6 +127,7 @@ interface GadaiRow {
   no_gadai: string;
   pelanggan_nama: string;
   nama_barang: string;
+  kadar: string;
   nilai_pinjaman: number;
   bunga_persen: number;
   status: string;
@@ -829,6 +858,41 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const totalPengeluaran = nilaiMasuk;
   const labaBersih = totalPemasukan - totalPengeluaran;
 
+  /* ── Pecahan per Karat — untuk kartu ringkasan & banner total ── */
+  const itemSisaPerKadar = sumByKadar(sisaStok, (r) => r.kadar, () => 1);
+  const gramSisaPerKadar = sumByKadar(sisaStok, (r) => r.kadar, (r) => r.berat_gram * r.jumlah);
+  const modalPerKadar = sumByKadar(sisaStok, (r) => r.kadar, (r) => (r.harga_beli || 0) * r.jumlah);
+  const jualPerKadar = sumByKadar(sisaStok, (r) => r.kadar, (r) => (r.harga_jual || 0) * r.jumlah);
+  const kadarKeysSisa = sortKadarDesc(Object.keys(gramSisaPerKadar));
+
+  const itemMasukPerKadar = sumByKadar(stokMasuk, (r) => r.kadar, () => 1);
+  const gramMasukPerKadar = sumByKadar(stokMasuk, (r) => r.kadar, (r) => r.berat_gram * r.jumlah);
+  const nilaiMasukPerKadar = sumByKadar(stokMasuk, (r) => r.kadar, (r) => (r.harga_beli || 0) * r.jumlah);
+  const kadarKeysMasuk = sortKadarDesc(Object.keys(gramMasukPerKadar));
+
+  const itemKeluarPerKadar = sumByKadar(stokKeluar, (k) => k.kadar, () => 1);
+  const gramKeluarPerKadar = sumByKadar(stokKeluar, (k) => k.kadar, (k) => k.berat_gram * k.jumlah_keluar);
+  const nilaiPenjualanPerKadar = sumByKadar(keluarTerjual, (k) => k.kadar, (k) => k.harga_jual * k.jumlah_keluar);
+  const kadarKeysKeluar = sortKadarDesc(Object.keys(gramKeluarPerKadar));
+
+  const pendapatanServisPerKadar = sumByKadar(servisSelesai, (s) => s.kadar, (s) => s.estimasi_biaya);
+  const pendapatanGadaiPerKadar = sumByKadar(gadaiLunas, (g) => g.kadar, (g) => g.nilai_pinjaman * g.bunga_persen / 100);
+
+  const kadarKeysLaba = sortKadarDesc(Array.from(new Set([
+    ...Object.keys(nilaiPenjualanPerKadar),
+    ...Object.keys(pendapatanServisPerKadar),
+    ...Object.keys(pendapatanGadaiPerKadar),
+    ...Object.keys(nilaiMasukPerKadar),
+  ])));
+  const labaBersihPerKadar: Record<string, number> = {};
+  for (const k of kadarKeysLaba) {
+    labaBersihPerKadar[k] =
+      (nilaiPenjualanPerKadar[k] || 0) +
+      (pendapatanServisPerKadar[k] || 0) +
+      (pendapatanGadaiPerKadar[k] || 0) -
+      (nilaiMasukPerKadar[k] || 0);
+  }
+
   /* ── Log Transaksi Terpadu ── */
   type TxKind = "stok_masuk" | "stok_keluar" | "servis" | "gadai";
   const allTx: {
@@ -1080,6 +1144,10 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 value: sisaStok.length + " item",
                 sub: fmtGram(totalGramSisa),
                 color: "border-l-[#C99A36]",
+                breakdown: kadarKeysSisa.map((k) => ({
+                  kadar: k,
+                  text: `${fmtGram(gramSisaPerKadar[k])} · ${itemSisaPerKadar[k]} item`,
+                })),
                 icon: (
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/>
@@ -1091,6 +1159,10 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 value: stokMasuk.length + " item",
                 sub: fmtGram(gramMasuk),
                 color: "border-l-blue-500",
+                breakdown: kadarKeysMasuk.map((k) => ({
+                  kadar: k,
+                  text: `${fmtGram(gramMasukPerKadar[k])} · ${itemMasukPerKadar[k]} item`,
+                })),
                 icon: (
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
@@ -1102,6 +1174,10 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 value: stokKeluar.length + " item",
                 sub: fmtGram(gramKeluar),
                 color: "border-l-red-400",
+                breakdown: kadarKeysKeluar.map((k) => ({
+                  kadar: k,
+                  text: `${fmtGram(gramKeluarPerKadar[k])} · ${itemKeluarPerKadar[k]} item`,
+                })),
                 icon: (
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18"/>
@@ -1113,6 +1189,10 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 value: fmtRp(Math.abs(labaBersih)),
                 sub: labaBersih >= 0 ? "Untung" : "Rugi",
                 color: labaBersih >= 0 ? "border-l-green-500" : "border-l-red-500",
+                breakdown: kadarKeysLaba.map((k) => ({
+                  kadar: k,
+                  text: (labaBersihPerKadar[k] >= 0 ? "+" : "−") + fmtRp(Math.abs(labaBersihPerKadar[k])),
+                })),
                 icon: labaBersih >= 0 ? (
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
@@ -1133,34 +1213,65 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 </div>
                 <p className="text-xl font-extrabold text-gray-900">{c.value}</p>
                 <p className="text-sm font-semibold text-gray-500 mt-0.5">{c.sub}</p>
+                {c.breakdown.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-gray-100 space-y-0.5">
+                    {c.breakdown.map((b) => (
+                      <p key={b.kadar} className="text-[11px] text-gray-400 flex items-center justify-between gap-2">
+                        <span className="font-bold text-gray-500">{b.kadar}</span>
+                        <span>{b.text}</span>
+                      </p>
+                    ))}
+                  </div>
+                )}
                 <p className="text-xs text-gray-400 mt-1.5">{c.label}</p>
               </div>
             ))}
           </div>
 
-          {/* ── Sorotan Total Gram ── */}
+          {/* ── Sorotan Total Gram — dipecah per karat ── */}
           <div
-            className="rounded-2xl p-5 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 print:hidden"
+            className="rounded-2xl p-5 text-white print:hidden"
             style={{ background: "linear-gradient(135deg, #6F5333 0%, #9A7248 100%)" }}
           >
-            <div>
-              <p className="text-sm font-semibold opacity-75">
-                Total Berat Semua Stok Emas Tersedia Saat Ini
-              </p>
-              <p className="text-4xl font-black mt-1">{fmtGram(totalGramSisa)}</p>
-              <p className="text-xs opacity-60 mt-1">
-                dari {sisaStok.length} item &bull; Periode: {label}
-              </p>
-            </div>
-            <div className="flex gap-6 sm:gap-8 sm:text-right">
-              <div>
-                <p className="text-xs opacity-70">Nilai Modal</p>
-                <p className="text-lg font-bold">{fmtRp(totalNilaiModal)}</p>
+            <p className="text-sm font-semibold opacity-75">
+              Total Berat Semua Stok Emas Tersedia Saat Ini — per Karat
+            </p>
+
+            {kadarKeysSisa.length > 0 && (
+              <div className="mt-3 space-y-1.5">
+                {kadarKeysSisa.map((k) => (
+                  <div key={k} className="flex flex-wrap items-center justify-between gap-3 bg-white/10 rounded-xl px-4 py-2">
+                    <div className="flex items-center gap-2.5">
+                      <span className="px-2.5 py-0.5 rounded-full bg-white/20 font-bold text-sm">{k}</span>
+                      <span className="text-xs opacity-70">{itemSisaPerKadar[k]} item</span>
+                    </div>
+                    <div className="flex gap-4 sm:gap-6 text-xs sm:text-sm">
+                      <span className="font-bold">{fmtGram(gramSisaPerKadar[k])}</span>
+                      <span className="opacity-80">Modal: {fmtRp(modalPerKadar[k])}</span>
+                      <span className="opacity-80">Jual: {fmtRp(jualPerKadar[k])}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-4 pt-4 border-t border-white/20">
               <div>
-                <p className="text-xs opacity-70">Estimasi Nilai Jual</p>
-                <p className="text-lg font-bold">{fmtRp(totalNilaiJual)}</p>
-                <p className="text-xs opacity-60">Potensi Laba: {fmtRp(totalPotensiLaba)}</p>
+                <p className="text-4xl font-black">{fmtGram(totalGramSisa)}</p>
+                <p className="text-xs opacity-60 mt-1">
+                  TOTAL dari {sisaStok.length} item &bull; Periode: {label}
+                </p>
+              </div>
+              <div className="flex gap-6 sm:gap-8 sm:text-right">
+                <div>
+                  <p className="text-xs opacity-70">Nilai Modal</p>
+                  <p className="text-lg font-bold">{fmtRp(totalNilaiModal)}</p>
+                </div>
+                <div>
+                  <p className="text-xs opacity-70">Estimasi Nilai Jual</p>
+                  <p className="text-lg font-bold">{fmtRp(totalNilaiJual)}</p>
+                  <p className="text-xs opacity-60">Potensi Laba: {fmtRp(totalPotensiLaba)}</p>
+                </div>
               </div>
             </div>
           </div>

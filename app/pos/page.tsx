@@ -1015,7 +1015,7 @@ export default function POSPage() {
                     {loading && <span className="text-xs text-gray-400">(memuat stok...)</span>}
                   </div>
                   <p className="text-xs text-gray-400 mt-1 ml-3">
-                    Cari kode atau nama barang — kadar, berat, dan harga jual terisi otomatis dari data inventori.
+                    Cari kode atau nama barang — kadar, berat, dan harga satuan terisi otomatis dari data inventori, dan bisa diubah manual jika perlu.
                   </p>
                 </div>
 
@@ -1066,9 +1066,7 @@ export default function POSPage() {
                             )}
                           </td>
                           <td className="px-3 py-2.5 min-w-[110px]">
-                            <p className="py-2 text-sm font-semibold text-gray-700">
-                              {row.item ? fmtRp(row.hargaJual) : "—"}
-                            </p>
+                            <RpField disabled={!row.item} value={row.hargaJual} onChange={(v) => updateRow(row.id, { hargaJual: v })} />
                           </td>
                           <td className="px-3 py-2.5 min-w-[100px]">
                             <RpField disabled={!row.item} value={row.ongkos} onChange={(v) => updateRow(row.id, { ongkos: v })} />
@@ -1132,10 +1130,10 @@ export default function POSPage() {
                     <div className="flex items-center gap-1.5">
                       <input
                         type="text"
-                        disabled={!ppnEnabled}
+                        inputMode="decimal"
                         value={ppnPercent}
                         onChange={(e) => setPpnPercent(e.target.value.replace(/[^0-9.,]/g, ""))}
-                        className="w-12 border border-gray-200 rounded-lg px-1.5 py-1 text-right text-sm focus:outline-none focus:border-[#C99A36] disabled:bg-gray-50"
+                        className="w-16 border border-gray-200 rounded-lg px-1.5 py-1 text-right text-sm focus:outline-none focus:border-[#C99A36]"
                       />
                       <span className="text-gray-500">% = {fmtRp(ppnAmount)}</span>
                     </div>
