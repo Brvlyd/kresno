@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { setLoggedIn } from "@/lib/auth-session";
 
-const SESSION_KEY = "kresno_login_unlocked";
 const DEFAULT_PASSWORD = "1111";
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -18,6 +19,7 @@ export default function LoginPage() {
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [showExpired, setShowExpired] = useState(searchParams.get("expired") === "1");
 
   useEffect(() => {
     supabase
@@ -34,7 +36,7 @@ export default function LoginPage() {
     if (checking) return;
     setChecking(true);
     if (pin === storedPassword) {
-      try { sessionStorage.setItem(SESSION_KEY, "1"); } catch { /* ignore */ }
+      setLoggedIn();
       router.push("/dashboard");
     } else {
       setError(true);
@@ -48,6 +50,30 @@ export default function LoginPage() {
       className="min-h-screen flex flex-col items-center justify-center gap-10 px-4"
       style={{ backgroundColor: "#6F5333" }}
     >
+      {/* Popup: sesi habis / harus login kembali (misal setelah logout lalu menekan tombol Back) */}
+      {showExpired && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8" style={{ color: "#C99A36" }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 10-8 0v4h8z" />
+              </svg>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Sesi Anda Telah Berakhir</h3>
+            <p className="text-gray-500 text-base mb-6">
+              Anda sudah logout. Silahkan login kembali untuk melanjutkan.
+            </p>
+            <button
+              onClick={() => setShowExpired(false)}
+              className="w-full py-3.5 rounded-xl text-white font-bold text-base transition-colors"
+              style={{ backgroundColor: "#C99A36" }}
+            >
+              Login Kembali
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Logo Kresno */}
       <div className="flex flex-col items-center">
         <Image
@@ -111,5 +137,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

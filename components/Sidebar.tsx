@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { clearLoggedIn } from "@/lib/auth-session";
 
 const menuItems = [
   {
@@ -42,7 +43,14 @@ const menuItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const handleLogout = () => {
+    clearLoggedIn();
+    setMobileOpen(false);
+    router.replace("/login");
+  };
 
   const NavLinks = () => (
     <>
@@ -94,15 +102,15 @@ export default function Sidebar() {
           <NavLinks />
         </nav>
 
-        {/* Logout */}
+        {/* Keluar */}
         <div className="flex-shrink-0 pb-4">
           <div className="h-px mb-1" style={{ backgroundColor: "rgba(255,255,255,0.2)" }} />
-          <Link
-            href="/login"
-            className="block px-5 py-3 text-[15px] font-semibold text-white/90 hover:text-white transition-colors"
+          <button
+            onClick={handleLogout}
+            className="block w-full text-left px-5 py-3 text-[15px] font-semibold text-white/90 hover:text-white transition-colors"
           >
-            Logout
-          </Link>
+            Keluar
+          </button>
         </div>
       </aside>
 
@@ -148,13 +156,12 @@ export default function Sidebar() {
               <NavLinks />
             </nav>
             <div className="h-px" style={{ backgroundColor: "rgba(255,255,255,0.2)" }} />
-            <Link
-              href="/login"
-              className="block px-5 py-3 text-[15px] font-semibold text-white/90"
-              onClick={() => setMobileOpen(false)}
+            <button
+              onClick={handleLogout}
+              className="block w-full text-left px-5 py-3 text-[15px] font-semibold text-white/90"
             >
-              Logout
-            </Link>
+              Keluar
+            </button>
           </div>
         </>
       )}

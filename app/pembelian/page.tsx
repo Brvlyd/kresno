@@ -138,7 +138,7 @@ export default function PembelianPage() {
       berat_gram: beratGramNum,
       jumlah: jumlahNum,
       status_inventori: "Tersedia",
-      status_laporan: "Draft",
+      status_laporan: "Draf",
       kategori: "Emas Rosok",
       persen_modal: persenModalNum,
       persen_jual: persenJualNum,

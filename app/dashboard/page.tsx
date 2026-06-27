@@ -42,11 +42,11 @@ interface QuickMenuItem {
 const fmt = (n: number) => new Intl.NumberFormat("id-ID").format(n);
 
 const STATUS_STYLE: Record<string, string> = {
-  "Draft":            "bg-orange-100 text-orange-600 border border-orange-200",
-  "Approval Checker": "bg-blue-100 text-blue-600 border border-blue-200",
-  "Approval Signer":  "bg-stone-700 text-white",
-  "Approved":         "bg-green-100 text-green-600 border border-green-200",
-  "Rejected":         "bg-red-100 text-red-600 border border-red-200",
+  "Draf":                       "bg-orange-100 text-orange-600 border border-orange-200",
+  "Persetujuan Pemeriksa":      "bg-blue-100 text-blue-600 border border-blue-200",
+  "Persetujuan Penandatangan":  "bg-stone-700 text-white",
+  "Disetujui":                  "bg-green-100 text-green-600 border border-green-200",
+  "Ditolak":                    "bg-red-100 text-red-600 border border-red-200",
 };
 
 function Badge({ status }: { status: string }) {

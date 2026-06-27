@@ -59,7 +59,7 @@ const emptyForm: FormData = {
   id_item: "", jenis_barang: "Gelang", nama_produk: "",
   kadar: "", berat_gram: "", jumlah: "1",
   status_inventori: "Tersedia",
-  status_laporan: "Draft", kategori: "Gelang",
+  status_laporan: "Draf", kategori: "Gelang",
   persen_modal: "", persen_jual: "", supplier: "",
   keterangan: "", gambar_url: "",
   jenis_inventori: "Stock Dalam", sub_jenis_aset: "",
@@ -67,7 +67,7 @@ const emptyForm: FormData = {
 
 const JENIS = ["Gelang", "Kalung", "Cincin", "Anting", "Liontin", "Tindik Mata", "Tusuk Konde", "Lainnya"];
 const STATUS_INVENTORI = ["Tersedia", "Terjual", "Dalam Servis", "Retur", "Tidak Laku", "Mati Laku", "Habis Dijual", "Hilang"];
-const STATUS_LAPORAN = ["Draft", "Approval Checker", "Approval Signer", "Approved", "Rejected"];
+const STATUS_LAPORAN = ["Draf", "Persetujuan Pemeriksa", "Persetujuan Penandatangan", "Disetujui", "Ditolak"];
 const JENIS_INVENTORI = ["Stock Dalam", "Stock Display", "Aset"] as const;
 const SUB_JENIS_ASET = ["Cukim"] as const;
 
@@ -478,13 +478,15 @@ function DetailBarangPopup({
         return;
       }
       setMsg("✓ Berhasil disimpan! Hutang ke supplier juga tercatat.");
-      setTimeout(() => { onSaved(); onClose(); }, 900);
+      onSaved();
+      setTimeout(() => { onClose(); }, 900);
       return;
     }
 
     setSaving(false);
     setMsg("✓ Berhasil disimpan!");
-    setTimeout(() => { onSaved(); onClose(); }, 700);
+    onSaved();
+    setTimeout(() => { onClose(); }, 700);
   };
 
   const openBarcodePreview = async () => {
@@ -828,7 +830,7 @@ function DetailBarangPopup({
           {/* Status Laporan */}
           <div>
             <label className="block text-base font-semibold text-gray-700 mb-1.5">Status Laporan</label>
-            <p className="text-sm text-gray-400 mb-1.5">Tahap persetujuan laporan barang ini (boleh dibiarkan &quot;Draft&quot; jika belum tahu).</p>
+            <p className="text-sm text-gray-400 mb-1.5">Tahap persetujuan laporan barang ini (boleh dibiarkan &quot;Draf&quot; jika belum tahu).</p>
             <div className="flex flex-wrap gap-2">
               {STATUS_LAPORAN.map((s) => (
                 <button
@@ -1560,10 +1562,10 @@ function InventoriContent() {
                     <div className="flex flex-col gap-1.5">
                       <p className="text-sm text-gray-400 font-medium">Status Laporan</p>
                       <span className={`px-4 py-2 rounded-full text-base font-bold w-fit ${
-                        selected.status_laporan === "Approved"         ? "bg-green-100 text-green-700" :
-                        selected.status_laporan === "Rejected"         ? "bg-red-100 text-red-700" :
-                        selected.status_laporan === "Approval Signer"  ? "bg-stone-700 text-white" :
-                        selected.status_laporan === "Approval Checker" ? "bg-blue-100 text-blue-700" :
+                        selected.status_laporan === "Disetujui"                  ? "bg-green-100 text-green-700" :
+                        selected.status_laporan === "Ditolak"                    ? "bg-red-100 text-red-700" :
+                        selected.status_laporan === "Persetujuan Penandatangan"   ? "bg-stone-700 text-white" :
+                        selected.status_laporan === "Persetujuan Pemeriksa"       ? "bg-blue-100 text-blue-700" :
                         "bg-orange-100 text-orange-600"
                       }`}>
                         {selected.status_laporan}
@@ -1592,7 +1594,7 @@ function InventoriContent() {
         open={showPopup}
         onClose={() => setShowPopup(false)}
         editData={editItem}
-        onSaved={() => { load(); setShowPopup(false); }}
+        onSaved={() => load()}
         jenisOptions={allJenis}
         customJenis={customJenis}
         existingIds={items.map((i) => i.id_item)}
