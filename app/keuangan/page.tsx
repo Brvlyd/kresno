@@ -76,7 +76,53 @@ function sumByKadar<T>(rows: T[], kadarOf: (r: T) => string, value: (r: T) => nu
 ═══════════════════════════════════════════════════════ */
 type FilterMode =
   | "hari_ini" | "minggu_ini" | "bulan_ini" | "bulan_lalu"
+  | "tahun_ini" | "tahun_lalu"
   | "tanggal" | "bulan" | "rentang";
+
+type GroupBy = "harian" | "mingguan" | "bulanan" | "kuartal" | "tahunan";
+
+const GROUP_BY_OPTIONS: [GroupBy, string][] = [
+  ["harian", "Harian"],
+  ["mingguan", "Mingguan"],
+  ["bulanan", "Bulanan"],
+  ["kuartal", "Per 3 Bulan"],
+  ["tahunan", "Tahunan"],
+];
+
+/** Kunci & label kelompok tren laba-rugi — dipakai untuk mengelompokkan transaksi
+ * dalam rentang yang dipilih jadi baris per-hari/minggu/bulan/kuartal/tahun. */
+function bucketKey(d: Date, g: GroupBy): string {
+  const y = d.getFullYear();
+  if (g === "harian") return d.toISOString().slice(0, 10);
+  if (g === "mingguan") {
+    const dow = d.getDay();
+    const mon = new Date(d.getFullYear(), d.getMonth(), d.getDate() - (dow === 0 ? 6 : dow - 1));
+    return mon.toISOString().slice(0, 10);
+  }
+  if (g === "bulanan") return `${y}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  if (g === "kuartal") return `${y}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+  return `${y}`;
+}
+
+function bucketLabel(key: string, g: GroupBy): string {
+  if (g === "harian") return fmtTgl(new Date(key));
+  if (g === "mingguan") {
+    const start = new Date(key);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    return fmtTglShort(start) + " — " + fmtTglShort(end);
+  }
+  if (g === "bulanan") {
+    const [y, m] = key.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  }
+  if (g === "kuartal") {
+    const [y, q] = key.split("-Q");
+    const bulan = ["Jan–Mar", "Apr–Jun", "Jul–Sep", "Okt–Des"][Number(q) - 1];
+    return `Kuartal ${q} ${y} (${bulan})`;
+  }
+  return key;
+}
 
 interface StokRow {
   id: string;
@@ -160,6 +206,11 @@ function getDateRange(
     new Date(now.getFullYear(), now.getMonth() - 1, 1),
     new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999),
   ];
+  if (mode === "tahun_ini") return [new Date(now.getFullYear(), 0, 1), eod];
+  if (mode === "tahun_lalu") return [
+    new Date(now.getFullYear() - 1, 0, 1),
+    new Date(now.getFullYear() - 1, 11, 31, 23, 59, 59, 999),
+  ];
   if (mode === "tanggal" && customDate) {
     const d = new Date(customDate);
     return [
@@ -198,6 +249,8 @@ function filterLabel(
     const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     return d.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
   }
+  if (mode === "tahun_ini") return "Tahun " + now.getFullYear();
+  if (mode === "tahun_lalu") return "Tahun " + (now.getFullYear() - 1);
   if (mode === "tanggal" && customDate) return fmtTgl(new Date(customDate));
   if (mode === "bulan" && customMonth) {
     const [y, m] = customMonth.split("-").map(Number);
@@ -644,9 +697,9 @@ function ChangePinModal({ open, onClose, currentPin, onChanged }: {
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: HEADER CETAK (hanya muncul saat print)
 ═══════════════════════════════════════════════════════ */
-function PrintHeader({ label }: { label: string }) {
+function PrintHeader({ label, forceShow }: { label: string; forceShow?: boolean }) {
   return (
-    <div className="hidden print:block mb-6">
+    <div className={forceShow ? "block mb-6" : "hidden print:block mb-6"}>
       <div className="pb-4 mb-4" style={{ borderBottom: "2px solid #6F5333" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "14pt" }}>
           {/* Logo */}
@@ -727,6 +780,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   /* ── UI ── */
   const [tab, setTab] = useState<"stok" | "transaksi" | "laba_rugi" | "aset" | "log">("stok");
   const [showChangePin, setShowChangePin] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [groupBy, setGroupBy] = useState<GroupBy>("bulanan");
 
   const label = filterLabel(mode, customDate, customMonth, rangeFrom, rangeTo);
   const [dateFrom, dateTo] = getDateRange(mode, customDate, customMonth, rangeFrom, rangeTo);
@@ -893,6 +948,33 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
       (nilaiMasukPerKadar[k] || 0);
   }
 
+  /* ── Tren Laba Rugi per Periode — kelompokkan transaksi periode aktif
+   * berdasarkan pilihan harian/mingguan/bulanan/kuartal/tahunan. ── */
+  const trendBuckets: Record<string, { pemasukan: number; pengeluaran: number }> = {};
+  function addTrend(date: Date, field: "pemasukan" | "pengeluaran", value: number) {
+    if (!value) return;
+    const key = bucketKey(date, groupBy);
+    if (!trendBuckets[key]) trendBuckets[key] = { pemasukan: 0, pengeluaran: 0 };
+    trendBuckets[key][field] += value;
+  }
+  keluarTerjual.forEach((k) => addTrend(new Date(k.created_at), "pemasukan", k.harga_jual * k.jumlah_keluar));
+  servisSelesai.forEach((s) => addTrend(new Date(s.tanggal_masuk), "pemasukan", s.estimasi_biaya));
+  gadaiLunas.forEach((g) => addTrend(new Date(g.tanggal_gadai), "pemasukan", g.nilai_pinjaman * g.bunga_persen / 100));
+  stokMasuk.forEach((r) => addTrend(new Date(r.tanggal_masuk), "pengeluaran", (r.harga_beli || 0) * r.jumlah));
+
+  const trendRows = Object.keys(trendBuckets)
+    .sort()
+    .map((key) => {
+      const b = trendBuckets[key];
+      return {
+        key,
+        label: bucketLabel(key, groupBy),
+        pemasukan: b.pemasukan,
+        pengeluaran: b.pengeluaran,
+        laba: b.pemasukan - b.pengeluaran,
+      };
+    });
+
   /* ── Log Transaksi Terpadu ── */
   type TxKind = "stok_masuk" | "stok_keluar" | "servis" | "gadai";
   const allTx: {
@@ -967,6 +1049,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
     ["minggu_ini", "Minggu Ini"],
     ["bulan_ini", "Bulan Ini"],
     ["bulan_lalu", "Bulan Lalu"],
+    ["tahun_ini", "Tahun Ini"],
+    ["tahun_lalu", "Tahun Lalu"],
     ["tanggal", "Pilih Tanggal"],
     ["bulan", "Pilih Bulan"],
     ["rentang", "Rentang Tanggal"],
@@ -996,11 +1080,45 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
       <AppLayout>
         <div className="px-4 sm:px-6 pt-6 pb-12 flex flex-col gap-5 min-h-screen bg-gray-50">
 
-          {/* ── Header Cetak ── */}
-          <PrintHeader label={label} />
+          {/* ── Bar Kontrol Pratinjau Cetak ── */}
+          {showPreview && (
+            <div className="no-print sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-white border-b border-gray-200 shadow-sm flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🧾</span>
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">Pratinjau Laporan Keuangan</p>
+                  <p className="text-xs text-gray-500">Periksa kembali sebelum mencetak — periode {label}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowPreview(false)}
+                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Tutup Pratinjau
+                </button>
+                <button
+                  onClick={() => printClean()}
+                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-white text-sm font-bold transition-all hover:opacity-90 shadow-sm"
+                  style={{ backgroundColor: "#6F5333" }}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Cetak Sekarang
+                </button>
+              </div>
+            </div>
+          )}
 
-          {/* ── Ringkasan Cetak (hanya print) ── */}
-          <div className="hidden print:block print-section">
+          {/* ── Header Cetak ── */}
+          <PrintHeader label={label} forceShow={showPreview} />
+
+          {/* ── Ringkasan Cetak (hanya print / pratinjau) ── */}
+          <div className={showPreview ? "block print-section" : "hidden print:block print-section"}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8pt", marginBottom: "8pt" }}>
               {[
                 { l: "Stok Tersedia", v: sisaStok.length + " item", s: fmtGram(totalGramSisa), c: "#6F5333" },
@@ -1030,6 +1148,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
             </div>
           </div>
 
+          {!showPreview && (
+          <>
           {/* ── Judul Halaman ── */}
           <div className="flex items-start justify-between flex-wrap gap-4 no-print">
             <div>
@@ -1061,14 +1181,14 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 Kunci Halaman
               </button>
               <button
-                onClick={() => printClean()}
+                onClick={() => setShowPreview(true)}
                 className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-white text-sm font-bold transition-all hover:opacity-90 shadow-sm"
                 style={{ backgroundColor: "#6F5333" }}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                 </svg>
-                Cetak Laporan
+                Pratinjau &amp; Cetak Laporan
               </button>
             </div>
           </div>
@@ -1293,6 +1413,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
               </button>
             ))}
           </div>
+          </>
+          )}
 
           {/* ══════════════════════════════════════════════════════
               KONTEN TAB
@@ -1308,7 +1430,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
           ) : (
             <>
               {/* ══ TAB 1: SISA STOK ══ */}
-              <div className={tab === "stok" ? "block print-section" : "hidden print:block print-section"}>
+              <div className={(showPreview || tab === "stok") ? "block print-section" : "hidden print:block print-section"}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Sisa Stok Tersedia</h2>
                   <p className="text-sm text-gray-500 print:hidden">Data real-time seluruh barang yang masih tersedia di toko.</p>
@@ -1518,7 +1640,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
               </div>
 
               {/* ══ TAB 2: STOK MASUK & KELUAR ══ */}
-              <div className={tab === "transaksi" ? "block print-section" : "hidden print:block print-section"}>
+              <div className={(showPreview || tab === "transaksi") ? "block print-section" : "hidden print:block print-section"}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Stok Masuk &amp; Keluar</h2>
                   <p className="text-sm text-gray-500 print:hidden">Pergerakan stok selama periode: {label}</p>
@@ -1772,7 +1894,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
               </div>
 
               {/* ══ TAB 3: LABA RUGI ══ */}
-              <div className={tab === "laba_rugi" ? "block print-section" : "hidden print:block print-page-break print-section"}>
+              <div className={(showPreview || tab === "laba_rugi") ? "block print-section" : "hidden print:block print-page-break print-section"}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Laporan Laba Rugi</h2>
                   <p className="text-sm text-gray-500 print:hidden">Rekapitulasi pemasukan dan pengeluaran periode: {label}</p>
@@ -1913,11 +2035,89 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                       </div>
                     </div>
                   </div>
+
+                  {/* Tren Laba Rugi per Periode */}
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3"
+                      style={{ backgroundColor: "#F8F7F4" }}>
+                      <div>
+                        <h3 className="font-extrabold text-gray-900">Tren Laba Rugi per Periode</h3>
+                        <p className="text-xs text-gray-500 mt-0.5 print:hidden">
+                          Rincian pemasukan &amp; pengeluaran dalam periode {label}, dikelompokkan per {GROUP_BY_OPTIONS.find(([g]) => g === groupBy)?.[1].toLowerCase()}.
+                        </p>
+                        <p className="hidden print:block text-xs text-gray-500 mt-0.5">
+                          Dikelompokkan per {GROUP_BY_OPTIONS.find(([g]) => g === groupBy)?.[1].toLowerCase()}
+                        </p>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap no-print">
+                        {GROUP_BY_OPTIONS.map(([g, l]) => (
+                          <button
+                            key={g}
+                            onClick={() => setGroupBy(g)}
+                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 transition-colors ${
+                              groupBy === g
+                                ? "text-white border-transparent"
+                                : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                            }`}
+                            style={groupBy === g ? { backgroundColor: "#6F5333" } : {}}
+                          >
+                            {l}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {trendRows.length === 0 ? (
+                      <p className="px-5 py-8 text-center text-gray-400">Tidak ada transaksi untuk dikelompokkan pada periode ini.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              {["No.", "Periode", "Pemasukan", "Pengeluaran", "Laba Bersih", "Margin %"].map((h) => (
+                                <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-50">
+                            {trendRows.map((r, idx) => (
+                              <tr key={r.key} className="hover:bg-gray-50/60">
+                                <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
+                                <td className="px-4 py-3 font-semibold text-gray-800 capitalize whitespace-nowrap">{r.label}</td>
+                                <td className="px-4 py-3 font-semibold text-green-700">{fmtRp(r.pemasukan)}</td>
+                                <td className="px-4 py-3 font-semibold text-red-600">{fmtRp(r.pengeluaran)}</td>
+                                <td className={`px-4 py-3 font-extrabold ${r.laba >= 0 ? "text-green-700" : "text-red-600"}`}>
+                                  {r.laba >= 0 ? "+" : "−"}{fmtRp(Math.abs(r.laba))}
+                                </td>
+                                <td className="px-4 py-3 text-gray-600">
+                                  {r.pemasukan > 0 ? ((r.laba / r.pemasukan) * 100).toFixed(1) + "%" : "—"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot style={{ backgroundColor: "#F3F4F6", borderTop: "2px solid #D1D5DB" }}>
+                            <tr>
+                              <td colSpan={2} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">
+                                TOTAL ({trendRows.length} {GROUP_BY_OPTIONS.find(([g]) => g === groupBy)?.[1].toLowerCase()})
+                              </td>
+                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalPemasukan)}</td>
+                              <td className="px-4 py-3 font-extrabold text-red-600">{fmtRp(totalPengeluaran)}</td>
+                              <td className={`px-4 py-3 font-extrabold ${labaBersih >= 0 ? "text-green-700" : "text-red-600"}`}>
+                                {labaBersih >= 0 ? "+" : "−"}{fmtRp(Math.abs(labaBersih))}
+                              </td>
+                              <td className="px-4 py-3 font-extrabold text-gray-700">
+                                {totalPemasukan > 0 ? ((labaBersih / totalPemasukan) * 100).toFixed(1) + "%" : "—"}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
               {/* ══ TAB 4: NILAI ASET ══ */}
-              <div className={tab === "aset" ? "block print-section" : "hidden print:block print-page-break print-section"}>
+              <div className={(showPreview || tab === "aset") ? "block print-section" : "hidden print:block print-page-break print-section"}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Nilai Aset &amp; Modal</h2>
                   <p className="text-sm text-gray-500 print:hidden">Distribusi nilai stok berdasarkan kadar dan kategori.</p>
@@ -2224,7 +2424,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 const totalKeluar = allTx.filter((t) => !t.isDebit && t.nilai > 0).reduce((s, t) => s + t.nilai, 0);
 
                 return (
-                  <div className={tab === "log" ? "block print-section" : "hidden print:block print-page-break print-section"}>
+                  <div className={(showPreview || tab === "log") ? "block print-section" : "hidden print:block print-page-break print-section"}>
                     <div className="mb-3">
                       <h2 className="font-bold text-gray-800 text-lg">Log Seluruh Transaksi</h2>
                       <p className="text-sm text-gray-500 print:hidden">Semua aktivitas pada periode: {label}</p>

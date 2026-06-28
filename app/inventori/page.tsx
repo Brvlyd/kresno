@@ -137,7 +137,18 @@ function BarcodePreviewModal({
   startOffset: number;
 }) {
   const [checked, setChecked] = useState<boolean[]>([]);
+  const [columns, setColumns] = useState<1 | 2 | 3>(3);
   const svgRefs = useRef<(SVGSVGElement | null)[]>([]);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("barcodePrintColumns");
+    if (saved === "1" || saved === "2" || saved === "3") setColumns(Number(saved) as 1 | 2 | 3);
+  }, []);
+
+  const changeColumns = (n: 1 | 2 | 3) => {
+    setColumns(n);
+    localStorage.setItem("barcodePrintColumns", String(n));
+  };
 
   const unitCode = (i: number) =>
     `${idItem}-${String(startOffset + i + 1).padStart(3, "0")}`;
@@ -182,10 +193,10 @@ function BarcodePreviewModal({
     if (!w) return;
     w.document.write(`<html><head><title>Barcode ${idItem}</title>
       <style>
-        @page { size: 99mm auto; margin: 0; }
+        @page { size: ${columns * 33}mm auto; margin: 0; }
         * { box-sizing: border-box; }
         body { margin: 0; font-family: Arial, sans-serif; }
-        .sheet { display: grid; grid-template-columns: repeat(3, 33mm); column-gap: 0; row-gap: 2mm; }
+        .sheet { display: grid; grid-template-columns: repeat(${columns}, 33mm); column-gap: 0; row-gap: 2mm; }
         .label { width: 33mm; height: 15mm; overflow: hidden; border: 0.3px dashed #ccc; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0.4mm 1mm; }
         .label .toko { font-size: 5pt; font-weight: bold; line-height: 1.2; }
         .label svg { width: 26mm; height: 4.5mm; }
@@ -232,6 +243,26 @@ function BarcodePreviewModal({
           >
             {checked.every(Boolean) ? "Batalkan Semua" : "Pilih Semua"}
           </button>
+        </div>
+
+        {/* Layout cetak: jumlah kolom per baris kertas thermal */}
+        <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm text-gray-600 font-medium">Tata letak kertas</p>
+          <div className="flex gap-1.5">
+            {([1, 2, 3] as const).map((n) => (
+              <button
+                key={n}
+                onClick={() => changeColumns(n)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                  columns === n
+                    ? "border-[#C99A36] bg-amber-50 text-[#C99A36]"
+                    : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                {n} Kolom
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Grid barcode preview */}
@@ -319,6 +350,7 @@ function DetailBarangPopup({
   const [showBarcodePreview, setShowBarcodePreview] = useState(false);
   const [barcodeOffset, setBarcodeOffset] = useState(0);
   const [catatHutang, setCatatHutang] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
   const jenisTouchedRef = useRef(false);
 
   useEffect(() => {
@@ -654,42 +686,56 @@ function DetailBarangPopup({
           {/* Gambar Barang */}
           <div>
             <label className="block text-base font-semibold text-gray-700 mb-1.5">Foto Barang <span className="text-gray-400 font-normal">(opsional)</span></label>
-            <div className="flex items-center gap-3">
-              <div className="w-20 h-20 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
-                {form.gambar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+            {form.gambar_url ? (
+              <div className="flex items-center gap-3">
+                <div className="w-20 h-20 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={form.gambar_url} alt="Preview" className="w-full h-full object-cover" />
-                ) : (
-                  <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                  </svg>
-                )}
+                </div>
+                <div className="flex-1 flex flex-col gap-1.5">
+                  <p className="text-sm text-gray-500">Foto sudah diunggah.</p>
+                  <button
+                    type="button"
+                    onClick={() => set("gambar_url", "")}
+                    className="self-start text-sm font-semibold text-red-500 hover:underline"
+                  >
+                    Ganti / Hapus Foto
+                  </button>
+                </div>
               </div>
-              <div className="flex-1 space-y-2">
-                <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg text-base font-semibold border-2 cursor-pointer transition-colors hover:bg-amber-50 w-full justify-center"
-                  style={{ borderColor: "#C99A36", color: "#C99A36" }}>
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
-                  </svg>
-                  {uploading ? "Mengunggah foto..." : "Ambil / Pilih Foto"}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    disabled={uploading}
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadGambar(f); }}
-                  />
-                </label>
-                <p className="text-sm text-gray-400">Atau tempel link gambar di bawah ini.</p>
+            ) : (
+              <label
+                onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                onDragLeave={() => setDragActive(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragActive(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) uploadGambar(f);
+                }}
+                className={`relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-4 py-6 text-center cursor-pointer transition-colors ${
+                  dragActive ? "border-[#C99A36] bg-amber-50" : "border-gray-300 bg-gray-50 hover:border-[#C99A36]"
+                }`}
+              >
+                <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+                <p className="text-sm text-gray-500">
+                  {uploading ? (
+                    "Mengunggah foto..."
+                  ) : (
+                    <>Seret &amp; lepas foto di sini, atau <span className="font-semibold" style={{ color: "#C99A36" }}>klik untuk pilih file</span></>
+                  )}
+                </p>
                 <input
-                  value={form.gambar_url}
-                  onChange={(e) => set("gambar_url", e.target.value)}
-                  placeholder="https://..."
-                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={uploading}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadGambar(f); e.target.value = ""; }}
                 />
-              </div>
-            </div>
+              </label>
+            )}
           </div>
 
           {/* Karat / Berat / Jumlah */}
