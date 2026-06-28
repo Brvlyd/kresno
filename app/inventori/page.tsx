@@ -188,7 +188,7 @@ function BarcodePreviewModal({
         .sheet { display: grid; grid-template-columns: repeat(3, 33mm); column-gap: 0; row-gap: 2mm; }
         .label { width: 33mm; height: 15mm; overflow: hidden; border: 0.3px dashed #ccc; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0.4mm 1mm; }
         .label .toko { font-size: 5pt; font-weight: bold; line-height: 1.2; }
-        .label svg { width: 31mm; height: 5.5mm; }
+        .label svg { width: 26mm; height: 4.5mm; }
         .label .kode { font-size: 5.5pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.1; }
         .label .nama { font-size: 4.5pt; max-width: 31mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
         @media print { .label { border: none; } }
@@ -260,7 +260,7 @@ function BarcodePreviewModal({
                 <svg
                   ref={(el) => { svgRefs.current[i] = el; }}
                   className="w-full"
-                  style={{ height: 36 }}
+                  style={{ height: 30 }}
                 />
                 <p className="text-[10px] font-bold text-gray-800 tracking-wide">{unitCode(i)}</p>
                 <p className="text-[9px] text-gray-400 truncate w-full text-center">{namaProduk}</p>
