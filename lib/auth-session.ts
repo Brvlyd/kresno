@@ -1,18 +1,13 @@
-/** Kunci sessionStorage yang menandai user sudah login lewat halaman PIN (/login). */
-export const SESSION_KEY = "kresno_login_unlocked";
+import { createClient } from "@/lib/supabase/client";
 
-export function isLoggedIn(): boolean {
-  try {
-    return sessionStorage.getItem(SESSION_KEY) === "1";
-  } catch {
-    return false;
-  }
+/** Cek sesi login asli (Supabase Auth), bukan lagi sessionStorage kosmetik. */
+export async function isLoggedIn(): Promise<boolean> {
+  const supabase = createClient();
+  const { data } = await supabase.auth.getSession();
+  return !!data.session;
 }
 
-export function setLoggedIn() {
-  try { sessionStorage.setItem(SESSION_KEY, "1"); } catch { /* ignore */ }
-}
-
-export function clearLoggedIn() {
-  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+export async function logout() {
+  const supabase = createClient();
+  await supabase.auth.signOut();
 }

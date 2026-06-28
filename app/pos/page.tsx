@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
+import StorageImage from "@/components/StorageImage";
 import { hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
 
 /* ═══════════════════════════════════════════════════════
@@ -432,8 +433,7 @@ function InvoiceCetak(p: InvoiceProps) {
           backgroundColor: "#FAFAF7",
         }}>
           {p.cart.length > 0 && p.cart[0].item.gambar_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <StorageImage
               src={p.cart[0].item.gambar_url}
               alt="Foto Barang"
               style={{ width: "62pt", height: "62pt", objectFit: "cover", borderRadius: "3pt" }}

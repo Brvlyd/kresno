@@ -6,11 +6,12 @@ import Image from "next/image";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
+import { hitungTotalBunga } from "@/lib/gadai";
+import { verifyKeuanganPin, isKeuanganUnlocked, lockKeuangan } from "@/app/keuangan/actions";
 
 /* ═══════════════════════════════════════════════════════
    KONSTANTA & HELPER
 ═══════════════════════════════════════════════════════ */
-const SESSION_KEY = "kresno_keuangan_unlocked";
 const DEFAULT_PIN = "1234";
 /** Email tujuan kode reset PIN — kotak masuk toko, bukan email pegawai perorangan. */
 const RESET_PIN_EMAIL = "tokomaskresno5758@gmail.com";
@@ -176,6 +177,7 @@ interface GadaiRow {
   kadar: string;
   nilai_pinjaman: number;
   bunga_persen: number;
+  jangka_waktu_bulan: number;
   status: string;
   tanggal_gadai: string;
 }
@@ -284,9 +286,9 @@ function PinLockScreen({
     inputRef.current?.focus();
   }, []);
 
-  function tryPin(p: string) {
-    if (p === storedPin) {
-      try { sessionStorage.setItem(SESSION_KEY, "1"); } catch { /* ignore */ }
+  async function tryPin(p: string) {
+    const ok = await verifyKeuanganPin(p);
+    if (ok) {
       onUnlock();
     } else {
       setError(true);
@@ -494,10 +496,10 @@ function ForgotPinModal({
       .from("keuangan_pin")
       .update({ pin: newPin, updated_at: new Date().toISOString() })
       .eq("id", 1);
-    await supabase.auth.signOut();
     setVerifying(false);
 
     if (updateError) { setMsg({ type: "err", text: "Gagal menyimpan PIN baru: " + updateError.message }); return; }
+    await verifyKeuanganPin(newPin); // set cookie unlock juga, biar konsisten dgn onUnlock() di bawah
     setMsg({ type: "ok", text: "PIN berhasil direset!" });
     setTimeout(() => onReset(newPin), 900);
   }
@@ -906,7 +908,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
 
   const gadaiLunas = gadaiList.filter((g) => g.status === "Lunas");
   const pendapatanGadai = gadaiLunas.reduce(
-    (s, g) => s + g.nilai_pinjaman * g.bunga_persen / 100, 0,
+    (s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0,
   );
 
   const totalPemasukan = nilaiPenjualan + pendapatanServis + pendapatanGadai;
@@ -931,7 +933,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const kadarKeysKeluar = sortKadarDesc(Object.keys(gramKeluarPerKadar));
 
   const pendapatanServisPerKadar = sumByKadar(servisSelesai, (s) => s.kadar, (s) => s.estimasi_biaya);
-  const pendapatanGadaiPerKadar = sumByKadar(gadaiLunas, (g) => g.kadar, (g) => g.nilai_pinjaman * g.bunga_persen / 100);
+  const pendapatanGadaiPerKadar = sumByKadar(gadaiLunas, (g) => g.kadar, (g) => hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan));
 
   const kadarKeysLaba = sortKadarDesc(Array.from(new Set([
     ...Object.keys(nilaiPenjualanPerKadar),
@@ -959,7 +961,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   }
   keluarTerjual.forEach((k) => addTrend(new Date(k.created_at), "pemasukan", k.harga_jual * k.jumlah_keluar));
   servisSelesai.forEach((s) => addTrend(new Date(s.tanggal_masuk), "pemasukan", s.estimasi_biaya));
-  gadaiLunas.forEach((g) => addTrend(new Date(g.tanggal_gadai), "pemasukan", g.nilai_pinjaman * g.bunga_persen / 100));
+  gadaiLunas.forEach((g) => addTrend(new Date(g.tanggal_gadai), "pemasukan", hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan)));
   stokMasuk.forEach((r) => addTrend(new Date(r.tanggal_masuk), "pengeluaran", (r.harga_beli || 0) * r.jumlah));
 
   const trendRows = Object.keys(trendBuckets)
@@ -1021,7 +1023,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
       title: g.pelanggan_nama + " — " + g.nama_barang,
       sub: g.no_gadai + " · Pinjaman " + fmtRp(g.nilai_pinjaman) + " · Bunga " + g.bunga_persen + "%",
       note: "",
-      nilai: g.status === "Lunas" ? g.nilai_pinjaman * g.bunga_persen / 100 : g.nilai_pinjaman,
+      nilai: g.status === "Lunas" ? hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan) : g.nilai_pinjaman,
       nilaiLabel: g.status === "Lunas" ? "Bunga Diterima" : "Nilai Pinjaman",
       isDebit: g.status !== "Lunas",
       status: g.status,
@@ -1866,7 +1868,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                                 <td className="px-4 py-3 font-semibold text-gray-700">{fmtRp(g.nilai_pinjaman)}</td>
                                 <td className="px-4 py-3 text-gray-600">{g.bunga_persen}%</td>
                                 <td className="px-4 py-3 font-semibold text-green-700">
-                                  {g.status === "Lunas" ? fmtRp(g.nilai_pinjaman * g.bunga_persen / 100) : "—"}
+                                  {g.status === "Lunas" ? fmtRp(hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan)) : "—"}
                                 </td>
                                 <td className="px-4 py-3">
                                   <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
@@ -2252,7 +2254,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                   {/* Gadai Aktif — seluruh data, tidak dibatasi periode */}
                   {gadaiAktifSemua.length > 0 && (() => {
                     const totalGadaiAktif = gadaiAktifSemua.reduce((s, g) => s + g.nilai_pinjaman, 0);
-                    const totalBungaPotensial = gadaiAktifSemua.reduce((s, g) => s + g.nilai_pinjaman * g.bunga_persen / 100, 0);
+                    const totalBungaPotensial = gadaiAktifSemua.reduce((s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0);
                     return (
                       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
@@ -2284,7 +2286,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                                   <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(g.tanggal_gadai)}</td>
                                   <td className="px-4 py-3 font-semibold text-gray-800">{fmtRp(g.nilai_pinjaman)}</td>
                                   <td className="px-4 py-3 text-gray-600">{g.bunga_persen}%</td>
-                                  <td className="px-4 py-3 font-semibold text-green-700">{fmtRp(g.nilai_pinjaman * g.bunga_persen / 100)}</td>
+                                  <td className="px-4 py-3 font-semibold text-green-700">{fmtRp(hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan))}</td>
                                   <td className="px-4 py-3">
                                     <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                                       g.status === "Aktif" ? "bg-blue-100 text-blue-700" :
@@ -2598,9 +2600,7 @@ export default function KeuanganPage() {
 
   useEffect(() => {
     setMounted(true);
-    try {
-      if (sessionStorage.getItem(SESSION_KEY) === "1") setUnlocked(true);
-    } catch { /* ignore */ }
+    isKeuanganUnlocked().then(setUnlocked);
     supabase
       .from("keuangan_pin")
       .select("pin")
@@ -2614,7 +2614,7 @@ export default function KeuanganPage() {
     // Kunci ulang begitu halaman ini ditinggalkan (pindah menu), agar PIN
     // wajib dimasukkan lagi tiap kali halaman Keuangan dibuka.
     return () => {
-      try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+      lockKeuangan();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2635,7 +2635,7 @@ export default function KeuanganPage() {
       currentPin={currentPin}
       onPinChanged={setCurrentPin}
       onLock={() => {
-        try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+        lockKeuangan();
         setUnlocked(false);
       }}
     />

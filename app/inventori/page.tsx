@@ -5,9 +5,10 @@ import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { prefixForKategori, buildPrefixCounters, nextId } from "@/lib/csv";
+import { kodeForJenis, buildSeqCounters, nextIdItem, KODE_JENIS_SEED } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
 import { AddJenisModal } from "@/components/AddJenisModal";
+import StorageImage from "@/components/StorageImage";
 import { useJenisBarang } from "@/lib/useJenisBarang";
 import JsBarcode from "jsbarcode";
 
@@ -327,7 +328,7 @@ function BarcodePreviewModal({
 
 /* ─── Popup Detail Barang ─── */
 function DetailBarangPopup({
-  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmasByKarat,
+  open, onClose, editData, onSaved, jenisOptions, customJenis, existingIds, onAddJenis, onDeleteJenis, defaultJenisInventori, hargaEmasByKarat, ensureKode,
 }: {
   open: boolean;
   onClose: () => void;
@@ -340,6 +341,7 @@ function DetailBarangPopup({
   onDeleteJenis: (nama: string) => void;
   defaultJenisInventori?: string;
   hargaEmasByKarat: Record<number, HargaEmasKarat>;
+  ensureKode: (jenis: string) => Promise<string>;
 }) {
   const supabase = createClient();
   const [form, setForm] = useState<FormData>(emptyForm);
@@ -384,13 +386,21 @@ function DetailBarangPopup({
   }, [open, editData, defaultJenisInventori]);
 
   // Kode otomatis: selalu untuk barang baru; untuk edit hanya jika user ganti jenis
+  // Butuh kadar yang valid (mis. "24K") karena format kode-nya {kadar}-{kode jenis}-{urutan}
   useEffect(() => {
     if (!open) return;
     if (editData && !jenisTouchedRef.current) return;
-    const prefix = prefixForKategori(form.jenis_barang);
-    const counters = buildPrefixCounters(existingIds.map((id_item) => ({ id_item })));
-    setForm((f) => ({ ...f, id_item: nextId(prefix, counters) }));
-  }, [open, editData, form.jenis_barang, existingIds]);
+    const kadarTrimmed = form.kadar.trim();
+    if (!/^\d+(\.\d+)?K$/.test(kadarTrimmed)) return;
+    let cancelled = false;
+    (async () => {
+      const kode = await ensureKode(form.jenis_barang);
+      if (cancelled) return;
+      const counters = buildSeqCounters(existingIds.map((id_item) => ({ id_item })));
+      setForm((f) => ({ ...f, id_item: nextIdItem(kadarTrimmed, kode, counters) }));
+    })();
+    return () => { cancelled = true; };
+  }, [open, editData, form.jenis_barang, form.kadar, existingIds, ensureKode]);
 
   const set = (key: keyof FormData, val: string) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -689,8 +699,7 @@ function DetailBarangPopup({
             {form.gambar_url ? (
               <div className="flex items-center gap-3">
                 <div className="w-20 h-20 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={form.gambar_url} alt="Preview" className="w-full h-full object-cover" />
+                  <StorageImage src={form.gambar_url} alt="Preview" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 flex flex-col gap-1.5">
                   <p className="text-sm text-gray-500">Foto sudah diunggah.</p>
@@ -1010,13 +1019,14 @@ function InventoriContent() {
   const [searchAllTabs, setSearchAllTabs] = useState(false);
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
   const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
+  const [jenisKodeMap, setJenisKodeMap] = useState<Record<string, string>>(KODE_JENIS_SEED);
 
   const { allJenis, customJenis, addCustomJenis, deleteCustomJenis: deleteCustomJenisRaw } = useJenisBarang(JENIS);
 
   const load = useCallback(async () => {
     setLoading(true);
     const todayStr = new Date().toISOString().split("T")[0];
-    const [invRes, hargaRes] = await Promise.all([
+    const [invRes, hargaRes, kodeRes] = await Promise.all([
       supabase
         .from("inventori")
         .select("*")
@@ -1025,6 +1035,7 @@ function InventoriContent() {
         .from("harga_emas")
         .select("karat,harga_beli,harga_jual")
         .eq("tanggal", todayStr),
+      supabase.from("jenis_barang_kode").select("nama,kode"),
     ]);
     const rows = (invRes.data ?? []) as BarangRow[];
     setItems(rows);
@@ -1034,6 +1045,11 @@ function InventoriContent() {
       hargaMap[r.karat] = { harga_beli: r.harga_beli, harga_jual: r.harga_jual };
     }
     setHargaEmasByKarat(hargaMap);
+    const kodeMap: Record<string, string> = { ...KODE_JENIS_SEED };
+    for (const r of kodeRes.data ?? []) {
+      kodeMap[r.nama] = r.kode;
+    }
+    setJenisKodeMap(kodeMap);
 
     // Auto-select from URL param
     const idParam = searchParams.get("id");
@@ -1043,6 +1059,16 @@ function InventoriContent() {
     }
     setLoading(false);
   }, [searchParams]);
+
+  // Ambil kode 3-huruf untuk jenis_barang; kalau belum ada, generate & simpan permanen
+  const ensureKode = useCallback(async (jenis: string): Promise<string> => {
+    const { kode, isNew } = kodeForJenis(jenis, jenisKodeMap);
+    if (isNew) {
+      await supabase.from("jenis_barang_kode").insert({ nama: jenis.trim(), kode }).select();
+      setJenisKodeMap((prev) => ({ ...prev, [jenis.trim()]: kode }));
+    }
+    return kode;
+  }, [jenisKodeMap]);
 
   const deleteCustomJenis = useCallback(async (nama: string) => {
     if (!window.confirm(`Hapus jenis barang "${nama}" dari daftar pilihan?\n\nBarang yang sudah memakai jenis ini tidak akan terhapus, hanya pilihannya saja yang dihilangkan.`)) {
@@ -1442,8 +1468,7 @@ function InventoriContent() {
                         }`}
                       >
                         {item.gambar_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={item.gambar_url} alt={item.nama_produk} className="w-11 h-11 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
+                          <StorageImage src={item.gambar_url} alt={item.nama_produk} className="w-11 h-11 rounded-lg object-cover border border-gray-200 flex-shrink-0" />
                         ) : (
                           <div className="w-11 h-11 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center flex-shrink-0">
                             <svg className="w-5 h-5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1511,8 +1536,7 @@ function InventoriContent() {
                   <div className="flex items-start justify-between mb-5">
                     <div className="flex items-start gap-4">
                       {selected.gambar_url && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <StorageImage
                           src={selected.gambar_url}
                           alt={selected.nama_produk}
                           className="w-16 h-16 rounded-xl object-cover border border-gray-200 flex-shrink-0"
@@ -1648,6 +1672,7 @@ function InventoriContent() {
         onDeleteJenis={deleteCustomJenis}
         defaultJenisInventori={activeTab}
         hargaEmasByKarat={hargaEmasByKarat}
+        ensureKode={ensureKode}
       />
       <HapusPopup
         open={!!hapusItem}

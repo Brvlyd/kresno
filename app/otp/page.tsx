@@ -79,8 +79,8 @@ export default function OTPPage() {
   }
 
   async function simpanPassword() {
-    if (newPassword.length < 4) {
-      setMsg({ type: "err", text: "Password baru minimal 4 angka." });
+    if (newPassword.length < 6) {
+      setMsg({ type: "err", text: "Password baru minimal 6 angka." });
       return;
     }
     if (!/^\d+$/.test(newPassword)) {
@@ -93,6 +93,15 @@ export default function OTPPage() {
     }
     setSaving(true);
     setMsg(null);
+    // Set password akun Supabase Auth toko ini — inilah yang benar-benar dipakai
+    // untuk login (lihat app/login/page.tsx). Sesi OTP yang masih aktif di sini
+    // adalah satu-satunya cara mengganti password tanpa service role key.
+    const { error: authError } = await supabase.auth.updateUser({ password: newPassword });
+    if (authError) {
+      setSaving(false);
+      setMsg({ type: "err", text: "Gagal menyimpan password baru: " + authError.message });
+      return;
+    }
     const { error } = await supabase
       .from("login_password")
       .update({ password: newPassword, updated_at: new Date().toISOString() })
@@ -179,7 +188,7 @@ export default function OTPPage() {
             <div className="space-y-5">
               <div>
                 <label className="block text-xl font-semibold text-gray-700 mb-2">
-                  Password Baru (minimal 4 angka)
+                  Password Baru (minimal 6 angka)
                 </label>
                 <input
                   type="password"

@@ -4,7 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { clearLoggedIn } from "@/lib/auth-session";
+import { logout } from "@/lib/auth-session";
 
 const menuItems = [
   {
@@ -46,8 +46,8 @@ export default function Sidebar() {
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const handleLogout = () => {
-    clearLoggedIn();
+  const handleLogout = async () => {
+    await logout();
     setMobileOpen(false);
     router.replace("/login");
   };

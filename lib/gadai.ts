@@ -1,7 +1,7 @@
-import { KATEGORI_PREFIX } from "@/lib/csv";
+import { JENIS_BARANG_BASE } from "@/lib/csv";
 
 /** Pilihan jenis perhiasan — sama dengan kategori barang di Inventori */
-export const JENIS_PERHIASAN_OPTIONS = Object.keys(KATEGORI_PREFIX);
+export const JENIS_PERHIASAN_OPTIONS = JENIS_BARANG_BASE;
 
 /** Pilihan kadar emas standar */
 export const KADAR_OPTIONS = [
@@ -47,6 +47,15 @@ export interface CicilanItem {
   status: "Belum Bayar" | "Lunas";
 }
 
+/** Total bunga gadai: bunga_persen adalah tarif PER BULAN, jadi harus dikali jangka waktu. */
+export function hitungTotalBunga(
+  nilaiPinjaman: number,
+  bungaPersen: number,
+  jangkaWaktuBulan: number
+): number {
+  return nilaiPinjaman * (bungaPersen / 100) * jangkaWaktuBulan;
+}
+
 /** Buat jadwal cicilan bulanan berdasarkan nilai pinjaman + bunga flat per bulan */
 export function buildCicilanSchedule(
   nilaiPinjaman: number,
@@ -54,7 +63,7 @@ export function buildCicilanSchedule(
   jangkaWaktuBulan: number,
   tanggalGadai: string
 ): CicilanItem[] {
-  const totalBunga = nilaiPinjaman * (bungaPersen / 100) * jangkaWaktuBulan;
+  const totalBunga = hitungTotalBunga(nilaiPinjaman, bungaPersen, jangkaWaktuBulan);
   const total = nilaiPinjaman + totalBunga;
   const perCicilan = Math.ceil(total / jangkaWaktuBulan);
 

@@ -1,13 +1,11 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { setLoggedIn } from "@/lib/auth-session";
-
-const DEFAULT_PASSWORD = "1111";
+import { RESET_PASSWORD_EMAIL } from "@/lib/auth";
 
 function LoginForm() {
   const router = useRouter();
@@ -15,28 +13,19 @@ function LoginForm() {
   const supabase = createClient();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [storedPassword, setStoredPassword] = useState(DEFAULT_PASSWORD);
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [checking, setChecking] = useState(false);
   const [showExpired, setShowExpired] = useState(searchParams.get("expired") === "1");
 
-  useEffect(() => {
-    supabase
-      .from("login_password")
-      .select("password")
-      .eq("id", 1)
-      .single()
-      .then(({ data }) => {
-        if (data?.password) setStoredPassword(data.password);
-      });
-  }, [supabase]);
-
-  function handleMasuk() {
-    if (checking) return;
+  async function handleMasuk() {
+    if (checking || !pin) return;
     setChecking(true);
-    if (pin === storedPassword) {
-      setLoggedIn();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: RESET_PASSWORD_EMAIL,
+      password: pin,
+    });
+    if (!error) {
       router.push("/dashboard");
     } else {
       setError(true);
@@ -98,9 +87,9 @@ function LoginForm() {
           ref={inputRef}
           type="password"
           inputMode="numeric"
-          maxLength={6}
+          maxLength={8}
           value={pin}
-          onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 6)); setError(false); }}
+          onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 8)); setError(false); }}
           onKeyDown={(e) => { if (e.key === "Enter") handleMasuk(); }}
           autoFocus
           className={`w-full max-w-sm h-14 rounded-full bg-white px-6 text-2xl font-bold text-center text-gray-800 focus:outline-none focus:ring-4 shadow-lg transition-all ${

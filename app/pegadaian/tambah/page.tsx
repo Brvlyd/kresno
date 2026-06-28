@@ -13,6 +13,7 @@ import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { printClean } from "@/lib/print";
 import { AddJenisModal } from "@/components/AddJenisModal";
 import { useJenisBarang } from "@/lib/useJenisBarang";
+import StorageImage from "@/components/StorageImage";
 
 interface BarangItemForm {
   jenis_perhiasan: string;
@@ -363,8 +364,7 @@ export default function TambahPengajuanGadaiPage() {
               <div className="flex items-center gap-3">
                 <div className="w-20 h-20 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
                   {form.foto_ktp_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={form.foto_ktp_url} alt="Foto KTP" className="w-full h-full object-cover" />
+                    <StorageImage src={form.foto_ktp_url} alt="Foto KTP" className="w-full h-full object-cover" />
                   ) : (
                     <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
@@ -502,8 +502,7 @@ export default function TambahPengajuanGadaiPage() {
                 <div className="flex items-center gap-3">
                   <div className="w-20 h-20 rounded-xl border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden flex-shrink-0">
                     {item.foto_barang_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={item.foto_barang_url} alt="Foto Barang" className="w-full h-full object-cover" />
+                      <StorageImage src={item.foto_barang_url} alt="Foto Barang" className="w-full h-full object-cover" />
                     ) : (
                       <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
-import { prefixForKategori, buildPrefixCounters, nextId } from "@/lib/csv";
+import { kodeForJenis, buildSeqCounters, nextIdItem, KODE_JENIS_SEED } from "@/lib/csv";
 import { hitungHasil } from "@/lib/hutangPiutang";
 import { generateNoBuyback } from "@/lib/buyback";
 import type { InvoiceBuybackData } from "@/lib/buyback";
@@ -57,6 +57,7 @@ export default function PembelianPage() {
   const [msg, setMsg] = useState("");
   const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
   const [existingIds, setExistingIds] = useState<string[]>([]);
+  const [jenisKodeMap, setJenisKodeMap] = useState<Record<string, string>>(KODE_JENIS_SEED);
   const [riwayat, setRiwayat] = useState<BuybackRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [buybackReady, setBuybackReady] = useState<InvoiceBuybackData | null>(null);
@@ -67,7 +68,7 @@ export default function PembelianPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const todayStr = new Date().toISOString().split("T")[0];
-    const [invRes, hargaRes, riwayatRes] = await Promise.all([
+    const [invRes, hargaRes, riwayatRes, kodeRes] = await Promise.all([
       supabase.from("inventori").select("id_item"),
       supabase.from("harga_emas").select("karat,harga_beli,harga_jual").eq("tanggal", todayStr),
       supabase
@@ -75,6 +76,7 @@ export default function PembelianPage() {
         .select("id,id_item,no_buyback,nama_produk,kadar,berat_gram,jumlah,harga_beli,supplier,tanggal_masuk")
         .eq("sub_jenis_aset", "Emas Rosok")
         .order("tanggal_masuk", { ascending: false }),
+      supabase.from("jenis_barang_kode").select("nama,kode"),
     ]);
     setExistingIds((invRes.data ?? []).map((r: { id_item: string }) => r.id_item));
     const hargaMap: Record<number, HargaEmasKarat> = {};
@@ -83,6 +85,11 @@ export default function PembelianPage() {
     }
     setHargaEmasByKarat(hargaMap);
     setRiwayat((riwayatRes.data ?? []) as BuybackRow[]);
+    const kodeMap: Record<string, string> = { ...KODE_JENIS_SEED };
+    for (const r of kodeRes.data ?? []) {
+      kodeMap[r.nama] = r.kode;
+    }
+    setJenisKodeMap(kodeMap);
     setLoading(false);
   }, [supabase]);
 
@@ -124,9 +131,13 @@ export default function PembelianPage() {
     const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaKarat.harga_jual);
     const jumlahNum = parseInt(form.jumlah) || 1;
 
-    const prefix = prefixForKategori("Emas Rosok");
-    const counters = buildPrefixCounters(existingIds.map((id_item) => ({ id_item })));
-    const idItem = nextId(prefix, counters);
+    const { kode, isNew } = kodeForJenis("Emas Rosok", jenisKodeMap);
+    if (isNew) {
+      await supabase.from("jenis_barang_kode").insert({ nama: "Emas Rosok", kode }).select();
+      setJenisKodeMap((prev) => ({ ...prev, "Emas Rosok": kode }));
+    }
+    const counters = buildSeqCounters(existingIds.map((id_item) => ({ id_item })));
+    const idItem = nextIdItem(form.kadar.trim(), kode, counters);
     const noBuyback = generateNoBuyback();
     const tanggalMasuk = new Date().toISOString().split("T")[0];
 

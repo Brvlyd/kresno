@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { STATUS_OPTIONS } from "@/lib/csv";
+import StorageImage from "@/components/StorageImage";
 
 interface BarangRow {
   id: string;
@@ -158,8 +159,7 @@ function KonfirmasiKeluarContent() {
               {/* Detail barang */}
               <div className="border border-gray-200 rounded-xl p-5 flex gap-4 items-start">
                 {item.gambar_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.gambar_url} alt={item.nama_produk} className="w-20 h-20 rounded-xl object-cover border border-gray-200 flex-shrink-0" />
+                  <StorageImage src={item.gambar_url} alt={item.nama_produk} className="w-20 h-20 rounded-xl object-cover border border-gray-200 flex-shrink-0" />
                 ) : (
                   <div className="w-20 h-20 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center flex-shrink-0">
                     <svg className="w-8 h-8 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
