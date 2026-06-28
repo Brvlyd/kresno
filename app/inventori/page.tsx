@@ -175,38 +175,70 @@ function BarcodePreviewModal({
   const selectedCount = checked.filter(Boolean).length;
 
   const doPrint = () => {
-    const labels: string[] = [];
+    const selected: { code: string; svg: string }[] = [];
     checked.forEach((on, i) => {
       if (!on) return;
       const el = svgRefs.current[i];
       if (!el) return;
-      const code = unitCode(i);
-      labels.push(`
+      selected.push({ code: unitCode(i), svg: el.outerHTML });
+    });
+    if (!selected.length) return;
+
+    const LABEL_W = 30; // mm — fisik label Xprinter XP-420B
+    const LABEL_H = 20; // mm
+    // Lebar halaman dipakai = jumlah label di baris paling penuh, bukan setting kolom mentah.
+    // Jadi cetak 1 barcode saat layout "3 Kolom" tetap jadi 1 label 30x20mm, bukan halaman 90mm kosong.
+    const effectiveCols = Math.min(columns, selected.length);
+    const pageWidth = effectiveCols * LABEL_W;
+
+    const rowsHtml: string[] = [];
+    for (let r = 0; r < selected.length; r += columns) {
+      const rowItems = selected.slice(r, r + columns);
+      const labelsHtml = rowItems
+        .map(
+          ({ code, svg }) => `
         <div class="label">
           <div class="toko">Toko Mas Kresno</div>
-          ${el.outerHTML}
+          ${svg}
           <div class="kode">${code}</div>
           <div class="nama">${namaProduk}</div>
-        </div>`);
-    });
-    if (!labels.length) return;
-    const w = window.open("", "_blank", "width=600,height=400");
+        </div>`
+        )
+        .join("");
+      rowsHtml.push(`<div class="row">${labelsHtml}</div>`);
+    }
+
+    const w = window.open("", "_blank", "width=400,height=300");
     if (!w) return;
     w.document.write(`<html><head><title>Barcode ${idItem}</title>
       <style>
-        @page { size: ${columns * 33}mm auto; margin: 0; }
+        @page { size: ${pageWidth}mm ${LABEL_H}mm; margin: 0; }
         * { box-sizing: border-box; }
-        body { margin: 0; font-family: Arial, sans-serif; }
-        .sheet { display: grid; grid-template-columns: repeat(${columns}, 33mm); column-gap: 0; row-gap: 2mm; }
-        .label { width: 33mm; height: 15mm; overflow: hidden; border: 0.3px dashed #ccc; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0.4mm 1mm; }
-        .label .toko { font-size: 5pt; font-weight: bold; line-height: 1.2; }
-        .label svg { width: 26mm; height: 4.5mm; }
-        .label .kode { font-size: 5.5pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.1; }
-        .label .nama { font-size: 4.5pt; max-width: 31mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
-        @media print { .label { border: none; } }
+        html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        .row {
+          display: grid;
+          grid-template-columns: repeat(${effectiveCols}, ${LABEL_W}mm);
+          width: ${pageWidth}mm;
+          height: ${LABEL_H}mm;
+          page-break-after: always;
+          break-after: page;
+        }
+        .row:last-child { page-break-after: auto; break-after: auto; }
+        .label {
+          width: ${LABEL_W}mm; height: ${LABEL_H}mm; overflow: hidden;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          text-align: center; padding: 0.8mm 1.5mm;
+        }
+        .label .toko { font-size: 5.5pt; font-weight: bold; line-height: 1.2; }
+        .label svg { width: 24mm; height: 5.5mm; }
+        .label .kode { font-size: 6pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.2; }
+        .label .nama { font-size: 5pt; max-width: ${LABEL_W - 2}mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
       </style></head>
-      <body><div class="sheet">${labels.join("")}</div>
-      <script>window.onload = function () { window.print(); };<\/script>
+      <body>${rowsHtml.join("")}
+      <script>
+        window.onload = function () { window.print(); };
+        window.onafterprint = function () { window.close(); };
+      <\/script>
       </body></html>`);
     w.document.close();
   };
