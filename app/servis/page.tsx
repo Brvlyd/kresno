@@ -300,20 +300,25 @@ function DetailServisPopup({
                 <InvoiceServis mode="preview" data={invoiceData} />
               </div>
             </div>
-            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
-              <button
-                onClick={() => setShowInvoicePreview(false)}
-                className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
-              >
-                ✕ Tutup
-              </button>
-              <button
-                onClick={() => printClean()}
-                className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
-                style={{ backgroundColor: "#C99A36" }}
-              >
-                🖨️ Cetak Invoice
-              </button>
+            <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
+              <p className="text-[11px] text-gray-400 text-center">
+                Pertama kali print di komputer ini? Di kotak dialog print, klik “Lainnya” / “More settings” lalu matikan “Header dan footer” supaya alamat web tidak ikut tercetak.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowInvoicePreview(false)}
+                  className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+                >
+                  ✕ Tutup
+                </button>
+                <button
+                  onClick={() => printClean()}
+                  className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                  style={{ backgroundColor: "#C99A36" }}
+                >
+                  🖨️ Cetak Invoice
+                </button>
+              </div>
             </div>
           </div>
         </div>

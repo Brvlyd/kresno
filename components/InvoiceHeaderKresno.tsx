@@ -1,7 +1,7 @@
 /* Header toko bersama untuk semua nota cetak (Gadai, Buyback, Servis) —
    tata letak & gaya disamakan dengan header invoice penjualan di app/pos/page.tsx. */
-export const INVOICE_GOLD = "#8B6914";
-export const INVOICE_GOLD_LT = "#D4A853";
+export const INVOICE_GOLD = "#000000";
+export const INVOICE_GOLD_LT = "#888888";
 
 interface InvoiceHeaderKresnoProps {
   judul: string;
@@ -64,7 +64,7 @@ export function InvoiceHeaderKresno({ judul, noNota, tanggal, extraLine }: Invoi
         <div style={{ fontWeight: 900, fontSize: "8.5pt", color: "#111", letterSpacing: "0.02em" }}>
           NO. NOTA
         </div>
-        <div style={{ fontWeight: 900, fontSize: "11pt", color: "#DC2626", marginTop: "2pt" }}>
+        <div style={{ fontWeight: 900, fontSize: "11pt", color: "#000", marginTop: "2pt" }}>
           {noNota}
         </div>
         <div style={{ fontSize: "7.5pt", color: "#555", marginTop: "2pt" }}>

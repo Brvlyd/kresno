@@ -567,8 +567,8 @@ interface InvoiceProps {
 }
 
 function InvoiceCetak(p: InvoiceProps) {
-  const GOLD = "#8B6914";
-  const GOLD_LT = "#D4A853";
+  const GOLD = "#000000";
+  const GOLD_LT = "#888888";
   const terbilangText = terbilang(p.total) + " rupiah";
   const MIN_ROWS = 4;
   const emptyRows = Math.max(0, MIN_ROWS - p.cart.length);
@@ -641,7 +641,7 @@ function InvoiceCetak(p: InvoiceProps) {
           <div style={{ fontWeight: 900, fontSize: "8.5pt", color: "#111", letterSpacing: "0.02em" }}>
             NOTA / INVOICE
           </div>
-          <div style={{ fontWeight: 900, fontSize: "11pt", color: "#DC2626", marginTop: "2pt" }}>
+          <div style={{ fontWeight: 900, fontSize: "11pt", color: "#000", marginTop: "2pt" }}>
             {p.noInvoice}
           </div>
           <div style={{ fontSize: "7.5pt", color: "#555", marginTop: "2pt" }}>
@@ -677,7 +677,7 @@ function InvoiceCetak(p: InvoiceProps) {
           border: `1.5pt solid ${GOLD}`, borderRadius: "4pt",
           display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center",
-          backgroundColor: "#FAFAF7",
+          backgroundColor: "#fff",
         }}>
           {p.cart.length > 0 && p.cart[0].item.gambar_url ? (
             <StorageImage
@@ -725,7 +725,7 @@ function InvoiceCetak(p: InvoiceProps) {
                 ? Math.round(ci.hargaJual / ci.item.berat_gram) : 0;
               const totalItem = ci.hargaJual * ci.qty + ci.ongkos;
               return (
-                <tr key={ci.item.id} style={{ backgroundColor: idx % 2 === 0 ? "#fff" : "#FFFDF5" }}>
+                <tr key={ci.item.id} style={{ backgroundColor: idx % 2 === 0 ? "#fff" : "#F2F2F2" }}>
                   <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{idx + 1}</td>
                   <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}` }}>
                     {ci.item.nama_produk}{ci.qty > 1 ? ` (×${ci.qty})` : ""}
@@ -740,7 +740,7 @@ function InvoiceCetak(p: InvoiceProps) {
             })}
             {/* Baris kosong pengisi */}
             {Array.from({ length: emptyRows }, (_, i) => (
-              <tr key={"emp-" + i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#FFFDF5" }}>
+              <tr key={"emp-" + i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#F2F2F2" }}>
                 {[...Array(7)].map((_, j) => (
                   <td key={j} style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}` }}>&nbsp;</td>
                 ))}
@@ -1594,7 +1594,13 @@ function POSContent() {
                 />
               </div>
             </div>
-            <div className="px-6 pb-6 flex gap-3 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl">
+            <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
+              {invoiceReady && (
+                <p className="text-[11px] text-gray-400 text-center">
+                  Pertama kali print di komputer ini? Di kotak dialog print, klik “Lainnya” / “More settings” lalu matikan “Header dan footer” supaya alamat web tidak ikut tercetak.
+                </p>
+              )}
+              <div className="flex gap-3">
               <button
                 onClick={() => setShowPreviewModal(false)}
                 className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
@@ -1619,6 +1625,7 @@ function POSContent() {
                   {saving ? "⏳ Menyimpan..." : "✓ Proses & Simpan Transaksi"}
                 </button>
               )}
+              </div>
             </div>
           </div>
         </div>
