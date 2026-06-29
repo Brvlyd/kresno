@@ -70,32 +70,8 @@ create policy "allow all pelanggan" on public.pelanggan for all using (true) wit
 create policy "allow read inventori" on public.inventori for select using (true);
 create policy "allow all inventori" on public.inventori for all using (true) with check (true);
 
--- ── Seed sample data ──
-insert into public.karyawan (nama, jabatan, status) values
-  ('Budi Santoso', 'Kasir', 'Aktif'),
-  ('Siti Rahayu', 'Admin', 'Aktif'),
-  ('Ahmad Fauzi', 'Tukang Emas', 'Aktif'),
-  ('Dewi Lestari', 'Kepala Toko', 'Aktif'),
-  ('Rina Wati', 'Kasir', 'Aktif')
-on conflict do nothing;
-
-insert into public.pelanggan (nama, telepon) values
-  ('Pak Hendra', '08123456789'),
-  ('Bu Sari', '08234567890'),
-  ('Pak Dedi', '08345678901')
-on conflict do nothing;
-
-insert into public.inventori (id_item, nama_produk, kategori, kadar, berat_gram, jumlah, status_laporan, tanggal_masuk) values
-  ('GE0001', 'Cincin Berlian Solitaire',   'Cincin',  '24K', 3.50, 10, 'Draft',            '2026-05-24'),
-  ('GE0005', 'Kalung Rantai Singapur',     'Kalung',  '22K', 5.20,  8, 'Draft',            '2026-05-24'),
-  ('KA011',  'Gelang Bangle Motif Bunga',  'Gelang',  '18K', 7.80,  6, 'Draft',            '2026-05-24'),
-  ('CI039',  'Cincin Couple Polos',        'Cincin',  '22K', 4.20, 12, 'Approval Checker', '2026-05-23'),
-  ('KA020',  'Liontin Hati',               'Liontin', '18K', 1.75, 15, 'Approval Signer',  '2026-05-23'),
-  ('CI007',  'Cincin Batu Permata',        'Cincin',  '20K', 3.10,  9, 'Rejected',         '2026-05-22')
-on conflict (id_item) do nothing;
-
-insert into public.harga_emas (tanggal, karat, harga_beli, harga_jual) values
-  (current_date, 24, 1050000, 1100000),
-  (current_date, 22,  960000, 1005000),
-  (current_date, 18,  785000,  820000)
-on conflict (tanggal, karat) do nothing;
+-- Catatan: migration ini SEBELUMNYA juga nge-seed data contoh (karyawan, pelanggan,
+-- inventori, harga emas rekaan) langsung ke tabel produksi. Itu dihapus dari sini
+-- supaya deploy baru (project Supabase baru / cabang lain) tidak ikut kemasukan
+-- data dummy. Kalau migration versi lama sudah pernah jalan di database ini,
+-- jalankan 023_hapus_seed_dummy_001.sql untuk membersihkannya.

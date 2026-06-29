@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isLoggedIn } from "@/lib/auth-session";
+import { isLoggedIn, logout } from "@/lib/auth-session";
 import { createClient } from "@/lib/supabase/client";
+import { useIdleTimeout } from "@/lib/useIdleTimeout";
+
+const IDLE_LOGOUT_MINUTES = 30;
 
 /**
  * Menjaga semua halaman yang dibungkus AppLayout. Dicek ulang lewat event
@@ -12,10 +15,19 @@ import { createClient } from "@/lib/supabase/client";
  * bfcache tanpa remount React — tetap terdeteksi sesi sudah habis dan
  * langsung dilempar balik ke /login. middleware.ts adalah penjaga sungguhan
  * di server; guard ini cuma menutup celah bfcache yang tidak lewat request baru.
+ *
+ * Juga auto-logout kalau benar-benar idle (tanpa klik/keyboard/scroll sama
+ * sekali) selama IDLE_LOGOUT_MINUTES menit — bukan tiap kali pindah halaman.
  */
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [checked, setChecked] = useState(false);
+
+  const handleIdle = useCallback(async () => {
+    await logout();
+    router.replace("/login?expired=1");
+  }, [router]);
+  useIdleTimeout(IDLE_LOGOUT_MINUTES, handleIdle);
 
   useEffect(() => {
     let active = true;

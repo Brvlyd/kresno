@@ -8,6 +8,10 @@ import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
 import { hitungTotalBunga } from "@/lib/gadai";
 import { verifyKeuanganPin, isKeuanganUnlocked, lockKeuangan } from "@/app/keuangan/actions";
+import { useIdleTimeout } from "@/lib/useIdleTimeout";
+
+/** Lock PIN Keuangan berlaku lagi kalau benar-benar idle (tanpa klik/keyboard/scroll) selama ini. */
+const KEUANGAN_IDLE_LOCK_MINUTES = 30;
 
 /* ═══════════════════════════════════════════════════════
    KONSTANTA & HELPER
@@ -32,6 +36,13 @@ const fmtTglShort = (d: string | Date) =>
   });
 
 const fmtPersen = (n: number) => (n || 0).toFixed(1).replace(/\.0$/, "") + "%";
+
+/** Cocokkan query pencarian (case-insensitive, partial) ke salah satu kolom suatu baris. */
+function matchSearch(haystacks: (string | number | null | undefined)[], query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return haystacks.some((h) => String(h ?? "").toLowerCase().includes(q));
+}
 
 /** Rata-rata persentase modal/jual tertimbang berat — karena persen tidak bisa
  * dijumlah langsung antar barang yang beratnya beda-beda. */
@@ -781,6 +792,40 @@ function PrintHeader({ label, forceShow }: { label: string; forceShow?: boolean 
 }
 
 /* ═══════════════════════════════════════════════════════
+   KOMPONEN: SEARCH BAR PER BAGIAN
+═══════════════════════════════════════════════════════ */
+function SearchBar({ value, onChange, placeholder }: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 mb-4 no-print">
+      <div className="relative flex-1 max-w-sm">
+        <input
+          type="search"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          className="w-full border-2 border-gray-200 rounded-xl pl-4 pr-10 py-2.5 text-sm bg-white focus:outline-none focus:border-[#C99A36] focus:ring-2 focus:ring-[#C99A36]/25 transition-colors"
+        />
+        <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-gray-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+        </svg>
+      </div>
+      {value && (
+        <button
+          onClick={() => onChange("")}
+          className="text-sm font-semibold text-gray-500 hover:text-amber-700 px-3 py-2.5 rounded-lg hover:bg-amber-100 transition-colors"
+        >
+          Hapus
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    KOMPONEN: KONTEN UTAMA KEUANGAN
 ═══════════════════════════════════════════════════════ */
 function KeuanganContent({ onLock, currentPin, onPinChanged }: {
@@ -796,6 +841,12 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const [customMonth, setCustomMonth] = useState(new Date().toISOString().slice(0, 7));
   const [rangeFrom, setRangeFrom] = useState("");
   const [rangeTo, setRangeTo] = useState("");
+
+  /* ── Search per bagian/tab ── */
+  const [searchStok, setSearchStok] = useState("");
+  const [searchTransaksi, setSearchTransaksi] = useState("");
+  const [searchAset, setSearchAset] = useState("");
+  const [searchLog, setSearchLog] = useState("");
 
   /* ── Data ── */
   const [stokAll, setStokAll] = useState<StokRow[]>([]);
@@ -942,6 +993,31 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const totalPemasukan = nilaiPenjualan + pendapatanServis + pendapatanGadai;
   const totalPengeluaran = nilaiMasuk;
   const labaBersih = totalPemasukan - totalPengeluaran;
+
+  /* ── Hasil pencarian per bagian/tab — hanya menyaring baris yang ditampilkan,
+   * kartu ringkasan & total global di atas tab tetap mencerminkan data periode utuh. ── */
+  const sisaStokFiltered = sisaStok.filter((r) => matchSearch([r.nama_produk, r.id_item, r.kadar, r.kategori], searchStok));
+
+  const stokMasukFiltered = stokMasuk.filter((r) => matchSearch([r.nama_produk, r.id_item, r.kadar], searchTransaksi));
+  const stokKeluarFiltered = stokKeluar.filter((k) => matchSearch([k.nama_produk, k.id_item, k.kadar], searchTransaksi));
+  const servisListFiltered = servisList.filter((s) => matchSearch([s.no_servis, s.pelanggan_nama, s.nama_barang, s.jenis_servis], searchTransaksi));
+  const gadaiListFiltered = gadaiList.filter((g) => matchSearch([g.no_gadai, g.pelanggan_nama, g.nama_barang], searchTransaksi));
+
+  const gramMasukF = stokMasukFiltered.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
+  const nilaiMasukF = stokMasukFiltered.reduce((s, r) => s + (r.harga_beli || 0) * r.jumlah, 0);
+  const gramKeluarF = stokKeluarFiltered.reduce((s, k) => s + k.berat_gram * k.jumlah_keluar, 0);
+  const keluarTerjualF = stokKeluarFiltered.filter((k) => k.status_baru === "Terjual");
+  const nilaiPenjualanF = keluarTerjualF.reduce((s, k) => s + k.harga_jual * k.jumlah_keluar, 0);
+  const servisSelesaiF = servisListFiltered.filter((s) => s.status === "Diambil" || s.status === "Selesai");
+  const pendapatanServisF = servisSelesaiF.reduce((s, r) => s + r.estimasi_biaya, 0);
+  const gadaiLunasF = gadaiListFiltered.filter((g) => g.status === "Lunas");
+  const pendapatanGadaiF = gadaiLunasF.reduce((s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0);
+
+  const gadaiAktifSemuaFiltered = gadaiAktifSemua.filter((g) => matchSearch([g.no_gadai, g.pelanggan_nama, g.nama_barang], searchAset));
+  const servisPendingFiltered = servisPending.filter((s) => matchSearch([s.no_servis, s.pelanggan_nama, s.nama_barang, s.jenis_servis], searchAset));
+  const totalGadaiAktifF = gadaiAktifSemuaFiltered.reduce((s, g) => s + g.nilai_pinjaman, 0);
+  const totalBungaPotensialF = gadaiAktifSemuaFiltered.reduce((s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0);
+  const totalNilaiServisPendingF = servisPendingFiltered.reduce((s, r) => s + r.estimasi_biaya, 0);
 
   /* ── Pecahan per Karat — untuk kartu ringkasan & banner total ── */
   const itemSisaPerKadar = sumByKadar(sisaStok, (r) => r.kadar, () => 1);
@@ -1234,7 +1310,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                   className={`px-4 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
                     mode === m
                       ? "text-white border-transparent"
-                      : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                      : "border-gray-200 text-gray-600 hover:border-[#C99A36] hover:bg-amber-50 hover:text-amber-900 active:bg-amber-100"
                   }`}
                   style={mode === m ? { backgroundColor: "#6F5333" } : {}}
                 >
@@ -1434,9 +1510,10 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 onClick={() => setTab(t.id)}
                 className={`flex flex-col sm:flex-row items-center justify-center gap-1.5 py-3 px-2 rounded-xl font-bold text-sm transition-all ${
                   tab === t.id
-                    ? "bg-white shadow-sm text-gray-900"
-                    : "text-gray-500 hover:text-gray-700"
+                    ? "bg-white text-gray-900"
+                    : "text-gray-500 hover:text-amber-800 hover:bg-amber-50/70"
                 }`}
+                style={tab === t.id ? { boxShadow: "0 1px 3px rgba(0,0,0,0.08), inset 0 -3px 0 0 #C99A36" } : {}}
               >
                 <span className="text-base sm:text-sm">{t.icon}</span>
                 <span className="text-xs sm:text-sm leading-tight text-center">{t.label}</span>
@@ -1469,6 +1546,18 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                   </p>
                 </div>
 
+                <SearchBar
+                  value={searchStok}
+                  onChange={setSearchStok}
+                  placeholder="Cari nama barang, kode, atau kadar..."
+                />
+
+                {searchStok && sisaStok.length > 0 && sisaStokFiltered.length === 0 && (
+                  <div className="bg-white rounded-2xl p-8 text-center shadow-sm border border-gray-100 mb-4 no-print">
+                    <p className="text-gray-400">Tidak ditemukan stok yang cocok dengan pencarian &quot;{searchStok}&quot;.</p>
+                  </div>
+                )}
+
                 {sisaStok.length === 0 ? (
                   <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100">
                     <p className="text-gray-400 text-lg">Tidak ada stok tersedia saat ini.</p>
@@ -1476,7 +1565,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 ) : (
                   <>
                     {(["Stock Dalam", "Stock Display", "Aset"] as const).map((jenis) => {
-                      const rows = sisaStok.filter(
+                      const rows = sisaStokFiltered.filter(
                         (r) => (r.jenis_inventori ?? "Stock Dalam") === jenis,
                       );
                       if (rows.length === 0) return null;
@@ -1538,12 +1627,12 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                                       {groupRows.map((r) => {
                                         rowNo += 1;
                                         return (
-                                          <tr key={r.id} className="hover:bg-amber-50/30 transition-colors">
+                                          <tr key={r.id} className="group hover:bg-amber-100 transition-colors">
                                             <td className="px-4 py-3 text-xs text-gray-400">{rowNo}</td>
                                             <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{r.id_item}</td>
                                             <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
                                             <td className="px-4 py-3">
-                                              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">
+                                              <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 group-hover:bg-amber-300 group-hover:text-amber-950 transition-colors">
                                                 {r.kadar}
                                               </span>
                                             </td>
@@ -1637,7 +1726,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                     {(() => {
                       const now = new Date();
                       const batasHari = 90;
-                      const stokLama = sisaStok
+                      const stokLama = sisaStokFiltered
                         .filter((r) => {
                           const selisih = Math.floor((now.getTime() - new Date(r.tanggal_masuk).getTime()) / 86400000);
                           return selisih >= batasHari;
@@ -1671,12 +1760,12 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                                 {stokLama.map((r, idx) => {
                                   const hari = Math.floor((now.getTime() - new Date(r.tanggal_masuk).getTime()) / 86400000);
                                   return (
-                                    <tr key={r.id} className="hover:bg-orange-50/40">
+                                    <tr key={r.id} className="group hover:bg-orange-100/70 transition-colors">
                                       <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                                       <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.id_item}</td>
                                       <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
                                       <td className="px-4 py-3">
-                                        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">{r.kadar}</span>
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 group-hover:bg-amber-300 group-hover:text-amber-950 transition-colors">{r.kadar}</span>
                                       </td>
                                       <td className="px-4 py-3 text-gray-600">{fmtGram(r.berat_gram)}</td>
                                       <td className="px-4 py-3 font-bold text-center">{r.jumlah}</td>
@@ -1708,6 +1797,12 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                   <p className="hidden print:block text-xs text-gray-500">Periode: {label}</p>
                 </div>
 
+                <SearchBar
+                  value={searchTransaksi}
+                  onChange={setSearchTransaksi}
+                  placeholder="Cari nama barang, kode, pelanggan, atau no. servis/gadai..."
+                />
+
                 <div className="space-y-4">
                   {/* Stok Masuk */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1718,12 +1813,16 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         <h3 className="font-extrabold text-gray-900">Stok Masuk</h3>
                       </div>
                       <p className="text-sm text-gray-600">
-                        {stokMasuk.length} item &bull; {fmtGram(gramMasuk)} &bull; Nilai Beli: <span className="font-bold">{fmtRp(nilaiMasuk)}</span>
+                        {stokMasukFiltered.length} item &bull; {fmtGram(gramMasukF)} &bull; Nilai Beli: <span className="font-bold">{fmtRp(nilaiMasukF)}</span>
                       </p>
                     </div>
                     {stokMasuk.length === 0 ? (
                       <p className="px-5 py-8 text-center text-gray-400">
                         Tidak ada stok masuk pada periode ini.
+                      </p>
+                    ) : stokMasukFiltered.length === 0 ? (
+                      <p className="px-5 py-8 text-center text-gray-400">
+                        Tidak ditemukan yang cocok dengan pencarian.
                       </p>
                     ) : (
                       <div className="overflow-x-auto">
@@ -1736,14 +1835,14 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {stokMasuk.map((r, idx) => (
-                              <tr key={r.id} className="hover:bg-blue-50/40 transition-colors">
+                            {stokMasukFiltered.map((r, idx) => (
+                              <tr key={r.id} className="group hover:bg-blue-100/60 transition-colors">
                                 <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                                 <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(r.tanggal_masuk)}</td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.id_item}</td>
                                 <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
                                 <td className="px-4 py-3">
-                                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">{r.kadar}</span>
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 group-hover:bg-amber-300 group-hover:text-amber-950 transition-colors">{r.kadar}</span>
                                 </td>
                                 <td className="px-4 py-3 text-gray-600">{fmtGram(r.berat_gram)}</td>
                                 <td className="px-4 py-3 font-bold text-center">{r.jumlah}</td>
@@ -1756,8 +1855,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           <tfoot className="bg-blue-100" style={{ borderTop: "2px solid #BFDBFE" }}>
                             <tr>
                               <td colSpan={7} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL MASUK</td>
-                              <td className="px-4 py-3 font-extrabold text-blue-700">{fmtGram(gramMasuk)}</td>
-                              <td className="px-4 py-3 font-extrabold text-gray-800">{fmtRp(nilaiMasuk)}</td>
+                              <td className="px-4 py-3 font-extrabold text-blue-700">{fmtGram(gramMasukF)}</td>
+                              <td className="px-4 py-3 font-extrabold text-gray-800">{fmtRp(nilaiMasukF)}</td>
                               <td />
                             </tr>
                           </tfoot>
@@ -1775,12 +1874,16 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         <h3 className="font-extrabold text-gray-900">Stok Keluar</h3>
                       </div>
                       <p className="text-sm text-gray-600">
-                        {stokKeluar.length} transaksi &bull; {fmtGram(gramKeluar)} &bull; Penjualan: <span className="font-bold text-green-700">{fmtRp(nilaiPenjualan)}</span>
+                        {stokKeluarFiltered.length} transaksi &bull; {fmtGram(gramKeluarF)} &bull; Penjualan: <span className="font-bold text-green-700">{fmtRp(nilaiPenjualanF)}</span>
                       </p>
                     </div>
                     {stokKeluar.length === 0 ? (
                       <p className="px-5 py-8 text-center text-gray-400">
                         Tidak ada stok keluar pada periode ini.
+                      </p>
+                    ) : stokKeluarFiltered.length === 0 ? (
+                      <p className="px-5 py-8 text-center text-gray-400">
+                        Tidak ditemukan yang cocok dengan pencarian.
                       </p>
                     ) : (
                       <div className="overflow-x-auto">
@@ -1793,15 +1896,15 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {stokKeluar.map((k, idx) => (
-                              <tr key={k.id} className="hover:bg-red-50/40 transition-colors">
+                            {stokKeluarFiltered.map((k, idx) => (
+                              <tr key={k.id} className="group hover:bg-red-100/60 transition-colors">
                                 <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                                 <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(k.created_at)}</td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{k.id_item}</td>
                                 <td className="px-4 py-3 font-semibold text-gray-800">{k.nama_produk}</td>
                                 <td className="px-4 py-3">
                                   {k.kadar !== "—" && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">{k.kadar}</span>
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 group-hover:bg-amber-300 group-hover:text-amber-950 transition-colors">{k.kadar}</span>
                                   )}
                                 </td>
                                 <td className="px-4 py-3 text-gray-600">{fmtGram(k.berat_gram)}</td>
@@ -1823,9 +1926,9 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           <tfoot className="bg-red-100" style={{ borderTop: "2px solid #FECACA" }}>
                             <tr>
                               <td colSpan={7} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL KELUAR</td>
-                              <td className="px-4 py-3 font-extrabold text-red-600">{fmtGram(gramKeluar)}</td>
+                              <td className="px-4 py-3 font-extrabold text-red-600">{fmtGram(gramKeluarF)}</td>
                               <td />
-                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(nilaiPenjualan)}</td>
+                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(nilaiPenjualanF)}</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -1842,11 +1945,13 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         <h3 className="font-extrabold text-gray-900">Servis (Periode)</h3>
                       </div>
                       <p className="text-sm text-gray-600">
-                        {servisList.length} servis &bull; Selesai: {servisSelesai.length} &bull; Pendapatan: <span className="font-bold text-green-700">{fmtRp(pendapatanServis)}</span>
+                        {servisListFiltered.length} servis &bull; Selesai: {servisSelesaiF.length} &bull; Pendapatan: <span className="font-bold text-green-700">{fmtRp(pendapatanServisF)}</span>
                       </p>
                     </div>
                     {servisList.length === 0 ? (
                       <p className="px-5 py-8 text-center text-gray-400">Tidak ada servis pada periode ini.</p>
+                    ) : servisListFiltered.length === 0 ? (
+                      <p className="px-5 py-8 text-center text-gray-400">Tidak ditemukan yang cocok dengan pencarian.</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1858,8 +1963,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {servisList.map((s, idx) => (
-                              <tr key={s.id} className="hover:bg-purple-50/30">
+                            {servisListFiltered.map((s, idx) => (
+                              <tr key={s.id} className="hover:bg-purple-100/60 transition-colors">
                                 <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.no_servis}</td>
                                 <td className="px-4 py-3 text-gray-700">{s.pelanggan_nama}</td>
@@ -1884,7 +1989,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           <tfoot className="bg-purple-100" style={{ borderTop: "2px solid #DDD6FE" }}>
                             <tr>
                               <td colSpan={5} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL PENDAPATAN SERVIS</td>
-                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(pendapatanServis)}</td>
+                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(pendapatanServisF)}</td>
                               <td />
                             </tr>
                           </tfoot>
@@ -1902,11 +2007,13 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         <h3 className="font-extrabold text-gray-900">Gadai (Periode)</h3>
                       </div>
                       <p className="text-sm text-gray-600">
-                        {gadaiList.length} gadai &bull; Lunas: {gadaiLunas.length} &bull; Pendapatan Bunga: <span className="font-bold text-green-700">{fmtRp(pendapatanGadai)}</span>
+                        {gadaiListFiltered.length} gadai &bull; Lunas: {gadaiLunasF.length} &bull; Pendapatan Bunga: <span className="font-bold text-green-700">{fmtRp(pendapatanGadaiF)}</span>
                       </p>
                     </div>
                     {gadaiList.length === 0 ? (
                       <p className="px-5 py-8 text-center text-gray-400">Tidak ada gadai pada periode ini.</p>
+                    ) : gadaiListFiltered.length === 0 ? (
+                      <p className="px-5 py-8 text-center text-gray-400">Tidak ditemukan yang cocok dengan pencarian.</p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
@@ -1918,8 +2025,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {gadaiList.map((g, idx) => (
-                              <tr key={g.id} className="hover:bg-teal-50/30">
+                            {gadaiListFiltered.map((g, idx) => (
+                              <tr key={g.id} className="hover:bg-teal-100/60 transition-colors">
                                 <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{g.no_gadai}</td>
                                 <td className="px-4 py-3 text-gray-700">{g.pelanggan_nama}</td>
@@ -1943,7 +2050,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           <tfoot className="bg-teal-100" style={{ borderTop: "2px solid #99F6E4" }}>
                             <tr>
                               <td colSpan={6} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL PENDAPATAN BUNGA</td>
-                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(pendapatanGadai)}</td>
+                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(pendapatanGadaiF)}</td>
                               <td />
                             </tr>
                           </tfoot>
@@ -2185,6 +2292,12 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                   <p className="hidden print:block text-xs text-gray-500">Data real-time per {fmtTgl(new Date())}</p>
                 </div>
 
+                <SearchBar
+                  value={searchAset}
+                  onChange={setSearchAset}
+                  placeholder="Cari pelanggan, barang, atau no. gadai/servis..."
+                />
+
                 <div className="space-y-4">
                   {/* Per Kadar */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -2215,9 +2328,9 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                                 const modalPersen = weightedAvgPersen(rows, "persen_modal");
                                 const jualPersen = weightedAvgPersen(rows, "persen_jual");
                                 return (
-                                  <tr key={kadar} className="hover:bg-amber-50/30">
+                                  <tr key={kadar} className="group hover:bg-amber-100 transition-colors">
                                     <td className="px-4 py-3">
-                                      <span className="px-3 py-1 rounded-full font-black text-sm bg-amber-100 text-amber-900">{kadar}</span>
+                                      <span className="px-3 py-1 rounded-full font-black text-sm bg-amber-100 text-amber-900 group-hover:bg-amber-300 group-hover:text-amber-950 transition-colors">{kadar}</span>
                                     </td>
                                     <td className="px-4 py-3 text-gray-700">{rows.length}</td>
                                     <td className="px-4 py-3 font-semibold text-gray-800">{rows.reduce((s, r) => s + r.jumlah, 0)}</td>
@@ -2312,8 +2425,13 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
 
                   {/* Gadai Aktif — seluruh data, tidak dibatasi periode */}
                   {gadaiAktifSemua.length > 0 && (() => {
-                    const totalGadaiAktif = gadaiAktifSemua.reduce((s, g) => s + g.nilai_pinjaman, 0);
-                    const totalBungaPotensial = gadaiAktifSemua.reduce((s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0);
+                    if (searchAset && gadaiAktifSemuaFiltered.length === 0) {
+                      return (
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+                          <p className="text-gray-400">Tidak ditemukan gadai aktif yang cocok dengan pencarian.</p>
+                        </div>
+                      );
+                    }
                     return (
                       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
@@ -2321,10 +2439,10 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           <div>
                             <h3 className="font-extrabold text-gray-900">Modal Tertahan — Gadai Aktif Saat Ini</h3>
                             <p className="text-xs text-gray-500 mt-0.5">
-                              Seluruh gadai aktif — {gadaiAktifSemua.length} nasabah &bull; Potensi bunga: <span className="font-bold text-green-700">{fmtRp(totalBungaPotensial)}</span>
+                              Seluruh gadai aktif — {gadaiAktifSemuaFiltered.length} nasabah &bull; Potensi bunga: <span className="font-bold text-green-700">{fmtRp(totalBungaPotensialF)}</span>
                             </p>
                           </div>
-                          <span className="text-lg font-black text-orange-600">{fmtRp(totalGadaiAktif)}</span>
+                          <span className="text-lg font-black text-orange-600">{fmtRp(totalGadaiAktifF)}</span>
                         </div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-sm">
@@ -2336,8 +2454,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                              {gadaiAktifSemua.map((g, idx) => (
-                                <tr key={g.id} className="hover:bg-orange-50/30">
+                              {gadaiAktifSemuaFiltered.map((g, idx) => (
+                                <tr key={g.id} className="hover:bg-orange-100/60 transition-colors">
                                   <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                                   <td className="px-4 py-3 font-mono text-xs text-gray-500">{g.no_gadai}</td>
                                   <td className="px-4 py-3 font-semibold text-gray-800">{g.pelanggan_nama}</td>
@@ -2359,9 +2477,9 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             <tfoot style={{ backgroundColor: "#FFF7ED", borderTop: "2px solid #FED7AA" }}>
                               <tr>
                                 <td colSpan={5} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL MODAL TERTAHAN</td>
-                                <td className="px-4 py-3 font-extrabold text-orange-600">{fmtRp(totalGadaiAktif)}</td>
+                                <td className="px-4 py-3 font-extrabold text-orange-600">{fmtRp(totalGadaiAktifF)}</td>
                                 <td />
-                                <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalBungaPotensial)}</td>
+                                <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalBungaPotensialF)}</td>
                                 <td />
                               </tr>
                             </tfoot>
@@ -2374,7 +2492,13 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                   {/* Servis Dalam Proses */}
                   {servisPending.length > 0 && (() => {
                     const now = new Date();
-                    const totalNilai = servisPending.reduce((s, r) => s + r.estimasi_biaya, 0);
+                    if (searchAset && servisPendingFiltered.length === 0) {
+                      return (
+                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+                          <p className="text-gray-400">Tidak ditemukan servis dalam proses yang cocok dengan pencarian.</p>
+                        </div>
+                      );
+                    }
                     return (
                       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
@@ -2382,7 +2506,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           <div>
                             <h3 className="font-extrabold text-gray-900">Servis Dalam Proses / Menunggu</h3>
                             <p className="text-xs text-gray-500 mt-0.5">
-                              {servisPending.length} order belum selesai &bull; Estimasi pendapatan: <span className="font-bold text-green-700">{fmtRp(totalNilai)}</span>
+                              {servisPendingFiltered.length} order belum selesai &bull; Estimasi pendapatan: <span className="font-bold text-green-700">{fmtRp(totalNilaiServisPendingF)}</span>
                             </p>
                           </div>
                         </div>
@@ -2396,10 +2520,10 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                              {servisPending.map((s, idx) => {
+                              {servisPendingFiltered.map((s, idx) => {
                                 const hari = Math.floor((now.getTime() - new Date(s.tanggal_masuk).getTime()) / 86400000);
                                 return (
-                                  <tr key={s.id} className="hover:bg-purple-50/30">
+                                  <tr key={s.id} className="hover:bg-purple-100/60 transition-colors">
                                     <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
                                     <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.no_servis}</td>
                                     <td className="px-4 py-3 font-semibold text-gray-800">{s.pelanggan_nama}</td>
@@ -2428,7 +2552,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             <tfoot style={{ backgroundColor: "#F5F3FF", borderTop: "2px solid #DDD6FE" }}>
                               <tr>
                                 <td colSpan={7} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL ESTIMASI PENDAPATAN</td>
-                                <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalNilai)}</td>
+                                <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalNilaiServisPendingF)}</td>
                                 <td />
                               </tr>
                             </tfoot>
@@ -2472,7 +2596,9 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
 
               {/* ══ TAB 5: LOG TRANSAKSI ══ */}
               {(() => {
-                const grouped = allTx.reduce<Record<string, typeof allTx>>((acc, tx) => {
+                const txFiltered = allTx.filter((tx) => matchSearch([tx.title, tx.sub, tx.note, tx.status], searchLog));
+
+                const grouped = txFiltered.reduce<Record<string, typeof allTx>>((acc, tx) => {
                   const key = tx.date.toLocaleDateString("id-ID", {
                     weekday: "long", day: "numeric", month: "long", year: "numeric",
                   });
@@ -2492,10 +2618,20 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                       <p className="hidden print:block text-xs text-gray-500">Periode: {label}</p>
                     </div>
 
+                    <SearchBar
+                      value={searchLog}
+                      onChange={setSearchLog}
+                      placeholder="Cari nama, kode, atau catatan transaksi..."
+                    />
+
                     {allTx.length === 0 ? (
                       <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100">
                         <p className="text-4xl mb-3">📭</p>
                         <p className="text-gray-400 font-semibold">Tidak ada transaksi pada periode ini.</p>
+                      </div>
+                    ) : txFiltered.length === 0 ? (
+                      <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100">
+                        <p className="text-gray-400 font-semibold">Tidak ditemukan transaksi yang cocok dengan pencarian &quot;{searchLog}&quot;.</p>
                       </div>
                     ) : (
                       <>
@@ -2670,10 +2806,9 @@ export default function KeuanganPage() {
         setPinLoaded(true);
       });
 
-    // Kunci ulang begitu halaman ini ditinggalkan, agar PIN wajib dimasukkan
-    // lagi tiap kali halaman Keuangan dibuka. "pagehide" menutup celah yang
-    // tidak tertangkap oleh cleanup unmount React di bawah, seperti menutup
-    // tab atau me-refresh browser dengan PIN masih dalam keadaan terbuka.
+    // Kunci kalau tab/browser benar-benar ditutup atau di-refresh dengan PIN
+    // masih dalam keadaan terbuka — bukan tiap kali pindah halaman di dalam
+    // app (itu cuma unmount React, bukan akhir sesi sungguhan).
     const handlePageHide = () => { lockKeuangan(); };
     window.addEventListener("pagehide", handlePageHide);
 
@@ -2687,9 +2822,16 @@ export default function KeuanganPage() {
     return () => {
       window.removeEventListener("pagehide", handlePageHide);
       window.removeEventListener("pageshow", handlePageShow);
-      lockKeuangan();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Kunci ulang begitu benar-benar idle (tanpa klik/keyboard/scroll sama
+  // sekali) selama KEUANGAN_IDLE_LOCK_MINUTES menit. Selama masih dipakai,
+  // tidak akan terkunci.
+  useIdleTimeout(KEUANGAN_IDLE_LOCK_MINUTES, () => {
+    lockKeuangan();
+    setUnlocked(false);
+  });
 
   if (!mounted || !pinLoaded) return null;
 
