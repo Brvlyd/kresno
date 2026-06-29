@@ -27,13 +27,6 @@ interface InvItem {
   jenis_inventori?: string;
 }
 
-interface CartItem {
-  item: InvItem;
-  qty: number;
-  hargaJual: number;
-  ongkos: number;
-}
-
 interface Pelanggan {
   id: string;
   nama: string;
@@ -72,6 +65,7 @@ interface RiwayatTransaksi {
   totalQty: number;
   subtotal: number;
   diskon: number;
+  ppnPercent: number;
   ppnAmount: number;
   total: number;
 }
@@ -158,6 +152,7 @@ type RiwayatRow = {
   harga_satuan: number | null;
   ongkos: number | null;
   diskon: number | null;
+  ppn_persen: number | null;
   ppn_amount: number | null;
   total_transaksi: number | null;
   no_invoice: string | null;
@@ -187,6 +182,7 @@ function groupRiwayatRows(rows: RiwayatRow[]): RiwayatTransaksi[] {
         totalQty: 0,
         subtotal: 0,
         diskon: row.diskon || 0,
+        ppnPercent: row.ppn_persen || 0,
         ppnAmount: row.ppn_amount || 0,
         total: row.total_transaksi || 0,
       };
@@ -417,7 +413,7 @@ function RiwayatRowItem({ r, onClick }: { r: RiwayatTransaksi; onClick: () => vo
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: MODAL DETAIL TRANSAKSI — popup per item yang sudah di-checkout
 ═══════════════════════════════════════════════════════ */
-function DetailRiwayatModal({ r, onClose }: { r: RiwayatTransaksi; onClose: () => void }) {
+function DetailRiwayatModal({ r, onClose, onPrint }: { r: RiwayatTransaksi; onClose: () => void; onPrint: () => void }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -532,13 +528,20 @@ function DetailRiwayatModal({ r, onClose }: { r: RiwayatTransaksi; onClose: () =
           )}
         </div>
 
-        <div className="px-6 pb-6">
+        <div className="px-6 pb-6 flex gap-3">
           <button
             onClick={onClose}
-            className="w-full py-3 rounded-xl border-2 font-bold hover:bg-gray-50 transition-colors"
+            className="flex-1 py-3 rounded-xl border-2 font-bold hover:bg-gray-50 transition-colors"
             style={{ borderColor: "#6F5333", color: "#6F5333" }}
           >
             Tutup
+          </button>
+          <button
+            onClick={onPrint}
+            className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+            style={{ backgroundColor: "#6F5333" }}
+          >
+            🖨️ Lihat & Cetak Nota
           </button>
         </div>
       </div>
@@ -549,13 +552,25 @@ function DetailRiwayatModal({ r, onClose }: { r: RiwayatTransaksi; onClose: () =
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: INVOICE (dipakai utk cetak & preview)
 ═══════════════════════════════════════════════════════ */
+/** Baris barang utk dicetak di nota — dipakai baik dari keranjang transaksi
+ * baru (foto tersedia) maupun dari riwayat transaksi lama (tanpa foto). */
+interface InvoiceLineItem {
+  namaProduk: string;
+  kadar: string;
+  beratGram: number;
+  gambarUrl?: string;
+  hargaJual: number;
+  ongkos: number;
+  qty: number;
+}
+
 interface InvoiceProps {
   mode: "print" | "preview";
   noInvoice: string;
   tanggal: string;
   pelangganNama: string;
   pelangganHP: string;
-  cart: CartItem[];
+  cart: InvoiceLineItem[];
   diskon: number;
   subtotal: number;
   total: number;
@@ -618,18 +633,18 @@ function InvoiceCetak(p: InvoiceProps) {
             <div style={{ width: "4pt", height: "4pt", backgroundColor: GOLD_LT, transform: "rotate(45deg)" }} />
             <div style={{ height: "1pt", width: "44pt", backgroundColor: GOLD_LT }} />
           </div>
-          <div style={{ fontSize: "6.5pt", color: "#444" }}>
+          <div style={{ fontSize: "9.5pt", color: "#444" }}>
             Jl. Kios Pasar Grabag Petak Blok KA No. 7A-7B
           </div>
-          <div style={{ fontSize: "6.5pt", color: "#444" }}>
+          <div style={{ fontSize: "9.5pt", color: "#444" }}>
             (Depan Terminal Lama), Grabag, Magelang, Jawa Tengah
           </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: "12pt", marginTop: "2pt", fontSize: "6.5pt", color: "#444" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: "12pt", marginTop: "2pt", fontSize: "9.5pt", color: "#444" }}>
             <span>☎ 0821-8501-3553</span>
             <span>|</span>
             <span>✉ tokomaskresno5758@gmail.com</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: "12pt", fontSize: "6.5pt", color: "#444" }}>
+          <div style={{ display: "flex", justifyContent: "center", gap: "12pt", fontSize: "9.5pt", color: "#444" }}>
             <span>📷 tokomaskresno.grabag</span>
             <span>|</span>
             <span>🎵 Tk. Mas Kresno Grabag</span>
@@ -661,7 +676,7 @@ function InvoiceCetak(p: InvoiceProps) {
             {p.pelangganNama}
           </span>
         </div>
-        <div>
+        <div style={{ fontSize: "11pt" }}>
           No. HP :{" "}
           <span style={{ borderBottom: "0.75pt solid #000", display: "inline-block", minWidth: "95pt" }}>
             {p.pelangganHP}
@@ -679,9 +694,9 @@ function InvoiceCetak(p: InvoiceProps) {
           alignItems: "center", justifyContent: "center",
           backgroundColor: "#fff",
         }}>
-          {p.cart.length > 0 && p.cart[0].item.gambar_url ? (
+          {p.cart.length > 0 && p.cart[0].gambarUrl ? (
             <StorageImage
-              src={p.cart[0].item.gambar_url}
+              src={p.cart[0].gambarUrl}
               alt="Foto Barang"
               style={{ width: "62pt", height: "62pt", objectFit: "cover", borderRadius: "3pt" }}
             />
@@ -696,7 +711,7 @@ function InvoiceCetak(p: InvoiceProps) {
         {/* Tabel item */}
         <table style={{ flex: 1, borderCollapse: "collapse", fontSize: "8pt" }}>
           <thead>
-            <tr style={{ backgroundColor: GOLD, color: "#fff" }}>
+            <tr style={{ backgroundColor: "#fff", color: "#000" }}>
               {[
                 { label: "No",         w: "22pt",  align: "center" as const },
                 { label: "Nama Barang", w: "",      align: "left"   as const },
@@ -721,17 +736,17 @@ function InvoiceCetak(p: InvoiceProps) {
           </thead>
           <tbody>
             {p.cart.map((ci, idx) => {
-              const hargaPerGram = ci.item.berat_gram > 0
-                ? Math.round(ci.hargaJual / ci.item.berat_gram) : 0;
+              const hargaPerGram = ci.beratGram > 0
+                ? Math.round(ci.hargaJual / ci.beratGram) : 0;
               const totalItem = ci.hargaJual * ci.qty + ci.ongkos;
               return (
-                <tr key={ci.item.id} style={{ backgroundColor: idx % 2 === 0 ? "#fff" : "#F2F2F2" }}>
+                <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "#fff" : "#F2F2F2" }}>
                   <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{idx + 1}</td>
                   <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}` }}>
-                    {ci.item.nama_produk}{ci.qty > 1 ? ` (×${ci.qty})` : ""}
+                    {ci.namaProduk}{ci.qty > 1 ? ` (×${ci.qty})` : ""}
                   </td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{ci.item.kadar}</td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{fmtGram(ci.item.berat_gram * ci.qty)}</td>
+                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{ci.kadar}</td>
+                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{fmtGram(ci.beratGram * ci.qty)}</td>
                   <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right" }}>{fmtRp(hargaPerGram)}</td>
                   <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right" }}>{ci.ongkos > 0 ? fmtRp(ci.ongkos) : "-"}</td>
                   <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right", fontWeight: 700 }}>{fmtRp(totalItem)}</td>
@@ -798,8 +813,8 @@ function InvoiceCetak(p: InvoiceProps) {
           )}
           <div style={{
             display: "flex", justifyContent: "space-between",
-            padding: "4pt 10pt", backgroundColor: GOLD,
-            color: "#fff", fontWeight: 900, fontSize: "11pt",
+            padding: "4pt 10pt", backgroundColor: "#fff",
+            color: "#000", fontWeight: 900, fontSize: "11pt",
           }}>
             <span>TOTAL</span>
             <span>: {fmtRp(p.total)}</span>
@@ -832,6 +847,35 @@ function InvoiceCetak(p: InvoiceProps) {
   );
 }
 
+/** Susun ulang data riwayat transaksi (sudah tersimpan di database) jadi props
+ * InvoiceCetak, supaya nota lama bisa dilihat & dicetak ulang kapan saja. */
+function riwayatToInvoiceProps(r: RiwayatTransaksi): Omit<InvoiceProps, "mode"> {
+  const cart: InvoiceLineItem[] = r.items.map((it) => ({
+    namaProduk: it.namaProduk,
+    kadar: it.kadar,
+    beratGram: it.beratGram,
+    hargaJual: it.hargaSatuan,
+    ongkos: it.ongkos,
+    qty: it.qty,
+  }));
+  const totalBerat = r.items.reduce((s, it) => s + it.beratGram * it.qty, 0);
+  return {
+    noInvoice: r.noInvoice,
+    tanggal: fmtTanggalInv(new Date(r.createdAt)),
+    pelangganNama: r.pelangganNama,
+    pelangganHP: r.pelangganHp,
+    cart,
+    diskon: r.diskon,
+    subtotal: r.subtotal,
+    total: r.total,
+    totalBerat,
+    paymentMethod: r.paymentMethod,
+    ppnEnabled: r.ppnAmount > 0,
+    ppnPercent: r.ppnPercent,
+    ppnAmount: r.ppnAmount,
+  };
+}
+
 /* ═══════════════════════════════════════════════════════
    HALAMAN UTAMA POS
 ═══════════════════════════════════════════════════════ */
@@ -862,6 +906,7 @@ function POSContent() {
   const [loadingRiwayat, setLoadingRiwayat] = useState(true);
   const [hargaEmas24Jual, setHargaEmas24Jual] = useState<number | null>(null);
   const [selectedRiwayat, setSelectedRiwayat] = useState<RiwayatTransaksi | null>(null);
+  const [printRiwayat, setPrintRiwayat] = useState<RiwayatTransaksi | null>(null);
   const [showAllRiwayatModal, setShowAllRiwayatModal] = useState(false);
   const [allRiwayat, setAllRiwayat] = useState<RiwayatTransaksi[]>([]);
   const [loadingAllRiwayat, setLoadingAllRiwayat] = useState(false);
@@ -890,7 +935,7 @@ function POSContent() {
   }
 
   const RIWAYAT_SELECT =
-    "id_item, nama_produk, kadar, berat_gram, jumlah_keluar, harga_satuan, ongkos, diskon, ppn_amount, total_transaksi, no_invoice, pelanggan_nama, pelanggan_hp, payment_method, catatan, created_at";
+    "id_item, nama_produk, kadar, berat_gram, jumlah_keluar, harga_satuan, ongkos, diskon, ppn_persen, ppn_amount, total_transaksi, no_invoice, pelanggan_nama, pelanggan_hp, payment_method, catatan, created_at";
 
   /* ── Load riwayat transaksi POS terakhir (dikelompokkan per no. invoice) ── */
   async function loadRiwayat() {
@@ -1070,7 +1115,15 @@ function POSContent() {
   const total = afterDiskon + ppnAmount;
   const totalBerat = validRows.reduce((s, r) => s + r.item.berat_gram * r.qty, 0);
   const canPreview = validRows.length > 0 && pelangganNama.trim().length > 0 && paymentMethod !== "";
-  const cartForInvoice: CartItem[] = validRows.map((r) => ({ item: r.item, qty: r.qty, hargaJual: r.hargaJual, ongkos: r.ongkos }));
+  const cartForInvoice: InvoiceLineItem[] = validRows.map((r) => ({
+    namaProduk: r.item.nama_produk,
+    kadar: r.item.kadar,
+    beratGram: r.item.berat_gram,
+    gambarUrl: r.item.gambar_url,
+    hargaJual: r.hargaJual,
+    ongkos: r.ongkos,
+    qty: r.qty,
+  }));
 
   /* ── Simpan transaksi & cetak ── */
   async function simpanInvoice() {
@@ -1204,15 +1257,19 @@ function POSContent() {
       {/* Print CSS */}
       <style>{`
         @media print {
-          aside, nav, #pos-screen, #preview-modal-overlay { display: none !important; }
+          aside, nav, #pos-screen, #preview-modal-overlay, #history-print-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
           @page { size: A5 landscape; margin: 10mm; }
         }
       `}</style>
 
-      {/* Invoice — hidden on screen, visible on print */}
-      {invoiceReady && (
+      {/* Invoice — hidden on screen, visible on print. Hanya satu sumber data yang aktif
+          sekaligus: nota riwayat lama (printRiwayat) didahulukan drpd transaksi baru saja
+          selesai (invoiceReady), supaya tidak ada dua #invoice-print bertabrakan. */}
+      {printRiwayat ? (
+        <InvoiceCetak mode="print" {...riwayatToInvoiceProps(printRiwayat)} />
+      ) : invoiceReady ? (
         <InvoiceCetak
           mode="print"
           noInvoice={invoiceReady.noInvoice}
@@ -1229,7 +1286,7 @@ function POSContent() {
           ppnPercent={ppnPercentNum}
           ppnAmount={ppnAmount}
         />
-      )}
+      ) : null}
 
       <AppLayout title="Point of Sale" subtitle="Transaksi penjualan ke customer">
         <div id="pos-screen" className="max-w-7xl mx-auto w-full space-y-5 px-4 sm:px-6 py-6">
@@ -1679,7 +1736,59 @@ function POSContent() {
 
       {/* MODAL: DETAIL TRANSAKSI — popup per item yang sudah di-checkout */}
       {selectedRiwayat && (
-        <DetailRiwayatModal r={selectedRiwayat} onClose={() => setSelectedRiwayat(null)} />
+        <DetailRiwayatModal
+          r={selectedRiwayat}
+          onClose={() => setSelectedRiwayat(null)}
+          onPrint={() => {
+            setPrintRiwayat(selectedRiwayat);
+            setSelectedRiwayat(null);
+          }}
+        />
+      )}
+
+      {/* MODAL: PREVIEW & CETAK NOTA — utk transaksi lama dari Riwayat Transaksi */}
+      {printRiwayat && (
+        <div id="history-print-overlay" className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Nota Transaksi</h2>
+                <p className="text-xs text-gray-400 font-mono">{printRiwayat.noInvoice}</p>
+              </div>
+              <button
+                onClick={() => setPrintRiwayat(null)}
+                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
+                <InvoiceCetak mode="preview" {...riwayatToInvoiceProps(printRiwayat)} />
+              </div>
+            </div>
+            <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
+              <p className="text-[11px] text-gray-400 text-center">
+                Pertama kali print di komputer ini? Di kotak dialog print, klik “Lainnya” / “More settings” lalu matikan “Header dan footer” supaya alamat web tidak ikut tercetak.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPrintRiwayat(null)}
+                  className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+                >
+                  ✕ Tutup
+                </button>
+                <button
+                  onClick={() => printClean()}
+                  className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                  style={{ backgroundColor: "#6F5333" }}
+                >
+                  🖨️ Print Nota
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </>
   );

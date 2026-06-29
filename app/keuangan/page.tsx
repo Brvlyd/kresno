@@ -2789,13 +2789,17 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
 export default function KeuanganPage() {
   const supabase = createClient();
   const [unlocked, setUnlocked] = useState(false);
+  const [unlockChecked, setUnlockChecked] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [pinLoaded, setPinLoaded] = useState(false);
   const [currentPin, setCurrentPin] = useState(DEFAULT_PIN);
 
   useEffect(() => {
     setMounted(true);
-    isKeuanganUnlocked().then(setUnlocked);
+    isKeuanganUnlocked().then((v) => {
+      setUnlocked(v);
+      setUnlockChecked(true);
+    });
     supabase
       .from("keuangan_pin")
       .select("pin")
@@ -2816,7 +2820,12 @@ export default function KeuanganPage() {
     // bfcache (mis. tekan Back browser) — tanpa ini, state React "unlocked"
     // di tab tersebut tetap beku di nilai lamanya meski cookie sudah dihapus
     // oleh pagehide di atas. Sama seperti pola di AuthGuard.
-    const handlePageShow = () => { isKeuanganUnlocked().then(setUnlocked); };
+    const handlePageShow = () => {
+      isKeuanganUnlocked().then((v) => {
+        setUnlocked(v);
+        setUnlockChecked(true);
+      });
+    };
     window.addEventListener("pageshow", handlePageShow);
 
     return () => {
@@ -2833,7 +2842,7 @@ export default function KeuanganPage() {
     setUnlocked(false);
   });
 
-  if (!mounted || !pinLoaded) return null;
+  if (!mounted || !pinLoaded || !unlockChecked) return null;
 
   if (!unlocked) {
     return (
