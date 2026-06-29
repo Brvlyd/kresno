@@ -6,7 +6,7 @@ import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
 import StorageImage from "@/components/StorageImage";
-import { hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
+import { hitungHasil } from "@/lib/hutangPiutang";
 
 /* ═══════════════════════════════════════════════════════
    TYPES
@@ -654,7 +654,7 @@ function InvoiceCetak(p: InvoiceProps) {
       </div>
 
       {/* ── INFO PELANGGAN ── */}
-      <div style={{ display: "flex", gap: "20pt", marginBottom: "6pt", fontSize: "8pt" }}>
+      <div style={{ display: "flex", gap: "20pt", marginBottom: "6pt", fontSize: "10pt", fontWeight: 700 }}>
         <div style={{ flex: 1 }}>
           Nama Pelanggan :{" "}
           <span style={{ borderBottom: "0.75pt solid #000", display: "inline-block", minWidth: "170pt", paddingRight: "6pt" }}>
@@ -780,7 +780,7 @@ function InvoiceCetak(p: InvoiceProps) {
         {/* Kanan: subtotal/diskon/total */}
         <div style={{
           minWidth: "175pt", border: `1pt solid ${GOLD_LT}`,
-          borderRadius: "4pt", overflow: "hidden", fontSize: "8pt",
+          borderRadius: "4pt", overflow: "hidden", fontSize: "10pt", fontWeight: 700,
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "3pt 10pt", borderBottom: `0.5pt solid ${GOLD_LT}` }}>
             <span>Subtotal</span>
@@ -799,7 +799,7 @@ function InvoiceCetak(p: InvoiceProps) {
           <div style={{
             display: "flex", justifyContent: "space-between",
             padding: "4pt 10pt", backgroundColor: GOLD,
-            color: "#fff", fontWeight: 900, fontSize: "9pt",
+            color: "#fff", fontWeight: 900, fontSize: "11pt",
           }}>
             <span>TOTAL</span>
             <span>: {fmtRp(p.total)}</span>
@@ -869,13 +869,12 @@ function POSContent() {
   const [allRiwayatHasMore, setAllRiwayatHasMore] = useState(true);
 
   /* ── Harga jual sebenarnya (Rp) baru dihitung saat barang ini mau dijual,
-     memakai harga emas 24K HARI INI (bukan harga saat barang dimasukkan ke inventori). ── */
+     memakai harga emas 24K HARI INI (bukan harga saat barang dimasukkan ke inventori).
+     SELALU patokan 24K, berapa pun karat barangnya — bukan harga sesuai karat barang itu. ── */
   function hargaJualLive(item: InvItem): number {
     if (!hargaEmas24Jual) return item.harga_jual;
-    const karat = parseFloat(item.kadar) || 24;
     const hasil = hitungHasil(item.berat_gram, item.persen_jual);
-    const hasilAkhir = hitungHasilAkhir(hasil, karat);
-    return Math.round(hasilAkhir * hargaEmas24Jual);
+    return Math.round(hasil * hargaEmas24Jual);
   }
 
   /* ── Load inventori tersedia + daftar pelanggan ── */

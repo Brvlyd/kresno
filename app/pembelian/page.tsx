@@ -45,8 +45,9 @@ const emptyForm: FormData = {
   persen_modal: "", persen_jual: "", supplier: "", keterangan: "",
 };
 
-function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaPerGramKaratBarang: number): number {
-  return Math.round(hitungHasil(beratGram, persentase) * hargaPerGramKaratBarang);
+/** Harga (Rp) = Berat x Persentase x Harga emas 24K hari itu — SELALU patokan 24K. */
+function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaEmas24K: number): number {
+  return Math.round(hitungHasil(beratGram, persentase) * hargaEmas24K);
 }
 
 export default function PembelianPage() {
@@ -106,9 +107,7 @@ export default function PembelianPage() {
     if (!form.jumlah.trim() || (parseInt(form.jumlah) || 0) < 1) missing.push("Jumlah");
     if (!form.persen_modal.trim() || (parseFloat(form.persen_modal) || 0) <= 0) missing.push("Persentase Modal");
     if (!form.persen_jual.trim() || (parseFloat(form.persen_jual) || 0) <= 0) missing.push("Persentase Jual");
-    if (kadarTrimmed && /^\d+(\.\d+)?K$/.test(kadarTrimmed) && !hargaEmasByKarat[parseFloat(kadarTrimmed)]) {
-      missing.push(`Harga Emas ${kadarTrimmed} hari ini (isi dulu di halaman Dashboard)`);
-    }
+    if (!hargaEmasByKarat[24]) missing.push("Harga Emas 24K hari ini (isi dulu di halaman Dashboard)");
     if (!form.supplier.trim()) missing.push("Nama Penjual");
     return missing;
   };
@@ -120,15 +119,14 @@ export default function PembelianPage() {
       return;
     }
     const beratGramNum = parseFloat(form.berat_gram) || 0;
-    const karatNum = parseFloat(form.kadar.trim()) || 24;
-    const hargaKarat = hargaEmasByKarat[karatNum];
-    if (!hargaKarat) return;
+    const hargaEmas24K = hargaEmasByKarat[24];
+    if (!hargaEmas24K) return;
     setSaving(true); setMsg("");
 
     const persenModalNum = parseFloat(form.persen_modal) || 0;
     const persenJualNum = parseFloat(form.persen_jual) || 0;
-    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaKarat.harga_beli);
-    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaKarat.harga_jual);
+    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaEmas24K.harga_beli);
+    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaEmas24K.harga_jual);
     const jumlahNum = parseInt(form.jumlah) || 1;
 
     const { kode, isNew } = kodeForJenis("Emas Rosok", jenisKodeMap);
@@ -137,7 +135,7 @@ export default function PembelianPage() {
       setJenisKodeMap((prev) => ({ ...prev, "Emas Rosok": kode }));
     }
     const counters = buildSeqCounters(existingIds.map((id_item) => ({ id_item })));
-    const idItem = nextIdItem(form.kadar.trim(), kode, counters);
+    const idItem = nextIdItem(form.kadar.trim(), kode, beratGramNum, counters);
     const noBuyback = generateNoBuyback();
     const tanggalMasuk = new Date().toISOString().split("T")[0];
 
@@ -306,7 +304,7 @@ export default function PembelianPage() {
                     ))}
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5">
-                    % dari harga emas sesuai karat hari ini (Dashboard).
+                    % dari harga emas 24K hari ini (Dashboard) — bukan harga sesuai karat barang ini.
                   </p>
                 </div>
 

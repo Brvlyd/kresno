@@ -90,11 +90,11 @@ interface HargaEmasKarat {
 }
 
 /**
- * Harga (Rp) = Berat x Persentase x Harga emas per gram sesuai karat barang itu sendiri
- * (bukan dikonversi ke 24K — harga per karat diambil langsung dari halaman Dashboard).
+ * Harga (Rp) = Berat x Persentase x Harga emas 24K hari itu — SELALU patokan 24K,
+ * berapa pun karat barangnya (bukan harga per karat barang itu sendiri).
  */
-function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaPerGramKaratBarang: number): number {
-  return Math.round(hitungHasil(beratGram, persentase) * hargaPerGramKaratBarang);
+function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaEmas24K: number): number {
+  return Math.round(hitungHasil(beratGram, persentase) * hargaEmas24K);
 }
 
 /* ─── Input persentase harga (%) ─── */
@@ -126,7 +126,7 @@ function PercentInput({
 
 /* ─── Preview & Pilih Barcode sebelum Print ─── */
 function BarcodePreviewModal({
-  open, onClose, idItem, namaProduk, kadar, beratGram, jumlah, startOffset,
+  open, onClose, idItem, namaProduk, kadar, beratGram, jumlah,
 }: {
   open: boolean;
   onClose: () => void;
@@ -135,7 +135,6 @@ function BarcodePreviewModal({
   kadar: string;
   beratGram: string;
   jumlah: number;
-  startOffset: number;
 }) {
   const [checked, setChecked] = useState<boolean[]>([]);
   const [columns, setColumns] = useState<1 | 2 | 3>(3);
@@ -151,26 +150,25 @@ function BarcodePreviewModal({
     localStorage.setItem("barcodePrintColumns", String(n));
   };
 
-  const unitCode = (i: number) =>
-    `${idItem}-${String(startOffset + i + 1).padStart(3, "0")}`;
-
   useEffect(() => {
     if (!open) return;
     setChecked(Array(jumlah).fill(true));
   }, [open, jumlah]);
 
+  // Setiap unit dalam 1 batch (jumlah sama) dicetak dengan barcode IDENTIK — persis id_item,
+  // tanpa akhiran nomor unit, supaya hasil scan label manapun pasti cocok dengan id_item di database.
   useEffect(() => {
     if (!open || !idItem) return;
     const timer = setTimeout(() => {
-      svgRefs.current.forEach((el, i) => {
+      svgRefs.current.forEach((el) => {
         if (!el) return;
         try {
-          JsBarcode(el, unitCode(i), { format: "CODE128", displayValue: false, height: 35, margin: 0 });
+          JsBarcode(el, idItem, { format: "CODE128", displayValue: false, height: 35, margin: 0 });
         } catch { /* ignore */ }
       });
     }, 40);
     return () => clearTimeout(timer);
-  }, [open, idItem, jumlah, startOffset]);
+  }, [open, idItem, jumlah]);
 
   const selectedCount = checked.filter(Boolean).length;
 
@@ -180,7 +178,7 @@ function BarcodePreviewModal({
       if (!on) return;
       const el = svgRefs.current[i];
       if (!el) return;
-      selected.push({ code: unitCode(i), svg: el.outerHTML });
+      selected.push({ code: idItem, svg: el.outerHTML });
     });
     if (!selected.length) return;
 
@@ -282,19 +280,26 @@ function BarcodePreviewModal({
         <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm text-gray-600 font-medium">Tata letak kertas</p>
           <div className="flex gap-1.5">
-            {([1, 2, 3] as const).map((n) => (
-              <button
-                key={n}
-                onClick={() => changeColumns(n)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-colors ${
-                  columns === n
-                    ? "border-[#C99A36] bg-amber-50 text-[#C99A36]"
-                    : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                }`}
-              >
-                {n} Kolom
-              </button>
-            ))}
+            {([1, 2, 3] as const).map((n) => {
+              const disabled = n !== 3;
+              return (
+                <button
+                  key={n}
+                  onClick={() => !disabled && changeColumns(n)}
+                  disabled={disabled}
+                  title={disabled ? "Masih dalam perbaikan" : undefined}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                    disabled
+                      ? "border-gray-200 text-gray-300 cursor-not-allowed opacity-60"
+                      : columns === n
+                      ? "border-[#C99A36] bg-amber-50 text-[#C99A36]"
+                      : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  {n} Kolom
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -326,7 +331,7 @@ function BarcodePreviewModal({
                   className="w-full"
                   style={{ height: 30 }}
                 />
-                <p className="text-[10px] font-bold text-gray-800 tracking-wide">{unitCode(i)}</p>
+                <p className="text-[10px] font-bold text-gray-800 tracking-wide">{idItem}</p>
                 <p className="text-[9px] text-gray-400 truncate w-full text-center">{namaProduk}</p>
               </div>
             ))}
@@ -382,7 +387,6 @@ function DetailBarangPopup({
   const [msg, setMsg] = useState("");
   const [showAddJenis, setShowAddJenis] = useState(false);
   const [showBarcodePreview, setShowBarcodePreview] = useState(false);
-  const [barcodeOffset, setBarcodeOffset] = useState(0);
   const [catatHutang, setCatatHutang] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const jenisTouchedRef = useRef(false);
@@ -418,21 +422,22 @@ function DetailBarangPopup({
   }, [open, editData, defaultJenisInventori]);
 
   // Kode otomatis: selalu untuk barang baru; untuk edit hanya jika user ganti jenis
-  // Butuh kadar yang valid (mis. "24K") karena format kode-nya {kadar}-{kode jenis}-{urutan}
+  // Butuh kadar yang valid (mis. "24K") karena format kode-nya {karat}-{kode jenis}-{berat}-{urutan}
   useEffect(() => {
     if (!open) return;
     if (editData && !jenisTouchedRef.current) return;
     const kadarTrimmed = form.kadar.trim();
     if (!/^\d+(\.\d+)?K$/.test(kadarTrimmed)) return;
+    const beratGramNum = parseFloat(form.berat_gram) || 0;
     let cancelled = false;
     (async () => {
       const kode = await ensureKode(form.jenis_barang);
       if (cancelled) return;
       const counters = buildSeqCounters(existingIds.map((id_item) => ({ id_item })));
-      setForm((f) => ({ ...f, id_item: nextIdItem(kadarTrimmed, kode, counters) }));
+      setForm((f) => ({ ...f, id_item: nextIdItem(kadarTrimmed, kode, beratGramNum, counters) }));
     })();
     return () => { cancelled = true; };
-  }, [open, editData, form.jenis_barang, form.kadar, existingIds, ensureKode]);
+  }, [open, editData, form.jenis_barang, form.kadar, form.berat_gram, existingIds, ensureKode]);
 
   const set = (key: keyof FormData, val: string) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -468,10 +473,7 @@ function DetailBarangPopup({
     if (!form.jumlah.trim() || (parseInt(form.jumlah) || 0) < 1) missing.push("Jumlah");
     if (!form.persen_modal.trim() || (parseFloat(form.persen_modal) || 0) <= 0) missing.push("Persentase Modal");
     if (!form.persen_jual.trim() || (parseFloat(form.persen_jual) || 0) <= 0) missing.push("Persentase Jual");
-    if (kadarTrimmed && /^\d+(\.\d+)?K$/.test(kadarTrimmed) && !hargaEmasByKarat[parseFloat(kadarTrimmed)]) {
-      missing.push(`Harga Emas ${kadarTrimmed} hari ini (isi dulu di halaman Dashboard)`);
-    }
-    if (catatHutang && !hargaEmasByKarat[24]) missing.push("Harga Emas 24K hari ini (untuk catat hutang, isi dulu di halaman Dashboard)");
+    if (!hargaEmasByKarat[24]) missing.push("Harga Emas 24K hari ini (isi dulu di halaman Dashboard)");
     if (!form.supplier.trim()) missing.push("Supplier");
     if (form.jenis_inventori === "Aset" && !form.sub_jenis_aset) missing.push("Jenis Aset (Cukim / Emas Rosok)");
     return missing;
@@ -485,14 +487,14 @@ function DetailBarangPopup({
     }
     const beratGramNum = parseFloat(form.berat_gram) || 0;
     const karatNum = parseFloat(form.kadar.trim()) || 24;
-    const hargaKarat = hargaEmasByKarat[karatNum];
-    if (!hargaKarat) return;
+    const hargaEmas24K = hargaEmasByKarat[24];
+    if (!hargaEmas24K) return;
     setSaving(true); setMsg("");
 
     const persenModalNum = parseFloat(form.persen_modal) || 0;
     const persenJualNum = parseFloat(form.persen_jual) || 0;
-    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaKarat.harga_beli);
-    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaKarat.harga_jual);
+    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaEmas24K.harga_beli);
+    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaEmas24K.harga_jual);
 
     const payload = {
       id_item:           form.id_item.trim().toUpperCase(),
@@ -563,22 +565,12 @@ function DetailBarangPopup({
     setTimeout(() => { onClose(); }, 700);
   };
 
-  const openBarcodePreview = async () => {
+  const openBarcodePreview = () => {
     const missing = missingFields();
     if (missing.length > 0) {
       setMsg(`Lengkapi dulu: ${missing.join(", ")}.`);
       return;
     }
-    // Hitung berapa unit dengan kode yang sama sudah ada di DB (untuk urutan nomor barcode)
-    const idItemFinal = form.id_item.trim().toUpperCase();
-    let offset = 0;
-    if (idItemFinal) {
-      let q = supabase.from("inventori").select("jumlah").eq("id_item", idItemFinal);
-      if (editData?.id) q = q.neq("id", editData.id);
-      const { data } = await q;
-      offset = (data ?? []).reduce((s: number, r: { jumlah: number }) => s + (r.jumlah || 0), 0);
-    }
-    setBarcodeOffset(offset);
     setShowBarcodePreview(true);
   };
 
@@ -828,26 +820,25 @@ function DetailBarangPopup({
               <PercentInput value={form.persen_jual} onChange={(v) => set("persen_jual", v)} />
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
-              % dari harga emas sesuai karat barang ini hari ini (Dashboard). Harga Rupiah sebenarnya baru muncul saat barang ini dijual.
+              % dari harga emas 24K hari ini (Dashboard) — bukan harga sesuai karat barang ini. Harga Rupiah sebenarnya baru muncul saat barang ini dijual.
             </p>
             {(() => {
               const beratPreview = parseFloat(form.berat_gram) || 0;
               const karatTrimmedPreview = form.kadar.trim();
-              const karatPreview = parseFloat(karatTrimmedPreview) || 0;
               const persenModalPreview = parseFloat(form.persen_modal) || 0;
               const persenJualPreview = parseFloat(form.persen_jual) || 0;
-              const hargaKaratPreview = hargaEmasByKarat[karatPreview];
+              const hargaEmas24KPreview = hargaEmasByKarat[24];
               if (!karatTrimmedPreview || !/^\d+(\.\d+)?K$/.test(karatTrimmedPreview)) return null;
-              if (!hargaKaratPreview) {
+              if (!hargaEmas24KPreview) {
                 return (
                   <p className="text-xs font-semibold text-red-500 mt-1.5">
-                    Harga Emas {karatTrimmedPreview} hari ini belum diisi di Dashboard — isi dulu sebelum menyimpan barang.
+                    Harga Emas 24K hari ini belum diisi di Dashboard — isi dulu sebelum menyimpan barang.
                   </p>
                 );
               }
               if (!beratPreview || (!persenModalPreview && !persenJualPreview)) return null;
-              const modalRp = hitungHargaDariPersentase(beratPreview, persenModalPreview, hargaKaratPreview.harga_beli);
-              const jualRp = hitungHargaDariPersentase(beratPreview, persenJualPreview, hargaKaratPreview.harga_jual);
+              const modalRp = hitungHargaDariPersentase(beratPreview, persenModalPreview, hargaEmas24KPreview.harga_beli);
+              const jualRp = hitungHargaDariPersentase(beratPreview, persenJualPreview, hargaEmas24KPreview.harga_jual);
               return (
                 <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
                   <p className="text-gray-400">≈ Rp {modalRp.toLocaleString("id-ID")}</p>
@@ -988,7 +979,6 @@ function DetailBarangPopup({
         kadar={form.kadar}
         beratGram={form.berat_gram}
         jumlah={Math.max(1, parseInt(form.jumlah) || 1)}
-        startOffset={barcodeOffset}
       />
     </div>
   );
@@ -1635,8 +1625,8 @@ function InventoriContent() {
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
                     {[
                       { label: "Tanggal Masuk",  value: new Date(selected.tanggal_masuk).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }), icon: "📅" },
-                      { label: "Persentase Modal", value: selected.persen_modal ? `${selected.persen_modal}% dari emas ${selected.kadar}` : "—", icon: "💰" },
-                      { label: "Persentase Jual",  value: selected.persen_jual ? `${selected.persen_jual}% dari emas ${selected.kadar}` : "—", icon: "🏷️" },
+                      { label: "Persentase Modal", value: selected.persen_modal ? `${selected.persen_modal}% dari emas 24K` : "—", icon: "💰" },
+                      { label: "Persentase Jual",  value: selected.persen_jual ? `${selected.persen_jual}% dari emas 24K` : "—", icon: "🏷️" },
                       { label: "Supplier",       value: selected.supplier || "—", icon: "🚚" },
                     ].map(({ label, value, icon }) => (
                       <div key={label} className="bg-gray-50 rounded-xl px-4 py-3">

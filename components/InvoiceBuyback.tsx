@@ -72,7 +72,7 @@ export function InvoiceBuyback({ mode, data }: InvoiceBuybackProps) {
 
       {/* ── TOTAL ── */}
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "8pt" }}>
-        <div style={{ minWidth: "200pt", border: `1pt solid ${INVOICE_GOLD_LT}`, borderRadius: "4pt", overflow: "hidden", fontSize: "8pt" }}>
+        <div style={{ minWidth: "200pt", border: `1pt solid ${INVOICE_GOLD_LT}`, borderRadius: "4pt", overflow: "hidden", fontSize: "10pt", fontWeight: 700 }}>
           <div style={{ display: "flex", justifyContent: "space-between", padding: "3pt 10pt", borderBottom: `0.5pt solid ${INVOICE_GOLD_LT}` }}>
             <span>Total Berat</span>
             <span>: {fmtGram(totalBerat)}</span>
@@ -84,7 +84,7 @@ export function InvoiceBuyback({ mode, data }: InvoiceBuybackProps) {
           <div style={{
             display: "flex", justifyContent: "space-between",
             padding: "4pt 10pt", backgroundColor: INVOICE_GOLD,
-            color: "#fff", fontWeight: 900, fontSize: "9pt",
+            color: "#fff", fontWeight: 900, fontSize: "11pt",
           }}>
             <span>TOTAL</span>
             <span>: {fmtRupiah(data.total)}</span>

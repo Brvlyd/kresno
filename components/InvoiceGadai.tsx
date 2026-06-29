@@ -96,7 +96,7 @@ export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
           <div style={{ backgroundColor: INVOICE_GOLD, color: "#fff", fontWeight: 700, padding: "3pt 8pt", fontSize: "7.5pt", textAlign: "center" }}>
             JANGKA WAKTU
           </div>
-          <div style={{ padding: "6pt 10pt", fontSize: "7.5pt" }}>
+          <div style={{ padding: "6pt 10pt", fontSize: "9.5pt", fontWeight: 700 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "2pt" }}>
               <span>Mulai</span><span>: {tglIndo(data.tanggal_gadai)}</span>
             </div>

@@ -93,31 +93,44 @@ export function kodeForJenis(
   throw new Error(`Tidak bisa membuat kode unik untuk jenis "${jenis}"`);
 }
 
-const ID_ITEM_RE = /^(\d+(?:\.\d+)?K)-([A-Z0-9]+)-(\d+)$/i;
+/** Format id_item: {karat 2 digit}K-{kode 3 huruf}-{berat gram x100, 4 digit}-{urutan, 4 digit} */
+const ID_ITEM_RE = /^(\d{1,2})K-([A-Z0-9]+)-(\d+)-(\d+)$/i;
 
-/** Hitung nomor urut terakhir per-(kadar, kode) dari daftar id_item yang sudah ada */
+/** "24K", "6K", "18.5K" -> "24K", "06K", "19K" (karat dibulatkan, selalu 2 digit) */
+function formatKaratKode(kadar: string): string {
+  const num = Math.round(parseFloat(kadar.trim()) || 0);
+  return `${String(Math.max(0, num)).padStart(2, "0")}K`;
+}
+
+/** 1.49 (gram) -> "0149" — 2 desimal tersirat, minimal 4 digit (lebih dari 99.99g akan melebar) */
+function formatBeratKode(beratGram: number): string {
+  const centigram = Math.max(0, Math.round(beratGram * 100));
+  return String(centigram).padStart(4, "0");
+}
+
+/** Hitung nomor urut terakhir per-(karat, kode) dari daftar id_item yang sudah ada */
 export function buildSeqCounters(existing: { id_item: string }[]): Map<string, number> {
   const counters = new Map<string, number>();
   for (const item of existing) {
     const match = item.id_item.match(ID_ITEM_RE);
     if (!match) continue;
-    const [, kadar, kode, digits] = match;
-    const key = `${kadar.toUpperCase()}-${kode.toUpperCase()}`;
-    const num = parseInt(digits, 10);
+    const [, karatDigits, kode, , urutan] = match;
+    const key = `${karatDigits.padStart(2, "0")}K-${kode.toUpperCase()}`;
+    const num = parseInt(urutan, 10);
     const current = counters.get(key) ?? 0;
     if (num > current) counters.set(key, num);
   }
   return counters;
 }
 
-/** Buat id_item berikutnya untuk sebuah (kadar, kode), dan perbarui counter-nya */
-export function nextIdItem(kadar: string, kode: string, counters: Map<string, number>): string {
-  const kadarUpper = kadar.trim().toUpperCase();
+/** Buat id_item berikutnya untuk sebuah (kadar, kode, berat), dan perbarui counter-nya */
+export function nextIdItem(kadar: string, kode: string, beratGram: number, counters: Map<string, number>): string {
+  const karatKode = formatKaratKode(kadar);
   const kodeUpper = kode.trim().toUpperCase();
-  const key = `${kadarUpper}-${kodeUpper}`;
+  const key = `${karatKode}-${kodeUpper}`;
   const next = (counters.get(key) ?? 0) + 1;
   counters.set(key, next);
-  return `${kadarUpper}-${kodeUpper}-${String(next).padStart(3, "0")}`;
+  return `${karatKode}-${kodeUpper}-${formatBeratKode(beratGram)}-${String(next).padStart(4, "0")}`;
 }
 
 export function normalizeStatus(value: string): string {
