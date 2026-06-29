@@ -72,6 +72,33 @@ function sumByKadar<T>(rows: T[], kadarOf: (r: T) => string, value: (r: T) => nu
   return acc;
 }
 
+/** Target jumlah baris per halaman tabel Sisa Stok di layar (cetakan tetap menampilkan semuanya). */
+const STOK_PAGE_SIZE = 25;
+
+/** Pecah daftar kelompok karat jadi beberapa halaman tanpa memutus satu kelompok
+ * karat di tengah, supaya baris subtotal tiap karat tidak terpisah dari baris-barisnya. */
+function paginateKadarGroups(
+  kadarKeys: string[],
+  rowsByKadar: Record<string, unknown[]>,
+  pageSize: number,
+): string[][] {
+  const pages: string[][] = [];
+  let current: string[] = [];
+  let count = 0;
+  for (const k of kadarKeys) {
+    const n = rowsByKadar[k].length;
+    if (current.length > 0 && count + n > pageSize) {
+      pages.push(current);
+      current = [];
+      count = 0;
+    }
+    current.push(k);
+    count += n;
+  }
+  if (current.length > 0) pages.push(current);
+  return pages.length > 0 ? pages : [[]];
+}
+
 /* ═══════════════════════════════════════════════════════
    TIPE DATA
 ═══════════════════════════════════════════════════════ */
@@ -784,6 +811,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const [showChangePin, setShowChangePin] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("bulanan");
+  const [stokPage, setStokPage] = useState<Record<string, number>>({});
 
   const label = filterLabel(mode, customDate, customMonth, rangeFrom, rangeTo);
   const [dateFrom, dateTo] = getDateRange(mode, customDate, customMonth, rangeFrom, rangeTo);
@@ -1465,7 +1493,15 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         rowsByKadar[k].push(r);
                       }
                       const kadarKeysJenis = sortKadarDesc(Object.keys(rowsByKadar));
-                      let rowNo = 0;
+
+                      // Paginasi di layar saja — pratinjau/cetakan tetap menampilkan semua baris.
+                      const groupPages = paginateKadarGroups(kadarKeysJenis, rowsByKadar, STOK_PAGE_SIZE);
+                      const pageIdx = showPreview ? -1 : Math.min(stokPage[jenis] ?? 0, groupPages.length - 1);
+                      const visibleKadarKeys = showPreview ? kadarKeysJenis : groupPages[pageIdx];
+                      const visibleItemCount = visibleKadarKeys.reduce((s, k) => s + rowsByKadar[k].length, 0);
+                      let rowNo = showPreview
+                        ? 0
+                        : groupPages.slice(0, pageIdx).reduce((s, pg) => s + pg.reduce((s2, k) => s2 + rowsByKadar[k].length, 0), 0);
 
                       return (
                         <div key={jenis} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
@@ -1492,7 +1528,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-gray-50">
-                                {kadarKeysJenis.map((k) => {
+                                {visibleKadarKeys.map((k) => {
                                   const groupRows = rowsByKadar[k];
                                   const kBerat = groupRows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
                                   const kModalPersen = weightedAvgPersen(groupRows, "persen_modal");
@@ -1548,6 +1584,29 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                               </tfoot>
                             </table>
                           </div>
+                          {!showPreview && groupPages.length > 1 && (
+                            <div className="no-print flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50 text-sm flex-wrap">
+                              <p className="text-gray-500">
+                                Menampilkan {visibleItemCount} dari {rows.length} item &bull; Halaman {pageIdx + 1} dari {groupPages.length}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setStokPage((p) => ({ ...p, [jenis]: Math.max(0, pageIdx - 1) }))}
+                                  disabled={pageIdx === 0}
+                                  className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                                >
+                                  &lsaquo; Sebelumnya
+                                </button>
+                                <button
+                                  onClick={() => setStokPage((p) => ({ ...p, [jenis]: Math.min(groupPages.length - 1, pageIdx + 1) }))}
+                                  disabled={pageIdx === groupPages.length - 1}
+                                  className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                                >
+                                  Selanjutnya &rsaquo;
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -2611,9 +2670,23 @@ export default function KeuanganPage() {
         setPinLoaded(true);
       });
 
-    // Kunci ulang begitu halaman ini ditinggalkan (pindah menu), agar PIN
-    // wajib dimasukkan lagi tiap kali halaman Keuangan dibuka.
+    // Kunci ulang begitu halaman ini ditinggalkan, agar PIN wajib dimasukkan
+    // lagi tiap kali halaman Keuangan dibuka. "pagehide" menutup celah yang
+    // tidak tertangkap oleh cleanup unmount React di bawah, seperti menutup
+    // tab atau me-refresh browser dengan PIN masih dalam keadaan terbuka.
+    const handlePageHide = () => { lockKeuangan(); };
+    window.addEventListener("pagehide", handlePageHide);
+
+    // Sinkronkan ulang status terkunci/tidak saat halaman ini dipulihkan dari
+    // bfcache (mis. tekan Back browser) — tanpa ini, state React "unlocked"
+    // di tab tersebut tetap beku di nilai lamanya meski cookie sudah dihapus
+    // oleh pagehide di atas. Sama seperti pola di AuthGuard.
+    const handlePageShow = () => { isKeuanganUnlocked().then(setUnlocked); };
+    window.addEventListener("pageshow", handlePageShow);
+
     return () => {
+      window.removeEventListener("pagehide", handlePageHide);
+      window.removeEventListener("pageshow", handlePageShow);
       lockKeuangan();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

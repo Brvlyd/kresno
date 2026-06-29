@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
@@ -50,13 +51,29 @@ interface DraftRow {
   qty: number;
 }
 
+interface RiwayatItemDetail {
+  idItem: string;
+  namaProduk: string;
+  kadar: string;
+  beratGram: number;
+  qty: number;
+  hargaSatuan: number;
+  ongkos: number;
+}
+
 interface RiwayatTransaksi {
   noInvoice: string;
   pelangganNama: string;
+  pelangganHp: string;
   paymentMethod: string;
   createdAt: string;
-  items: string[];
+  catatan: string;
+  items: RiwayatItemDetail[];
   totalQty: number;
+  subtotal: number;
+  diskon: number;
+  ppnAmount: number;
+  total: number;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -122,6 +139,76 @@ function fmtWaktuRiwayat(iso: string) {
   const d = new Date(iso);
   return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short" }) +
     ", " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtWaktuLengkap(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" }) +
+    ", " + d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Baris mentah inventori_keluar (satu baris = satu item dalam satu invoice)
+ * dikelompokkan jadi satu RiwayatTransaksi per no. invoice. */
+type RiwayatRow = {
+  id_item: string;
+  nama_produk: string;
+  kadar: string | null;
+  berat_gram: number | null;
+  jumlah_keluar: number | null;
+  harga_satuan: number | null;
+  ongkos: number | null;
+  diskon: number | null;
+  ppn_amount: number | null;
+  total_transaksi: number | null;
+  no_invoice: string | null;
+  pelanggan_nama: string | null;
+  pelanggan_hp: string | null;
+  payment_method: string | null;
+  catatan: string | null;
+  created_at: string;
+};
+
+function groupRiwayatRows(rows: RiwayatRow[]): RiwayatTransaksi[] {
+  const grouped: RiwayatTransaksi[] = [];
+  const seen = new Map<string, RiwayatTransaksi>();
+  for (const row of rows) {
+    const noInvoice = row.no_invoice;
+    if (!noInvoice) continue;
+    let entry = seen.get(noInvoice);
+    if (!entry) {
+      entry = {
+        noInvoice,
+        pelangganNama: row.pelanggan_nama || "Umum",
+        pelangganHp: row.pelanggan_hp || "",
+        paymentMethod: row.payment_method || "",
+        createdAt: row.created_at,
+        catatan: row.catatan || "",
+        items: [],
+        totalQty: 0,
+        subtotal: 0,
+        diskon: row.diskon || 0,
+        ppnAmount: row.ppn_amount || 0,
+        total: row.total_transaksi || 0,
+      };
+      seen.set(noInvoice, entry);
+      grouped.push(entry);
+    }
+    const qty = row.jumlah_keluar || 0;
+    const hargaSatuan = row.harga_satuan || 0;
+    const ongkos = row.ongkos || 0;
+    entry.items.push({
+      idItem: row.id_item,
+      namaProduk: row.nama_produk,
+      kadar: row.kadar || "",
+      beratGram: row.berat_gram || 0,
+      qty,
+      hargaSatuan,
+      ongkos,
+    });
+    entry.totalQty += qty;
+    entry.subtotal += hargaSatuan * qty + ongkos;
+  }
+  return grouped;
 }
 
 let rowSeq = 0;
@@ -295,6 +382,166 @@ function RpField({
         placeholder="0"
         className="flex-1 px-2 py-2 text-sm focus:outline-none min-w-0 disabled:bg-gray-50"
       />
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   KOMPONEN: BARIS RIWAYAT TRANSAKSI (dipakai di list terakhir & modal semua riwayat)
+═══════════════════════════════════════════════════════ */
+function RiwayatRowItem({ r, onClick }: { r: RiwayatTransaksi; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full flex items-center justify-between gap-3 py-2.5 text-sm text-left hover:bg-amber-50/70 rounded-lg px-2 -mx-2 transition-colors"
+    >
+      <div className="min-w-0">
+        <p className="font-semibold text-gray-800 truncate">
+          {r.pelangganNama} <span className="text-gray-400 font-normal">· {r.noInvoice}</span>
+        </p>
+        <p className="text-xs text-gray-400 truncate">
+          {r.items.map((it) => it.namaProduk).join(", ")} {r.paymentMethod && `· ${r.paymentMethod}`}
+        </p>
+      </div>
+      <div className="text-right shrink-0">
+        <p className="text-xs text-gray-400">{fmtWaktuRiwayat(r.createdAt)}</p>
+        <p className="text-xs font-semibold" style={{ color: "#6F5333" }}>
+          {r.total > 0 ? fmtRp(r.total) : `${r.totalQty} pcs`}
+        </p>
+      </div>
+    </button>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
+   KOMPONEN: MODAL DETAIL TRANSAKSI — popup per item yang sudah di-checkout
+═══════════════════════════════════════════════════════ */
+function DetailRiwayatModal({ r, onClose }: { r: RiwayatTransaksi; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900">Detail Transaksi</h2>
+            <p className="text-xs text-gray-400 font-mono">{r.noInvoice}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Info pelanggan & transaksi */}
+          <div className="grid grid-cols-2 gap-3 text-sm bg-gray-50 rounded-xl p-4">
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Pelanggan</p>
+              <p className="font-semibold text-gray-800">{r.pelangganNama}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">No. Telepon</p>
+              <p className="font-semibold text-gray-800">{r.pelangganHp || "—"}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Waktu Transaksi</p>
+              <p className="font-semibold text-gray-800">{fmtWaktuLengkap(r.createdAt)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide">Metode Pembayaran</p>
+              <p className="font-semibold text-gray-800">{r.paymentMethod || "—"}</p>
+            </div>
+          </div>
+
+          {/* Item yang sudah di-checkout */}
+          <div>
+            <h3 className="text-sm font-bold text-gray-700 mb-2">Barang yang Dibeli ({r.items.length})</h3>
+            <div className="border border-gray-100 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50 text-xs text-gray-500 uppercase tracking-wide">
+                    <th className="text-left px-3 py-2 font-semibold">Barang</th>
+                    <th className="text-center px-2 py-2 font-semibold">Qty</th>
+                    <th className="text-right px-3 py-2 font-semibold">Harga Satuan</th>
+                    <th className="text-right px-3 py-2 font-semibold">Ongkos</th>
+                    <th className="text-right px-3 py-2 font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.items.map((it, idx) => (
+                    <tr key={idx} className="border-t border-gray-50">
+                      <td className="px-3 py-2.5">
+                        <p className="font-semibold text-gray-800">{it.namaProduk}</p>
+                        <p className="text-xs text-gray-400">
+                          {it.idItem}
+                          {it.kadar ? ` · ${it.kadar}` : ""}
+                          {it.beratGram ? ` · ${fmtGram(it.beratGram)}` : ""}
+                        </p>
+                      </td>
+                      <td className="px-2 py-2.5 text-center">{it.qty}</td>
+                      <td className="px-3 py-2.5 text-right">{it.hargaSatuan ? fmtRp(it.hargaSatuan) : "—"}</td>
+                      <td className="px-3 py-2.5 text-right">{it.ongkos ? fmtRp(it.ongkos) : "—"}</td>
+                      <td className="px-3 py-2.5 text-right font-semibold" style={{ color: "#6F5333" }}>
+                        {it.hargaSatuan ? fmtRp(it.hargaSatuan * it.qty + it.ongkos) : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {r.items.every((it) => !it.hargaSatuan) && (
+              <p className="text-xs text-gray-400 mt-2">
+                Harga per item tidak tersedia — transaksi ini dicatat sebelum riwayat detail diaktifkan.
+              </p>
+            )}
+          </div>
+
+          {/* Ringkasan total */}
+          {r.total > 0 && (
+            <div className="rounded-xl border border-gray-100 overflow-hidden text-sm">
+              <div className="flex justify-between px-4 py-2 border-b border-gray-50">
+                <span className="text-gray-500">Subtotal</span>
+                <span className="font-semibold text-gray-800">{fmtRp(r.subtotal)}</span>
+              </div>
+              {r.diskon > 0 && (
+                <div className="flex justify-between px-4 py-2 border-b border-gray-50">
+                  <span className="text-gray-500">Diskon</span>
+                  <span className="font-semibold text-gray-800">− {fmtRp(r.diskon)}</span>
+                </div>
+              )}
+              {r.ppnAmount > 0 && (
+                <div className="flex justify-between px-4 py-2 border-b border-gray-50">
+                  <span className="text-gray-500">PPN</span>
+                  <span className="font-semibold text-gray-800">{fmtRp(r.ppnAmount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between px-4 py-2.5 font-bold text-white" style={{ backgroundColor: "#6F5333" }}>
+                <span>TOTAL</span>
+                <span>{fmtRp(r.total)}</span>
+              </div>
+            </div>
+          )}
+
+          {r.catatan && (
+            <div>
+              <p className="text-xs text-gray-400 uppercase tracking-wide mb-1">Catatan</p>
+              <p className="text-sm text-gray-700 bg-gray-50 rounded-xl p-3">{r.catatan}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 pb-6">
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl border-2 font-bold hover:bg-gray-50 transition-colors"
+            style={{ borderColor: "#6F5333", color: "#6F5333" }}
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -588,14 +835,18 @@ function InvoiceCetak(p: InvoiceProps) {
 /* ═══════════════════════════════════════════════════════
    HALAMAN UTAMA POS
 ═══════════════════════════════════════════════════════ */
-export default function POSPage() {
+function POSContent() {
   const supabase = createClient();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const processedScanRef = useRef<string | null>(null);
 
   const [items, setItems] = useState<InvItem[]>([]);
   const [pelangganList, setPelangganList] = useState<Pelanggan[]>([]);
   const [rows, setRows] = useState<DraftRow[]>([makeRow()]);
   const [pelangganNama, setPelangganNama] = useState("");
   const [pelangganHP, setPelangganHP] = useState("");
+  const [simpanDataPelanggan, setSimpanDataPelanggan] = useState(true);
   const [tanggalPembelian, setTanggalPembelian] = useState(todayStr());
   const [diskon, setDiskon] = useState("");
   const [ppnEnabled, setPpnEnabled] = useState(false);
@@ -610,6 +861,12 @@ export default function POSPage() {
   const [riwayat, setRiwayat] = useState<RiwayatTransaksi[]>([]);
   const [loadingRiwayat, setLoadingRiwayat] = useState(true);
   const [hargaEmas24Jual, setHargaEmas24Jual] = useState<number | null>(null);
+  const [selectedRiwayat, setSelectedRiwayat] = useState<RiwayatTransaksi | null>(null);
+  const [showAllRiwayatModal, setShowAllRiwayatModal] = useState(false);
+  const [allRiwayat, setAllRiwayat] = useState<RiwayatTransaksi[]>([]);
+  const [loadingAllRiwayat, setLoadingAllRiwayat] = useState(false);
+  const [allRiwayatRowLimit, setAllRiwayatRowLimit] = useState(150);
+  const [allRiwayatHasMore, setAllRiwayatHasMore] = useState(true);
 
   /* ── Harga jual sebenarnya (Rp) baru dihitung saat barang ini mau dijual,
      memakai harga emas 24K HARI INI (bukan harga saat barang dimasukkan ke inventori). ── */
@@ -633,40 +890,48 @@ export default function POSPage() {
     setLoading(false);
   }
 
+  const RIWAYAT_SELECT =
+    "id_item, nama_produk, kadar, berat_gram, jumlah_keluar, harga_satuan, ongkos, diskon, ppn_amount, total_transaksi, no_invoice, pelanggan_nama, pelanggan_hp, payment_method, catatan, created_at";
+
   /* ── Load riwayat transaksi POS terakhir (dikelompokkan per no. invoice) ── */
   async function loadRiwayat() {
     setLoadingRiwayat(true);
     const { data } = await supabase
       .from("inventori_keluar")
-      .select("nama_produk, jumlah_keluar, catatan, created_at")
-      .like("catatan", "INV-%")
+      .select(RIWAYAT_SELECT)
+      .not("no_invoice", "is", null)
       .order("created_at", { ascending: false })
-      .limit(40);
+      .limit(60);
 
-    const grouped: RiwayatTransaksi[] = [];
-    const seen = new Map<string, RiwayatTransaksi>();
-    for (const row of data ?? []) {
-      const parts = ((row.catatan as string) || "").split(" | ");
-      const noInvoice = parts[0] || "-";
-      let entry = seen.get(noInvoice);
-      if (!entry) {
-        entry = {
-          noInvoice,
-          pelangganNama: parts[1] || "Umum",
-          paymentMethod: parts[2] || "",
-          createdAt: row.created_at as string,
-          items: [],
-          totalQty: 0,
-        };
-        seen.set(noInvoice, entry);
-        grouped.push(entry);
-      }
-      entry.items.push(row.nama_produk as string);
-      entry.totalQty += (row.jumlah_keluar as number) || 0;
-      if (grouped.length >= 6) break;
-    }
-    setRiwayat(grouped);
+    setRiwayat(groupRiwayatRows((data ?? []) as RiwayatRow[]).slice(0, 6));
     setLoadingRiwayat(false);
+  }
+
+  /* ── Load riwayat transaksi POS lengkap (dipanggil saat modal "Semua Riwayat" dibuka) ── */
+  async function loadAllRiwayat(rowLimit: number) {
+    setLoadingAllRiwayat(true);
+    const { data } = await supabase
+      .from("inventori_keluar")
+      .select(RIWAYAT_SELECT)
+      .not("no_invoice", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(rowLimit);
+
+    setAllRiwayatHasMore((data ?? []).length >= rowLimit);
+    setAllRiwayat(groupRiwayatRows((data ?? []) as RiwayatRow[]));
+    setLoadingAllRiwayat(false);
+  }
+
+  function bukaSemuaRiwayat() {
+    setShowAllRiwayatModal(true);
+    setAllRiwayatRowLimit(150);
+    loadAllRiwayat(150);
+  }
+
+  function muatLebihBanyakRiwayat() {
+    const next = allRiwayatRowLimit + 150;
+    setAllRiwayatRowLimit(next);
+    loadAllRiwayat(next);
   }
 
   useEffect(() => {
@@ -684,6 +949,30 @@ export default function POSPage() {
       .maybeSingle()
       .then(({ data }) => setHargaEmas24Jual(data?.harga_jual ?? null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── Scan barcode di halaman penjualan -> isi baris keranjang dgn barang hasil scan utk diedit ── */
+  useEffect(() => {
+    const scanCode = searchParams.get("scan");
+    if (!scanCode || items.length === 0) return;
+    if (processedScanRef.current === scanCode) return;
+    processedScanRef.current = scanCode;
+
+    const idItem = scanCode.trim().toUpperCase();
+    const found = items.find((i) => i.id_item.toUpperCase() === idItem);
+    if (!found) {
+      window.alert(`Barang dengan ID "${idItem}" tidak ditemukan di inventori.`);
+    } else {
+      const emptyRow = rows.find((r) => r.item === null);
+      if (emptyRow) {
+        selectItemForRow(emptyRow.id, found);
+      } else {
+        const newRow = makeRow();
+        setRows((prev) => [...prev, newRow]);
+        selectItemForRow(newRow.id, found);
+      }
+    }
+    router.replace("/pos");
+  }, [items, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Buka preview invoice (siap proses) — tanpa popup input data lagi ── */
   function openPreviewModal() {
@@ -796,11 +1085,11 @@ export default function POSPage() {
     const noInvoice = pendingInvoiceNo || genNoInvoice();
     const tanggal = fmtTanggalInv(tanggalPembelian ? new Date(tanggalPembelian) : new Date());
 
-    // Simpan pelanggan baru otomatis jika namanya belum ada di daftar
+    // Simpan pelanggan baru ke riwayat hanya jika dicentang & namanya belum ada di daftar
     const existingPelanggan = pelangganList.find(
       (p) => p.nama.trim().toLowerCase() === pelangganNama.trim().toLowerCase()
     );
-    if (!existingPelanggan && pelangganNama.trim()) {
+    if (simpanDataPelanggan && !existingPelanggan && pelangganNama.trim()) {
       const { data } = await supabase
         .from("pelanggan")
         .insert({ nama: pelangganNama.trim(), telepon: toFullPhone(pelangganHP) || null })
@@ -808,10 +1097,6 @@ export default function POSPage() {
         .single();
       if (data) setPelangganList((prev) => [...prev, data as Pelanggan]);
     }
-
-    const catatanGabungan = [noInvoice, pelangganNama.trim() || "Umum", paymentMethod, catatan.trim()]
-      .filter(Boolean)
-      .join(" | ");
 
     // Gabungkan dulu per id barang — satu barang bisa muncul di lebih dari satu baris
     // keranjang, jadi pengurangan stoknya harus dihitung dari total qty semua baris itu.
@@ -854,7 +1139,19 @@ export default function POSPage() {
       jumlah_keluar: r.qty,
       jumlah_sisa: jumlahSisaByItemId.get(r.item.id)!,
       status_baru: "Terjual",
-      catatan: catatanGabungan,
+      catatan: catatan.trim() || null,
+      no_invoice: noInvoice,
+      pelanggan_nama: pelangganNama.trim() || "Umum",
+      pelanggan_hp: toFullPhone(pelangganHP) || null,
+      payment_method: paymentMethod,
+      kadar: r.item.kadar,
+      berat_gram: r.item.berat_gram,
+      harga_satuan: r.hargaJual,
+      ongkos: r.ongkos,
+      diskon: diskonNum,
+      ppn_persen: ppnEnabled ? ppnPercentNum : 0,
+      ppn_amount: ppnAmount,
+      total_transaksi: total,
     }));
 
     const { error } = await supabase.from("inventori_keluar").insert(inserts);
@@ -1003,6 +1300,15 @@ export default function POSPage() {
                     <DateField value={tanggalPembelian} onChange={setTanggalPembelian} />
                   </div>
                 </div>
+                <label className="flex items-center gap-2 mt-4 text-sm text-gray-600 select-none cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={simpanDataPelanggan}
+                    onChange={(e) => setSimpanDataPelanggan(e.target.checked)}
+                    className="accent-[#C99A36] w-4 h-4"
+                  />
+                  Simpan data pelanggan (nama & no. telepon) untuk riwayat
+                </label>
               </div>
 
               {/* Detail Barang — overflow sengaja dibiarkan terbuka (bukan overflow-hidden) supaya
@@ -1216,10 +1522,21 @@ export default function POSPage() {
 
           {/* Riwayat Transaksi Terakhir */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
-              <h3 className="font-bold text-gray-800">Riwayat Transaksi Terakhir</h3>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
+                <h3 className="font-bold text-gray-800">Riwayat Transaksi Terakhir</h3>
+              </div>
+              <button
+                type="button"
+                onClick={bukaSemuaRiwayat}
+                className="text-xs font-semibold hover:underline"
+                style={{ color: "#6F5333" }}
+              >
+                Lihat Semua Riwayat →
+              </button>
             </div>
+            <p className="text-xs text-gray-400 -mt-1 mb-2 ml-3">Klik transaksi untuk melihat detail barangnya.</p>
             {loadingRiwayat ? (
               <p className="text-sm text-gray-400">Memuat riwayat...</p>
             ) : riwayat.length === 0 ? (
@@ -1227,20 +1544,7 @@ export default function POSPage() {
             ) : (
               <div className="divide-y divide-gray-50">
                 {riwayat.map((r) => (
-                  <div key={r.noInvoice} className="flex items-center justify-between gap-3 py-2.5 text-sm">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-gray-800 truncate">
-                        {r.pelangganNama} <span className="text-gray-400 font-normal">· {r.noInvoice}</span>
-                      </p>
-                      <p className="text-xs text-gray-400 truncate">
-                        {r.items.join(", ")} {r.paymentMethod && `· ${r.paymentMethod}`}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs text-gray-400">{fmtWaktuRiwayat(r.createdAt)}</p>
-                      <p className="text-xs font-semibold" style={{ color: "#6F5333" }}>{r.totalQty} pcs</p>
-                    </div>
-                  </div>
+                  <RiwayatRowItem key={r.noInvoice} r={r} onClick={() => setSelectedRiwayat(r)} />
                 ))}
               </div>
             )}
@@ -1319,6 +1623,66 @@ export default function POSPage() {
           </div>
         </div>
       )}
+
+      {/* ══════════════════════════════════
+          MODAL: SEMUA RIWAYAT TRANSAKSI — daftar lengkap, klik baris untuk detail.
+      ══════════════════════════════════ */}
+      {showAllRiwayatModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Semua Riwayat Transaksi</h2>
+                <p className="text-xs text-gray-400">Klik transaksi untuk melihat detail barangnya.</p>
+              </div>
+              <button
+                onClick={() => setShowAllRiwayatModal(false)}
+                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              {loadingAllRiwayat ? (
+                <p className="text-sm text-gray-400">Memuat riwayat...</p>
+              ) : allRiwayat.length === 0 ? (
+                <p className="text-sm text-gray-400">Belum ada transaksi.</p>
+              ) : (
+                <>
+                  <div className="divide-y divide-gray-50">
+                    {allRiwayat.map((r) => (
+                      <RiwayatRowItem key={r.noInvoice} r={r} onClick={() => setSelectedRiwayat(r)} />
+                    ))}
+                  </div>
+                  {allRiwayatHasMore && (
+                    <button
+                      type="button"
+                      onClick={muatLebihBanyakRiwayat}
+                      className="w-full text-center py-3 mt-2 text-sm font-semibold border-t border-dashed border-gray-200 hover:bg-amber-50 transition-colors"
+                      style={{ color: "#6F5333" }}
+                    >
+                      Muat Lebih Banyak
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DETAIL TRANSAKSI — popup per item yang sudah di-checkout */}
+      {selectedRiwayat && (
+        <DetailRiwayatModal r={selectedRiwayat} onClose={() => setSelectedRiwayat(null)} />
+      )}
     </>
+  );
+}
+
+export default function POSPage() {
+  return (
+    <Suspense fallback={<AppLayout><div className="flex-1 flex items-center justify-center"><p className="text-gray-400">Memuat...</p></div></AppLayout>}>
+      <POSContent />
+    </Suspense>
   );
 }
