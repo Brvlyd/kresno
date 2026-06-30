@@ -1,5 +1,7 @@
 /* ─── Helpers untuk kode barang & status inventori ─── */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 export const STATUS_OPTIONS = [
   "Tersedia",
   "Terjual",
@@ -123,14 +125,49 @@ export function buildSeqCounters(existing: { id_item: string }[]): Map<string, n
   return counters;
 }
 
-/** Buat id_item berikutnya untuk sebuah (kadar, kode, berat), dan perbarui counter-nya */
-export function nextIdItem(kadar: string, kode: string, beratGram: number, counters: Map<string, number>): string {
+/** Key counter per (karat, kode) — dipakai baik oleh counter lokal maupun fungsi atomik di DB (next_id_item_seq) */
+function idItemSeqKey(kadar: string, kode: string): string {
+  return `${formatKaratKode(kadar)}-${kode.trim().toUpperCase()}`;
+}
+
+/** Rakit id_item final dari nomor urut yang sudah didapat */
+function formatIdItem(kadar: string, kode: string, beratGram: number, seq: number): string {
   const karatKode = formatKaratKode(kadar);
   const kodeUpper = kode.trim().toUpperCase();
-  const key = `${karatKode}-${kodeUpper}`;
+  return `${karatKode}-${kodeUpper}-${formatBeratKode(beratGram)}-${String(seq).padStart(4, "0")}`;
+}
+
+/**
+ * Buat id_item berikutnya untuk sebuah (kadar, kode, berat), dan perbarui counter-nya.
+ * HANYA dipakai untuk pratinjau lokal (live preview) di form — bisa beda dari yang akhirnya
+ * tersimpan kalau ada user lain yang nambah barang di waktu yang sama. Untuk id_item yang
+ * benar-benar disimpan ke DB, pakai nextIdItemAtomic supaya tidak race.
+ */
+export function nextIdItem(kadar: string, kode: string, beratGram: number, counters: Map<string, number>): string {
+  const key = idItemSeqKey(kadar, kode);
   const next = (counters.get(key) ?? 0) + 1;
   counters.set(key, next);
-  return `${karatKode}-${kodeUpper}-${formatBeratKode(beratGram)}-${String(next).padStart(4, "0")}`;
+  return formatIdItem(kadar, kode, beratGram, next);
+}
+
+/**
+ * Versi aman-konkurensi dari nextIdItem: nomor urut diambil lewat fungsi Postgres
+ * next_id_item_seq, yang meng-increment counter per (karat, kode) di dalam satu UPSERT —
+ * Postgres mengunci baris counter-nya sehingga dua submit yang terjadi bersamaan dari
+ * device berbeda TIDAK PERNAH bisa mendapat nomor urut (dan karenanya id_item) yang sama.
+ * Panggil ini tepat sebelum insert ke tabel inventori, bukan saat preview reaktif di form.
+ */
+export async function nextIdItemAtomic(
+  supabase: SupabaseClient,
+  kadar: string,
+  kode: string,
+  beratGram: number
+): Promise<string> {
+  const { data, error } = await supabase.rpc("next_id_item_seq", {
+    p_seq_key: idItemSeqKey(kadar, kode),
+  });
+  if (error) throw error;
+  return formatIdItem(kadar, kode, beratGram, data as number);
 }
 
 export function normalizeStatus(value: string): string {

@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fmtRupiah, type CicilanItem, type GadaiBarangItem } from "@/lib/gadai";
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
+import { InvoicePagePreview } from "@/components/InvoicePagePreview";
 import { printClean } from "@/lib/print";
 
 /* ─── Types ─── */
@@ -361,9 +362,9 @@ function DetailGadaiPopup({
               </button>
             </div>
             <div className="p-6">
-              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
+              <InvoicePagePreview>
                 <InvoiceGadai mode="preview" data={invoiceData} />
-              </div>
+              </InvoicePagePreview>
             </div>
             <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
               <p className="text-[11px] text-gray-400 text-center">

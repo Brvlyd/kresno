@@ -25,6 +25,10 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const handleIdle = useCallback(async () => {
     await logout();
+    // Buang Router Cache (BFCache) Next.js juga di sini — kalau tidak, halaman
+    // dengan draft belum disimpan (mis. /pos) bisa muncul lagi dgn data lama
+    // saat tombol Back ditekan, padahal sesi sudah auto-logout karena idle.
+    router.refresh();
     router.replace("/login?expired=1");
   }, [router]);
   useIdleTimeout(IDLE_LOGOUT_MINUTES, handleIdle);

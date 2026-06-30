@@ -86,18 +86,19 @@ function sumByKadar<T>(rows: T[], kadarOf: (r: T) => string, value: (r: T) => nu
 /** Target jumlah baris per halaman tabel Sisa Stok di layar (cetakan tetap menampilkan semuanya). */
 const STOK_PAGE_SIZE = 25;
 
-/** Pecah daftar kelompok karat jadi beberapa halaman tanpa memutus satu kelompok
- * karat di tengah, supaya baris subtotal tiap karat tidak terpisah dari baris-barisnya. */
-function paginateKadarGroups(
-  kadarKeys: string[],
-  rowsByKadar: Record<string, unknown[]>,
+/** Pecah daftar kelompok (mis. per karat atau per tanggal) jadi beberapa halaman tanpa
+ * memutus satu kelompok di tengah, supaya baris header/subtotal tiap kelompok tidak
+ * terpisah dari baris-barisnya saat dipaginasi di layar. */
+function paginateGroups(
+  groupKeys: string[],
+  rowsByGroup: Record<string, unknown[]>,
   pageSize: number,
 ): string[][] {
   const pages: string[][] = [];
   let current: string[] = [];
   let count = 0;
-  for (const k of kadarKeys) {
-    const n = rowsByKadar[k].length;
+  for (const k of groupKeys) {
+    const n = rowsByGroup[k].length;
     if (current.length > 0 && count + n > pageSize) {
       pages.push(current);
       current = [];
@@ -108,6 +109,18 @@ function paginateKadarGroups(
   }
   if (current.length > 0) pages.push(current);
   return pages.length > 0 ? pages : [[]];
+}
+
+/** Target jumlah baris per halaman untuk tabel datar (bukan yang dikelompokkan per karat). */
+const LIST_PAGE_SIZE = 20;
+
+/** Potong satu halaman dari daftar datar, sambil meredam nomor halaman ke rentang valid
+ * kalau daftarnya menyusut (mis. setelah difilter pencarian). */
+function paginateFlat<T>(items: T[], page: number, pageSize: number): { pageItems: T[]; totalPages: number; safePage: number } {
+  const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const start = safePage * pageSize;
+  return { pageItems: items.slice(start, start + pageSize), totalPages, safePage };
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -826,6 +839,46 @@ function SearchBar({ value, onChange, placeholder }: {
 }
 
 /* ═══════════════════════════════════════════════════════
+   KOMPONEN: KONTROL PAGINASI TABEL — disembunyikan saat pratinjau/cetak,
+   supaya laporan yang dicetak tetap memuat semua baris.
+═══════════════════════════════════════════════════════ */
+function Pager({ page, totalPages, total, pageSize, onPrev, onNext }: {
+  page: number;
+  totalPages: number;
+  total: number;
+  pageSize: number;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  if (totalPages <= 1) return null;
+  const from = page * pageSize + 1;
+  const to = Math.min(total, from + pageSize - 1);
+  return (
+    <div className="no-print flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50 text-sm flex-wrap">
+      <p className="text-gray-500">
+        Menampilkan {from}–{to} dari {total} item &bull; Halaman {page + 1} dari {totalPages}
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onPrev}
+          disabled={page === 0}
+          className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+        >
+          &lsaquo; Sebelumnya
+        </button>
+        <button
+          onClick={onNext}
+          disabled={page === totalPages - 1}
+          className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+        >
+          Selanjutnya &rsaquo;
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    KOMPONEN: KONTEN UTAMA KEUANGAN
 ═══════════════════════════════════════════════════════ */
 function KeuanganContent({ onLock, currentPin, onPinChanged }: {
@@ -862,7 +915,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const [showChangePin, setShowChangePin] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("bulanan");
-  const [stokPage, setStokPage] = useState<Record<string, number>>({});
+  const [pageByKey, setPageByKey] = useState<Record<string, number>>({});
 
   const label = filterLabel(mode, customDate, customMonth, rangeFrom, rangeTo);
   const [dateFrom, dateTo] = getDateRange(mode, customDate, customMonth, rangeFrom, rangeTo);
@@ -1012,6 +1065,12 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const pendapatanServisF = servisSelesaiF.reduce((s, r) => s + r.estimasi_biaya, 0);
   const gadaiLunasF = gadaiListFiltered.filter((g) => g.status === "Lunas");
   const pendapatanGadaiF = gadaiLunasF.reduce((s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0);
+
+  /* ── Paginasi tabel "Masuk & Keluar" di layar — pratinjau/cetak tetap menampilkan semua baris. ── */
+  const stokMasukPg = paginateFlat(stokMasukFiltered, pageByKey["masuk"] ?? 0, LIST_PAGE_SIZE);
+  const stokKeluarPg = paginateFlat(stokKeluarFiltered, pageByKey["keluar"] ?? 0, LIST_PAGE_SIZE);
+  const servisTransaksiPg = paginateFlat(servisListFiltered, pageByKey["servisTransaksi"] ?? 0, LIST_PAGE_SIZE);
+  const gadaiTransaksiPg = paginateFlat(gadaiListFiltered, pageByKey["gadaiTransaksi"] ?? 0, LIST_PAGE_SIZE);
 
   const gadaiAktifSemuaFiltered = gadaiAktifSemua.filter((g) => matchSearch([g.no_gadai, g.pelanggan_nama, g.nama_barang], searchAset));
   const servisPendingFiltered = servisPending.filter((s) => matchSearch([s.no_servis, s.pelanggan_nama, s.nama_barang, s.jenis_servis], searchAset));
@@ -1584,8 +1643,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                       const kadarKeysJenis = sortKadarDesc(Object.keys(rowsByKadar));
 
                       // Paginasi di layar saja — pratinjau/cetakan tetap menampilkan semua baris.
-                      const groupPages = paginateKadarGroups(kadarKeysJenis, rowsByKadar, STOK_PAGE_SIZE);
-                      const pageIdx = showPreview ? -1 : Math.min(stokPage[jenis] ?? 0, groupPages.length - 1);
+                      const groupPages = paginateGroups(kadarKeysJenis, rowsByKadar, STOK_PAGE_SIZE);
+                      const pageIdx = showPreview ? -1 : Math.min(pageByKey[`jenis:${jenis}`] ?? 0, groupPages.length - 1);
                       const visibleKadarKeys = showPreview ? kadarKeysJenis : groupPages[pageIdx];
                       const visibleItemCount = visibleKadarKeys.reduce((s, k) => s + rowsByKadar[k].length, 0);
                       let rowNo = showPreview
@@ -1680,14 +1739,14 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                               </p>
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={() => setStokPage((p) => ({ ...p, [jenis]: Math.max(0, pageIdx - 1) }))}
+                                  onClick={() => setPageByKey((p) => ({ ...p, [`jenis:${jenis}`]: Math.max(0, pageIdx - 1) }))}
                                   disabled={pageIdx === 0}
                                   className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
                                 >
                                   &lsaquo; Sebelumnya
                                 </button>
                                 <button
-                                  onClick={() => setStokPage((p) => ({ ...p, [jenis]: Math.min(groupPages.length - 1, pageIdx + 1) }))}
+                                  onClick={() => setPageByKey((p) => ({ ...p, [`jenis:${jenis}`]: Math.min(groupPages.length - 1, pageIdx + 1) }))}
                                   disabled={pageIdx === groupPages.length - 1}
                                   className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
                                 >
@@ -1835,9 +1894,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {stokMasukFiltered.map((r, idx) => (
+                            {(showPreview ? stokMasukFiltered : stokMasukPg.pageItems).map((r, idx) => (
                               <tr key={r.id} className="group hover:bg-blue-100/60 transition-colors">
-                                <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
+                                <td className="px-4 py-3 text-xs text-gray-400">
+                                  {(showPreview ? 0 : stokMasukPg.safePage * LIST_PAGE_SIZE) + idx + 1}
+                                </td>
                                 <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(r.tanggal_masuk)}</td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{r.id_item}</td>
                                 <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
@@ -1862,6 +1923,16 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           </tfoot>
                         </table>
                       </div>
+                    )}
+                    {!showPreview && (
+                      <Pager
+                        page={stokMasukPg.safePage}
+                        totalPages={stokMasukPg.totalPages}
+                        total={stokMasukFiltered.length}
+                        pageSize={LIST_PAGE_SIZE}
+                        onPrev={() => setPageByKey((p) => ({ ...p, masuk: Math.max(0, stokMasukPg.safePage - 1) }))}
+                        onNext={() => setPageByKey((p) => ({ ...p, masuk: Math.min(stokMasukPg.totalPages - 1, stokMasukPg.safePage + 1) }))}
+                      />
                     )}
                   </div>
 
@@ -1896,9 +1967,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {stokKeluarFiltered.map((k, idx) => (
+                            {(showPreview ? stokKeluarFiltered : stokKeluarPg.pageItems).map((k, idx) => (
                               <tr key={k.id} className="group hover:bg-red-100/60 transition-colors">
-                                <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
+                                <td className="px-4 py-3 text-xs text-gray-400">
+                                  {(showPreview ? 0 : stokKeluarPg.safePage * LIST_PAGE_SIZE) + idx + 1}
+                                </td>
                                 <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(k.created_at)}</td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{k.id_item}</td>
                                 <td className="px-4 py-3 font-semibold text-gray-800">{k.nama_produk}</td>
@@ -1934,6 +2007,16 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         </table>
                       </div>
                     )}
+                    {!showPreview && (
+                      <Pager
+                        page={stokKeluarPg.safePage}
+                        totalPages={stokKeluarPg.totalPages}
+                        total={stokKeluarFiltered.length}
+                        pageSize={LIST_PAGE_SIZE}
+                        onPrev={() => setPageByKey((p) => ({ ...p, keluar: Math.max(0, stokKeluarPg.safePage - 1) }))}
+                        onNext={() => setPageByKey((p) => ({ ...p, keluar: Math.min(stokKeluarPg.totalPages - 1, stokKeluarPg.safePage + 1) }))}
+                      />
+                    )}
                   </div>
 
                   {/* Servis */}
@@ -1963,9 +2046,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {servisListFiltered.map((s, idx) => (
+                            {(showPreview ? servisListFiltered : servisTransaksiPg.pageItems).map((s, idx) => (
                               <tr key={s.id} className="hover:bg-purple-100/60 transition-colors">
-                                <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
+                                <td className="px-4 py-3 text-xs text-gray-400">
+                                  {(showPreview ? 0 : servisTransaksiPg.safePage * LIST_PAGE_SIZE) + idx + 1}
+                                </td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{s.no_servis}</td>
                                 <td className="px-4 py-3 text-gray-700">{s.pelanggan_nama}</td>
                                 <td className="px-4 py-3 text-gray-800">{s.nama_barang}</td>
@@ -1996,6 +2081,16 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         </table>
                       </div>
                     )}
+                    {!showPreview && (
+                      <Pager
+                        page={servisTransaksiPg.safePage}
+                        totalPages={servisTransaksiPg.totalPages}
+                        total={servisListFiltered.length}
+                        pageSize={LIST_PAGE_SIZE}
+                        onPrev={() => setPageByKey((p) => ({ ...p, servisTransaksi: Math.max(0, servisTransaksiPg.safePage - 1) }))}
+                        onNext={() => setPageByKey((p) => ({ ...p, servisTransaksi: Math.min(servisTransaksiPg.totalPages - 1, servisTransaksiPg.safePage + 1) }))}
+                      />
+                    )}
                   </div>
 
                   {/* Gadai */}
@@ -2025,9 +2120,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {gadaiListFiltered.map((g, idx) => (
+                            {(showPreview ? gadaiListFiltered : gadaiTransaksiPg.pageItems).map((g, idx) => (
                               <tr key={g.id} className="hover:bg-teal-100/60 transition-colors">
-                                <td className="px-4 py-3 text-xs text-gray-400">{idx + 1}</td>
+                                <td className="px-4 py-3 text-xs text-gray-400">
+                                  {(showPreview ? 0 : gadaiTransaksiPg.safePage * LIST_PAGE_SIZE) + idx + 1}
+                                </td>
                                 <td className="px-4 py-3 font-mono text-xs text-gray-500">{g.no_gadai}</td>
                                 <td className="px-4 py-3 text-gray-700">{g.pelanggan_nama}</td>
                                 <td className="px-4 py-3 text-gray-800">{g.nama_barang}</td>
@@ -2056,6 +2153,16 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           </tfoot>
                         </table>
                       </div>
+                    )}
+                    {!showPreview && (
+                      <Pager
+                        page={gadaiTransaksiPg.safePage}
+                        totalPages={gadaiTransaksiPg.totalPages}
+                        total={gadaiListFiltered.length}
+                        pageSize={LIST_PAGE_SIZE}
+                        onPrev={() => setPageByKey((p) => ({ ...p, gadaiTransaksi: Math.max(0, gadaiTransaksiPg.safePage - 1) }))}
+                        onNext={() => setPageByKey((p) => ({ ...p, gadaiTransaksi: Math.min(gadaiTransaksiPg.totalPages - 1, gadaiTransaksiPg.safePage + 1) }))}
+                      />
                     )}
                   </div>
                 </div>
@@ -2610,6 +2717,13 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                 const totalMasuk = allTx.filter((t) => t.isDebit).reduce((s, t) => s + t.nilai, 0);
                 const totalKeluar = allTx.filter((t) => !t.isDebit && t.nilai > 0).reduce((s, t) => s + t.nilai, 0);
 
+                // Paginasi per kelompok tanggal di layar — pratinjau/cetak tetap menampilkan semua baris.
+                const dateKeys = Object.keys(grouped);
+                const logGroupPages = paginateGroups(dateKeys, grouped, LIST_PAGE_SIZE);
+                const logPageIdx = showPreview ? -1 : Math.min(pageByKey["log"] ?? 0, logGroupPages.length - 1);
+                const visibleDateKeys = showPreview ? dateKeys : logGroupPages[logPageIdx];
+                const visibleTxCount = visibleDateKeys.reduce((s, k) => s + grouped[k].length, 0);
+
                 return (
                   <div className={(showPreview || tab === "log") ? "block print-section" : "hidden print:block print-page-break print-section"}>
                     <div className="mb-3">
@@ -2653,7 +2767,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
 
                         {/* Grouped list */}
                         <div className="space-y-4">
-                          {Object.entries(grouped).map(([dateLabel, txs]) => {
+                          {visibleDateKeys.map((dateLabel) => {
+                            const txs = grouped[dateLabel];
                             const dayIn = txs.filter((t) => t.isDebit).reduce((s, t) => s + t.nilai, 0);
                             const dayOut = txs.filter((t) => !t.isDebit && t.nilai > 0).reduce((s, t) => s + t.nilai, 0);
                             return (
@@ -2734,6 +2849,30 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                           })}
                         </div>
 
+                        {!showPreview && logGroupPages.length > 1 && (
+                          <div className="no-print flex items-center justify-between gap-3 px-5 py-3 mt-4 rounded-xl border border-gray-200 bg-white shadow-sm text-sm flex-wrap">
+                            <p className="text-gray-500">
+                              Menampilkan {visibleTxCount} dari {txFiltered.length} transaksi &bull; Halaman {logPageIdx + 1} dari {logGroupPages.length}
+                            </p>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setPageByKey((p) => ({ ...p, log: Math.max(0, logPageIdx - 1) }))}
+                                disabled={logPageIdx === 0}
+                                className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                              >
+                                &lsaquo; Sebelumnya
+                              </button>
+                              <button
+                                onClick={() => setPageByKey((p) => ({ ...p, log: Math.min(logGroupPages.length - 1, logPageIdx + 1) }))}
+                                disabled={logPageIdx === logGroupPages.length - 1}
+                                className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                              >
+                                Selanjutnya &rsaquo;
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Total footer */}
                         <div
                           className="rounded-2xl p-5 flex flex-wrap justify-between gap-4 text-white mt-4"
@@ -2810,11 +2949,21 @@ export default function KeuanganPage() {
         setPinLoaded(true);
       });
 
-    // Kunci kalau tab/browser benar-benar ditutup atau di-refresh dengan PIN
-    // masih dalam keadaan terbuka — bukan tiap kali pindah halaman di dalam
-    // app (itu cuma unmount React, bukan akhir sesi sungguhan).
-    const handlePageHide = () => { lockKeuangan(); };
+    // Kunci kalau tab/browser benar-benar ditutup atau di-refresh.
+    const handlePageHide = () => { lockKeuangan(); setUnlocked(false); };
     window.addEventListener("pagehide", handlePageHide);
+
+    // Kunci begitu tab ini disembunyikan — pindah ke tab lain, minimize,
+    // atau kunci layar. Dicek lewat document.hidden, bukan blur, supaya
+    // tidak ikut terkunci cuma karena klik ke devtools/jendela lain yang
+    // masih di layar yang sama.
+    const handleVisibility = () => {
+      if (document.hidden) {
+        lockKeuangan();
+        setUnlocked(false);
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
 
     // Sinkronkan ulang status terkunci/tidak saat halaman ini dipulihkan dari
     // bfcache (mis. tekan Back browser) — tanpa ini, state React "unlocked"
@@ -2830,7 +2979,12 @@ export default function KeuanganPage() {
 
     return () => {
       window.removeEventListener("pagehide", handlePageHide);
+      document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("pageshow", handlePageShow);
+      // Kunci juga saat keluar dari halaman ini lewat navigasi di dalam app
+      // (klik menu lain di sidebar) — itu cuma unmount React, bukan reload,
+      // jadi pagehide di atas tidak ikut terpanggil.
+      lockKeuangan();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -542,42 +542,42 @@ function InvoiceCetak(p: InvoiceProps) {
         alignItems: "center",
         gap: "8pt",
         borderBottom: `2pt solid ${GOLD}`,
-        paddingBottom: "6pt",
-        marginBottom: "6pt",
+        paddingBottom: "5pt",
+        marginBottom: "4pt",
       }}>
         {/* Logo */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="/logo-kresno.png"
           alt="Logo"
-          style={{ width: "48pt", height: "48pt", objectFit: "contain", flexShrink: 0 }}
+          style={{ width: "42pt", height: "42pt", objectFit: "contain", flexShrink: 0 }}
         />
 
         {/* Nama & Info Toko */}
         <div style={{ flex: 1, textAlign: "center" }}>
           <div style={{
-            fontSize: "15pt", fontWeight: 900, color: GOLD,
+            fontSize: "13pt", fontWeight: 900, color: GOLD,
             fontFamily: "Georgia, serif", letterSpacing: "0.04em",
           }}>
             TOKOMAS KRESNO
           </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6pt", margin: "1pt 0 2pt" }}>
-            <div style={{ height: "1pt", width: "44pt", backgroundColor: GOLD_LT }} />
-            <div style={{ width: "4pt", height: "4pt", backgroundColor: GOLD_LT, transform: "rotate(45deg)" }} />
-            <div style={{ height: "1pt", width: "44pt", backgroundColor: GOLD_LT }} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6pt", margin: "0.5pt 0 1pt" }}>
+            <div style={{ height: "1pt", width: "36pt", backgroundColor: GOLD_LT }} />
+            <div style={{ width: "3pt", height: "3pt", backgroundColor: GOLD_LT, transform: "rotate(45deg)" }} />
+            <div style={{ height: "1pt", width: "36pt", backgroundColor: GOLD_LT }} />
           </div>
-          <div style={{ fontSize: "7pt", fontWeight: 700, color: "#444" }}>
+          <div style={{ fontSize: "7pt", fontWeight: 700, color: "#000" }}>
             Jl. Kios Pasar Grabag Petak Blok KA No. 7A-7B
           </div>
-          <div style={{ fontSize: "7pt", fontWeight: 700, color: "#444" }}>
+          <div style={{ fontSize: "7pt", fontWeight: 700, color: "#000" }}>
             (Depan Terminal Lama), Grabag, Magelang, Jawa Tengah
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", columnGap: "8pt", rowGap: "1pt", marginTop: "2pt", fontSize: "7pt", fontWeight: 700, color: "#444" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", columnGap: "8pt", rowGap: "1pt", marginTop: "1pt", fontSize: "6pt", fontWeight: 700, color: "#444" }}>
             <span style={{ whiteSpace: "nowrap" }}>☎ 0821-8501-3553</span>
             <span>|</span>
             <span style={{ whiteSpace: "nowrap" }}>✉ tokomaskresno5758@gmail.com</span>
           </div>
-          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", columnGap: "8pt", rowGap: "1pt", fontSize: "7pt", fontWeight: 700, color: "#444" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", columnGap: "8pt", rowGap: "1pt", fontSize: "6pt", fontWeight: 700, color: "#444" }}>
             <span style={{ whiteSpace: "nowrap" }}>📷 tokomaskresno.grabag</span>
             <span>|</span>
             <span style={{ whiteSpace: "nowrap" }}>🎵 Tk. Mas Kresno Grabag</span>
@@ -592,7 +592,7 @@ function InvoiceCetak(p: InvoiceProps) {
           <div style={{ fontWeight: 900, fontSize: "11pt", color: "#000", marginTop: "2pt" }}>
             {p.noInvoice}
           </div>
-          <div style={{ fontSize: "7.5pt", color: "#555", marginTop: "2pt", fontWeight: 700 }}>
+          <div style={{ fontSize: "7.5pt", color: "#000", marginTop: "2pt", fontWeight: 700 }}>
             Tanggal : {p.tanggal}
           </div>
           <div style={{ fontSize: "7.5pt", color: "#555", marginTop: "1pt", fontWeight: 700 }}>
@@ -602,14 +602,14 @@ function InvoiceCetak(p: InvoiceProps) {
       </div>
 
       {/* ── INFO PELANGGAN ── */}
-      <div style={{ display: "flex", gap: "20pt", marginBottom: "6pt", fontSize: "10pt", fontWeight: 700 }}>
+      <div style={{ display: "flex", gap: "20pt", marginBottom: "4pt", fontSize: "9pt", fontWeight: 700 }}>
         <div style={{ flex: 1 }}>
           Nama Pelanggan :{" "}
           <span style={{ borderBottom: "0.75pt solid #000", display: "inline-block", minWidth: "170pt", paddingRight: "6pt" }}>
             {p.pelangganNama}
           </span>
         </div>
-        <div style={{ fontSize: "11pt" }}>
+        <div style={{ fontSize: "10pt" }}>
           No. HP :{" "}
           <span style={{ borderBottom: "0.75pt solid #000", display: "inline-block", minWidth: "95pt" }}>
             {p.pelangganHP}
@@ -618,10 +618,10 @@ function InvoiceCetak(p: InvoiceProps) {
       </div>
 
       {/* ── FOTO + TABEL BARANG ── */}
-      <div style={{ display: "flex", gap: "8pt", marginBottom: "6pt" }}>
+      <div style={{ display: "flex", gap: "8pt", marginBottom: "4pt" }}>
         {/* Foto barang */}
         <div style={{
-          width: "70pt", flexShrink: 0,
+          width: "56pt", flexShrink: 0,
           border: `1.5pt solid ${GOLD}`, borderRadius: "4pt",
           display: "flex", flexDirection: "column",
           alignItems: "center", justifyContent: "center",
@@ -631,31 +631,31 @@ function InvoiceCetak(p: InvoiceProps) {
             <StorageImage
               src={p.cart[0].gambarUrl}
               alt="Foto Barang"
-              style={{ width: "62pt", height: "62pt", objectFit: "cover", borderRadius: "3pt" }}
+              style={{ width: "48pt", height: "48pt", objectFit: "cover", borderRadius: "3pt" }}
             />
           ) : (
             <>
-              <div style={{ fontSize: "18pt", color: "#ccc" }}>📷</div>
-              <div style={{ fontSize: "6pt", color: "#aaa", marginTop: "3pt" }}>4 x 4 cm</div>
+              <div style={{ fontSize: "14pt", color: "#ccc" }}>📷</div>
+              <div style={{ fontSize: "5.5pt", color: "#aaa", marginTop: "2pt" }}>4 x 4 cm</div>
             </>
           )}
         </div>
 
         {/* Tabel item */}
-        <table style={{ flex: 1, borderCollapse: "collapse", fontSize: "8pt" }}>
+        <table style={{ flex: 1, borderCollapse: "collapse", fontSize: "6.5pt" }}>
           <thead>
             <tr style={{ backgroundColor: "#fff", color: "#000" }}>
               {[
-                { label: "No",         w: "22pt",  align: "center" as const },
+                { label: "No",         w: "20pt",  align: "center" as const },
                 { label: "Nama Barang", w: "",      align: "left"   as const },
-                { label: "Kadar",       w: "38pt",  align: "center" as const },
-                { label: "Berat",       w: "48pt",  align: "center" as const },
-                { label: "Harga/Gram",  w: "65pt",  align: "right"  as const },
-                { label: "Ongkos",      w: "55pt",  align: "right"  as const },
-                { label: "Total",       w: "65pt",  align: "right"  as const },
+                { label: "Kadar",       w: "34pt",  align: "center" as const },
+                { label: "Berat",       w: "44pt",  align: "center" as const },
+                { label: "Harga/Gram",  w: "60pt",  align: "right"  as const },
+                { label: "Ongkos",      w: "50pt",  align: "right"  as const },
+                { label: "Total",       w: "60pt",  align: "right"  as const },
               ].map((h) => (
                 <th key={h.label} style={{
-                  padding: "3pt 5pt",
+                  padding: "1.5pt 4pt",
                   border: `0.5pt solid ${GOLD}`,
                   fontWeight: 700,
                   textAlign: h.align,
@@ -674,15 +674,15 @@ function InvoiceCetak(p: InvoiceProps) {
               const totalItem = ci.hargaJual * ci.qty + ci.ongkos;
               return (
                 <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "#fff" : "#F2F2F2" }}>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{idx + 1}</td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}` }}>
+                  <td style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{idx + 1}</td>
+                  <td style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}` }}>
                     {ci.namaProduk}{ci.qty > 1 ? ` (×${ci.qty})` : ""}
                   </td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{ci.kadar}</td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{fmtGram(ci.beratGram * ci.qty)}</td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right" }}>{fmtRp(hargaPerGram)}</td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right" }}>{ci.ongkos > 0 ? fmtRp(ci.ongkos) : "-"}</td>
-                  <td style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right", fontWeight: 700 }}>{fmtRp(totalItem)}</td>
+                  <td style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{ci.kadar}</td>
+                  <td style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{fmtGram(ci.beratGram * ci.qty)}</td>
+                  <td style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right" }}>{fmtRp(hargaPerGram)}</td>
+                  <td style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right" }}>{ci.ongkos > 0 ? fmtRp(ci.ongkos) : "-"}</td>
+                  <td style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "right", fontWeight: 700 }}>{fmtRp(totalItem)}</td>
                 </tr>
               );
             })}
@@ -690,7 +690,7 @@ function InvoiceCetak(p: InvoiceProps) {
             {Array.from({ length: emptyRows }, (_, i) => (
               <tr key={"emp-" + i} style={{ backgroundColor: i % 2 === 0 ? "#fff" : "#F2F2F2" }}>
                 {[...Array(7)].map((_, j) => (
-                  <td key={j} style={{ padding: "3pt 5pt", border: `0.5pt solid ${GOLD_LT}` }}>&nbsp;</td>
+                  <td key={j} style={{ padding: "1.5pt 4pt", border: `0.5pt solid ${GOLD_LT}` }}>&nbsp;</td>
                 ))}
               </tr>
             ))}
@@ -699,14 +699,14 @@ function InvoiceCetak(p: InvoiceProps) {
       </div>
 
       {/* ── TOTAL BERAT + RINGKASAN HARGA ── */}
-      <div style={{ display: "flex", gap: "10pt", marginBottom: "6pt" }}>
+      <div style={{ display: "flex", gap: "10pt", marginBottom: "4pt" }}>
         {/* Kiri: berat & terbilang */}
         <div style={{
           flex: 1, border: `1pt solid ${GOLD_LT}`,
-          borderRadius: "4pt", padding: "5pt 10pt", fontSize: "8pt",
+          borderRadius: "4pt", padding: "4pt 8pt", fontSize: "7.5pt",
         }}>
-          <div style={{ display: "flex", gap: "4pt", alignItems: "center", marginBottom: "4pt" }}>
-            <span style={{ minWidth: "68pt", fontWeight: 600 }}>Total Berat</span>
+          <div style={{ display: "flex", gap: "4pt", alignItems: "center", marginBottom: "3pt" }}>
+            <span style={{ minWidth: "60pt", fontWeight: 600 }}>Total Berat</span>
             <span>:</span>
             <span style={{ borderBottom: "0.75pt solid #000", flex: 1, paddingRight: "4pt" }}>
               {fmtGram(p.totalBerat)}
@@ -714,11 +714,11 @@ function InvoiceCetak(p: InvoiceProps) {
             <span>gram</span>
           </div>
           <div style={{ display: "flex", gap: "4pt", alignItems: "flex-start" }}>
-            <span style={{ minWidth: "68pt", fontWeight: 600 }}>Terbilang</span>
+            <span style={{ minWidth: "60pt", fontWeight: 600 }}>Terbilang</span>
             <span>:</span>
             <span style={{
               borderBottom: "0.75pt solid #000", flex: 1,
-              textTransform: "capitalize", lineHeight: "1.4",
+              textTransform: "capitalize", lineHeight: "1.3",
             }}>
               {terbilangText}
             </span>
@@ -727,27 +727,27 @@ function InvoiceCetak(p: InvoiceProps) {
 
         {/* Kanan: subtotal/diskon/total */}
         <div style={{
-          minWidth: "175pt", border: `1pt solid ${GOLD_LT}`,
-          borderRadius: "4pt", overflow: "hidden", fontSize: "10pt", fontWeight: 700,
+          minWidth: "165pt", border: `1pt solid ${GOLD_LT}`,
+          borderRadius: "4pt", overflow: "hidden", fontSize: "9pt", fontWeight: 700,
         }}>
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "3pt 10pt", borderBottom: `0.5pt solid ${GOLD_LT}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "2.5pt 8pt", borderBottom: `0.5pt solid ${GOLD_LT}` }}>
             <span>Subtotal</span>
             <span>: {fmtRp(p.subtotal)}</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", padding: "3pt 10pt", borderBottom: `0.5pt solid ${GOLD_LT}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "2.5pt 8pt", borderBottom: `0.5pt solid ${GOLD_LT}` }}>
             <span>Diskon</span>
             <span>: {fmtRp(p.diskon)}</span>
           </div>
           {p.ppnEnabled && (
-            <div style={{ display: "flex", justifyContent: "space-between", padding: "3pt 10pt", borderBottom: `0.5pt solid ${GOLD_LT}` }}>
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "2.5pt 8pt", borderBottom: `0.5pt solid ${GOLD_LT}` }}>
               <span>PPN ({p.ppnPercent}%)</span>
               <span>: {fmtRp(p.ppnAmount)}</span>
             </div>
           )}
           <div style={{
             display: "flex", justifyContent: "space-between",
-            padding: "4pt 10pt", backgroundColor: "#fff",
-            color: "#000", fontWeight: 900, fontSize: "11pt",
+            padding: "3pt 8pt", backgroundColor: "#fff",
+            color: "#000", fontWeight: 900, fontSize: "10pt",
           }}>
             <span>TOTAL</span>
             <span>: {fmtRp(p.total)}</span>
@@ -758,20 +758,20 @@ function InvoiceCetak(p: InvoiceProps) {
       {/* ── FOOTER: KETENTUAN + TANDA TANGAN ── */}
       <div style={{
         display: "flex", gap: "20pt",
-        paddingTop: "5pt", borderTop: `1pt dashed ${GOLD}`,
-        fontSize: "7pt", marginTop: "2pt",
+        paddingTop: "4pt", borderTop: `1pt dashed ${GOLD}`,
+        fontSize: "6.5pt", marginTop: "1pt",
       }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontWeight: 900, fontSize: "8pt", marginBottom: "3pt" }}>KETENTUAN :</div>
-          <ul style={{ margin: 0, paddingLeft: "12pt", lineHeight: "1.45" }}>
+          <div style={{ fontWeight: 900, fontSize: "7.5pt", marginBottom: "2pt" }}>KETENTUAN :</div>
+          <ul style={{ margin: 0, paddingLeft: "11pt", lineHeight: "1.3" }}>
             <li>Barang, kadar, dan berat telah diperiksa serta disetujui oleh pembeli.</li>
             <li>Perhiasan emas dapat dijual kembali sesuai harga pasaran toko yang berlaku dengan memperhitungkan kondisi barang dan potongan ongkos.</li>
             <li>Perhiasan yang mengandung batu, patri, atau mengalami kerusakan akan dinilai dengan harga yang berbeda.</li>
           </ul>
         </div>
-        <div style={{ minWidth: "110pt", textAlign: "right" }}>
+        <div style={{ minWidth: "100pt", textAlign: "right" }}>
           <div>Hormat kami,</div>
-          <div style={{ marginTop: "20pt", borderTop: "0.75pt solid #000", paddingTop: "2pt", textAlign: "center" }}>
+          <div style={{ marginTop: "14pt", borderTop: "0.75pt solid #000", paddingTop: "2pt", textAlign: "center" }}>
             (.................................)
           </div>
         </div>
@@ -810,6 +810,131 @@ function riwayatToInvoiceProps(r: RiwayatTransaksi): Omit<InvoiceProps, "mode"> 
 }
 
 /* ═══════════════════════════════════════════════════════
+   KOMPONEN: HASIL SCAN BARCODE — konfirmasi ditemukan / tidak ditemukan
+═══════════════════════════════════════════════════════ */
+type ScanResult =
+  | { type: "found"; item: InvItem }
+  | { type: "notfound"; code: string };
+
+function ScanResultModal({
+  result, onClose, onPreview, canPreview,
+}: {
+  result: ScanResult | null;
+  onClose: () => void;
+  onPreview: () => void;
+  canPreview: boolean;
+}) {
+  if (!result) return null;
+
+  if (result.type === "notfound") {
+    return (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60">
+        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Barang Tidak Ditemukan</h3>
+          <p className="text-gray-500 text-base mb-1">
+            Kode barcode <strong className="font-mono">{result.code}</strong> tidak cocok dengan barang yang tersedia untuk dijual.
+          </p>
+          <p className="text-gray-400 text-sm mb-6">
+            Barang mungkin sudah terjual, stoknya habis, atau belum didaftarkan ke inventori.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-base transition-colors"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const item = result.item;
+  return (
+    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/60">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-green-50 border-b border-green-100 px-6 py-5 text-center">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-gray-900">Barang Ditambahkan ke Keranjang</h3>
+          <p className="text-gray-500 text-sm mt-1">Hasil scan barcode berhasil dicocokkan:</p>
+        </div>
+
+        <div className="px-6 py-5">
+          <div className="flex items-center gap-3 mb-4">
+            {item.gambar_url ? (
+              <StorageImage src={item.gambar_url} alt={item.nama_produk} className="w-14 h-14 rounded-xl object-cover border border-gray-200 flex-shrink-0" />
+            ) : (
+              <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-lg font-bold text-gray-900 truncate">{item.nama_produk}</p>
+              <p className="text-sm text-gray-400 font-mono">{item.id_item}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              <p className="text-[10px] text-amber-600 font-semibold uppercase">Karat</p>
+              <p className="text-base font-bold text-gray-900">{item.kadar || "—"}</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              <p className="text-[10px] text-amber-600 font-semibold uppercase">Berat</p>
+              <p className="text-base font-bold text-gray-900">{fmtGram(item.berat_gram)}</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              <p className="text-[10px] text-amber-600 font-semibold uppercase">Stok</p>
+              <p className="text-base font-bold text-gray-900">{item.jumlah} pcs</p>
+            </div>
+          </div>
+
+          {item.jenis_inventori === "Aset" && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+              ⚠ Barang ini tercatat sebagai <strong>Aset</strong>, bukan stok jual biasa — pastikan memang ditujukan untuk dijual sebelum melanjutkan transaksi.
+            </p>
+          )}
+        </div>
+
+        <div className="px-6 pb-6 flex flex-col gap-2">
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 py-3.5 rounded-xl border border-gray-300 text-gray-700 font-bold text-base hover:bg-gray-50 transition-colors"
+            >
+              Lanjut Scan
+            </button>
+            <button
+              onClick={onPreview}
+              disabled={!canPreview}
+              className="flex-1 py-3.5 rounded-xl text-white font-bold text-base transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#6F5333" }}
+            >
+              👁 Preview Nota
+            </button>
+          </div>
+          {!canPreview && (
+            <p className="text-xs text-gray-400 text-center">
+              Lengkapi nama customer &amp; metode pembayaran dulu untuk lihat preview nota.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    HALAMAN UTAMA POS
 ═══════════════════════════════════════════════════════ */
 function POSContent() {
@@ -845,6 +970,7 @@ function POSContent() {
   const [loadingAllRiwayat, setLoadingAllRiwayat] = useState(false);
   const [allRiwayatRowLimit, setAllRiwayatRowLimit] = useState(150);
   const [allRiwayatHasMore, setAllRiwayatHasMore] = useState(true);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   /* ── Harga jual sebenarnya (Rp) baru dihitung saat barang ini mau dijual,
      memakai harga emas 24K HARI INI (bukan harga saat barang dimasukkan ke inventori).
@@ -927,17 +1053,21 @@ function POSContent() {
       .then(({ data }) => setHargaEmas24Jual(data?.harga_jual ?? null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── Scan barcode di halaman penjualan -> isi baris keranjang dgn barang hasil scan utk diedit ── */
+  /* ── Scan barcode di halaman penjualan -> isi baris keranjang dgn barang hasil scan utk diedit,
+     lalu tampilkan popup konfirmasi (ditemukan & masuk keranjang / tidak ditemukan). ── */
   useEffect(() => {
     const scanCode = searchParams.get("scan");
     if (!scanCode || items.length === 0) return;
-    if (processedScanRef.current === scanCode) return;
-    processedScanRef.current = scanCode;
+    // Kunci dedup pakai kode + nonce "t" (bukan kode saja) supaya scan barang yang
+    // sama dua kali berturut-turut tetap memicu popup baru, bukan diabaikan.
+    const scanKey = `${scanCode}:${searchParams.get("t") ?? ""}`;
+    if (processedScanRef.current === scanKey) return;
+    processedScanRef.current = scanKey;
 
     const idItem = scanCode.trim().toUpperCase();
     const found = items.find((i) => i.id_item.toUpperCase() === idItem);
     if (!found) {
-      window.alert(`Barang dengan ID "${idItem}" tidak ditemukan di inventori.`);
+      setScanResult({ type: "notfound", code: idItem });
     } else {
       const emptyRow = rows.find((r) => r.item === null);
       if (emptyRow) {
@@ -947,6 +1077,7 @@ function POSContent() {
         setRows((prev) => [...prev, newRow]);
         selectItemForRow(newRow.id, found);
       }
+      setScanResult({ type: "found", item: found });
     }
     router.replace("/pos");
   }, [items, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1723,6 +1854,14 @@ function POSContent() {
           </div>
         </div>
       )}
+
+      {/* MODAL: KONFIRMASI HASIL SCAN BARCODE */}
+      <ScanResultModal
+        result={scanResult}
+        onClose={() => setScanResult(null)}
+        canPreview={canPreview}
+        onPreview={() => { openPreviewModal(); setScanResult(null); }}
+      />
     </>
   );
 }

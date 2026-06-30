@@ -26,7 +26,15 @@ export function useCustomList(table: string, baseSeed: readonly string[]) {
     const existingMatch = all.find((j) => j.toLowerCase() === trimmed.toLowerCase());
     if (existingMatch) return existingMatch;
     const { error } = await supabase.from(table).insert({ nama: trimmed });
-    if (error) return null;
+    if (error) {
+      // User lain bisa saja barusan menambah nilai yang sama duluan (unique constraint) —
+      // itu bukan kegagalan dari sudut pandang pemanggil, nilainya sudah ada & terpakai.
+      if (error.code === "23505") {
+        setCustom((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed]));
+        return trimmed;
+      }
+      return null;
+    }
     setCustom((prev) => [...prev, trimmed]);
     return trimmed;
   }, [all, table]);

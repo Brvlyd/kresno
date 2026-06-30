@@ -87,7 +87,7 @@ export default function BarcodeScannerListener() {
         if (idItem.length < MIN_AUTO_CODE_LENGTH) return;
 
         if (pathname.startsWith("/pos")) {
-          router.push(`/pos?scan=${encodeURIComponent(idItem)}`);
+          router.push(`/pos?scan=${encodeURIComponent(idItem)}&t=${Date.now()}`);
           return;
         }
 

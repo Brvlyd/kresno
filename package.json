@@ -16,7 +16,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "build:cli": "tsc --project tsconfig.cli.json",
-    "figma-import": "npm run build:cli && node dist/figma-import/cli/bin.js"
+    "figma-import": "npm run build:cli && node dist/figma-import/cli/bin.js",
+    "loadtest:inventori": "node scripts/load-test-inventori.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

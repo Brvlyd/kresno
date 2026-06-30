@@ -5,7 +5,7 @@ import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { kodeForJenis, buildSeqCounters, nextIdItem, KODE_JENIS_SEED } from "@/lib/csv";
+import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
 import { KADAR_OPTIONS } from "@/lib/gadai";
 import { AddJenisModal } from "@/components/AddJenisModal";
@@ -172,7 +172,20 @@ function BarcodePreviewModal({
       svgRefs.current.forEach((el) => {
         if (!el) return;
         try {
-          JsBarcode(el, idItem, { format: "CODE128", displayValue: false, height: 35, margin: 0 });
+          JsBarcode(el, idItem, {
+            format: "CODE128",
+            displayValue: false,
+            height: 100,
+            margin: 0,
+            width: 2,
+            lineColor: "#000000",
+            background: "#ffffff",
+          });
+          // Tanpa ini, browser memaksa proporsi (preserveAspectRatio bawaan) supaya pas
+          // dengan lebar label -> tinggi batang barcode jadi cuma terisi sebagian kecil
+          // dari tinggi yang dialokasikan ("letterbox"), batangnya jadi pendek & susah
+          // discan. "none" supaya tinggi batang dipakai penuh sesuai ukuran cetak.
+          el.setAttribute("preserveAspectRatio", "none");
         } catch { /* ignore */ }
       });
     }, 40);
@@ -220,7 +233,7 @@ function BarcodePreviewModal({
     w.document.write(`<html><head><title>Barcode ${idItem}</title>
       <style>
         @page { size: ${pageWidth}mm ${LABEL_H}mm; margin: 0; }
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
         .row {
           display: grid;
@@ -234,11 +247,14 @@ function BarcodePreviewModal({
         .label {
           width: ${LABEL_W}mm; height: ${LABEL_H}mm; overflow: hidden;
           display: flex; flex-direction: column; align-items: center; justify-content: center;
-          text-align: center; padding: 0.8mm 1.5mm;
+          text-align: center; padding: 0.6mm 1mm;
         }
-        .label .toko { font-size: 5.5pt; font-weight: bold; line-height: 1.2; }
-        .label svg { width: 24mm; height: 5.5mm; }
-        .label .kode { font-size: 6pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.2; }
+        .label .toko { font-size: 5.5pt; font-weight: bold; line-height: 1.15; }
+        .label svg {
+          width: 26.5mm; height: 8.5mm; margin: 0.3mm 0;
+          shape-rendering: crispEdges;
+        }
+        .label .kode { font-size: 6pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.15; }
         .label .nama { font-size: 5pt; max-width: ${LABEL_W - 2}mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
       </style></head>
       <body>${rowsHtml.join("")}
@@ -530,9 +546,21 @@ function DetailBarangPopup({
       sub_jenis_aset:    form.jenis_inventori === "Aset" ? (form.sub_jenis_aset || null) : null,
     };
 
-    const { error } = editData
-      ? await supabase.from("inventori").update(payload).eq("id", editData.id)
-      : await supabase.from("inventori").insert(payload);
+    let error: { message: string; code?: string } | null = null;
+    if (editData) {
+      ({ error } = await supabase.from("inventori").update(payload).eq("id", editData.id));
+    } else {
+      // id_item dirakit ulang di sini (bukan pakai pratinjau form.id_item) lewat fungsi atomik
+      // di DB, supaya aman dipakai banyak user input bersamaan — lalu insert-nya dicoba ulang
+      // kalau (jarang sekali) tetap kena bentrok unique constraint.
+      const kode = await ensureKode(form.jenis_barang);
+      for (let attempt = 0; attempt < 3; attempt++) {
+        payload.id_item = await nextIdItemAtomic(supabase, form.kadar.trim(), kode, beratGramNum);
+        ({ error } = await supabase.from("inventori").insert(payload));
+        if (!error || error.code !== "23505") break;
+      }
+      if (!error) setForm((f) => ({ ...f, id_item: payload.id_item }));
+    }
 
     if (error) { setSaving(false); setMsg("Gagal menyimpan: " + error.message); return; }
 
@@ -1217,12 +1245,22 @@ function InventoriContent() {
 
   // Ambil kode 3-huruf untuk jenis_barang; kalau belum ada, generate & simpan permanen
   const ensureKode = useCallback(async (jenis: string): Promise<string> => {
-    const { kode, isNew } = kodeForJenis(jenis, jenisKodeMap);
-    if (isNew) {
-      await supabase.from("jenis_barang_kode").insert({ nama: jenis.trim(), kode }).select();
-      setJenisKodeMap((prev) => ({ ...prev, [jenis.trim()]: kode }));
+    const trimmed = jenis.trim();
+    const { kode, isNew } = kodeForJenis(trimmed, jenisKodeMap);
+    if (!isNew) return kode;
+    const { error } = await supabase.from("jenis_barang_kode").insert({ nama: trimmed, kode });
+    if (!error) {
+      setJenisKodeMap((prev) => ({ ...prev, [trimmed]: kode }));
+      return kode;
     }
-    return kode;
+    // User lain bisa saja barusan menambah jenis yang sama (atau kode yang sama) duluan —
+    // ambil ulang peta kode terbaru dari DB alih-alih langsung gagal.
+    const { data } = await supabase.from("jenis_barang_kode").select("nama,kode");
+    const fresh: Record<string, string> = { ...KODE_JENIS_SEED };
+    for (const r of data ?? []) fresh[r.nama] = r.kode;
+    setJenisKodeMap(fresh);
+    if (fresh[trimmed]) return fresh[trimmed];
+    throw error;
   }, [jenisKodeMap]);
 
   const deleteCustomJenis = useCallback(async (nama: string) => {

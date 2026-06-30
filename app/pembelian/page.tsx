@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
-import { kodeForJenis, buildSeqCounters, nextIdItem, KODE_JENIS_SEED } from "@/lib/csv";
+import { kodeForJenis, nextIdItemAtomic, KODE_JENIS_SEED } from "@/lib/csv";
 import { hitungHasil } from "@/lib/hutangPiutang";
 import { generateNoBuyback } from "@/lib/buyback";
 import type { InvoiceBuybackData } from "@/lib/buyback";
 import { InvoiceBuyback } from "@/components/InvoiceBuyback";
+import { InvoicePagePreview } from "@/components/InvoicePagePreview";
 import { printClean } from "@/lib/print";
 import { fmtRupiah, fmtGram, tglIndo, KADAR_OPTIONS } from "@/lib/gadai";
 import { useCustomList } from "@/lib/useCustomList";
@@ -65,7 +66,6 @@ export default function PembelianPage() {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
-  const [existingIds, setExistingIds] = useState<string[]>([]);
   const [jenisKodeMap, setJenisKodeMap] = useState<Record<string, string>>(KODE_JENIS_SEED);
   const [riwayat, setRiwayat] = useState<BuybackRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,8 +80,7 @@ export default function PembelianPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const todayStr = new Date().toISOString().split("T")[0];
-    const [invRes, hargaRes, riwayatRes, kodeRes] = await Promise.all([
-      supabase.from("inventori").select("id_item"),
+    const [hargaRes, riwayatRes, kodeRes] = await Promise.all([
       supabase.from("harga_emas").select("karat,harga_beli,harga_jual").eq("tanggal", todayStr),
       supabase
         .from("inventori")
@@ -90,7 +89,6 @@ export default function PembelianPage() {
         .order("tanggal_masuk", { ascending: false }),
       supabase.from("jenis_barang_kode").select("nama,kode"),
     ]);
-    setExistingIds((invRes.data ?? []).map((r: { id_item: string }) => r.id_item));
     const hargaMap: Record<number, HargaEmasKarat> = {};
     for (const r of hargaRes.data ?? []) {
       hargaMap[r.karat] = { harga_beli: r.harga_beli, harga_jual: r.harga_jual };
@@ -145,13 +143,11 @@ export default function PembelianPage() {
       await supabase.from("jenis_barang_kode").insert({ nama: "Emas Rosok", kode }).select();
       setJenisKodeMap((prev) => ({ ...prev, "Emas Rosok": kode }));
     }
-    const counters = buildSeqCounters(existingIds.map((id_item) => ({ id_item })));
-    const idItem = nextIdItem(form.kadar.trim(), kode, beratGramNum, counters);
     const noBuyback = generateNoBuyback();
     const tanggalMasuk = new Date().toISOString().split("T")[0];
 
     const payload = {
-      id_item: idItem,
+      id_item: "",
       jenis_barang: "Emas Rosok",
       nama_produk: form.nama_produk.trim(),
       kadar: form.kadar.trim(),
@@ -174,7 +170,15 @@ export default function PembelianPage() {
       no_buyback: noBuyback,
     };
 
-    const { error } = await supabase.from("inventori").insert(payload);
+    // id_item dirakit lewat fungsi atomik di DB (bukan dihitung dari snapshot existingIds di
+    // browser), supaya aman dipakai banyak user input bersamaan — lalu insert-nya dicoba ulang
+    // kalau (jarang sekali) tetap kena bentrok unique constraint.
+    let error: { message: string; code?: string } | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      payload.id_item = await nextIdItemAtomic(supabase, form.kadar.trim(), kode, beratGramNum);
+      ({ error } = await supabase.from("inventori").insert(payload));
+      if (!error || error.code !== "23505") break;
+    }
     setSaving(false);
     if (error) { setMsg("Gagal menyimpan: " + error.message); return; }
 
@@ -433,9 +437,9 @@ export default function PembelianPage() {
               </button>
             </div>
             <div className="p-6">
-              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
+              <InvoicePagePreview>
                 <InvoiceBuyback mode="preview" data={buybackReady} />
-              </div>
+              </InvoicePagePreview>
             </div>
             <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
               <p className="text-[11px] text-gray-400 text-center">

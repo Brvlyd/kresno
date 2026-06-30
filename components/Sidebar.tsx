@@ -49,6 +49,10 @@ export default function Sidebar() {
   const handleLogout = async () => {
     await logout();
     setMobileOpen(false);
+    // router.refresh() membuang Router Cache (BFCache) Next.js — tanpa ini,
+    // halaman seperti /pos yang masih ada draft transaksi bisa muncul lagi
+    // dengan data lama begitu user pencet tombol Back, meski sesi sudah habis.
+    router.refresh();
     router.replace("/login");
   };
 
