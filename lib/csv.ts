@@ -157,6 +157,23 @@ export function idItemScanCandidates(rawCode: string): string[] {
 }
 
 /**
+ * Cocokkan hasil scan ke 1 barang, terlepas dari format barcode mana yang dipakai saat
+ * label itu dicetak: id_item lengkap dengan "-" (label paling lama), id_item tanpa "-"
+ * (percobaan sebelumnya), atau barcode_no — nomor pendek dari DB (lihat migration 028,
+ * format terbaru, paling renggang/gampang discan).
+ */
+export function matchesBarcodeScan(
+  idItem: string,
+  barcodeNo: number | null | undefined,
+  scanCode: string
+): boolean {
+  const scanned = scanCode.trim().toUpperCase();
+  if (idItem.toUpperCase().replace(/-/g, "") === scanned.replace(/-/g, "")) return true;
+  if (barcodeNo != null && /^\d+$/.test(scanned) && Number(scanned) === barcodeNo) return true;
+  return false;
+}
+
+/**
  * Buat id_item berikutnya untuk sebuah (kadar, kode, berat), dan perbarui counter-nya.
  * HANYA dipakai untuk pratinjau lokal (live preview) di form — bisa beda dari yang akhirnya
  * tersimpan kalau ada user lain yang nambah barang di waktu yang sama. Untuk id_item yang

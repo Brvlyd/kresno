@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
 import StorageImage from "@/components/StorageImage";
 import { hitungHasil } from "@/lib/hutangPiutang";
+import { matchesBarcodeScan } from "@/lib/csv";
 import { AutocompleteField } from "@/components/AutocompleteField";
 import DateField from "@/components/DateField";
 import InvoiceCetak from "@/components/pos/InvoiceCetak";
@@ -42,6 +43,7 @@ interface InvItem {
   persen_jual: number;
   gambar_url?: string;
   jenis_inventori?: string;
+  barcode_no?: number | null;
 }
 
 interface Pelanggan {
@@ -380,10 +382,7 @@ function POSContent() {
     processedScanRef.current = scanKey;
 
     const idItem = scanCode.trim().toUpperCase();
-    // Barcode baru meng-encode id_item TANPA "-" (lihat idItemScanCandidates di lib/csv.ts),
-    // jadi dibandingkan tanpa "-" di kedua sisi supaya label lama (dengan "-") & baru (tanpa) sama-sama cocok.
-    const normalized = idItem.replace(/-/g, "");
-    const found = items.find((i) => i.id_item.toUpperCase().replace(/-/g, "") === normalized);
+    const found = items.find((i) => matchesBarcodeScan(i.id_item, i.barcode_no, idItem));
     if (!found) {
       setScanResult({ type: "notfound", code: idItem });
     } else {

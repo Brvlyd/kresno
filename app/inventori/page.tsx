@@ -6,7 +6,7 @@ import PinGate from "@/components/PinGate";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED } from "@/lib/csv";
+import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED, matchesBarcodeScan } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
 import { KADAR_OPTIONS } from "@/lib/gadai";
 import { AddJenisModal } from "@/components/AddJenisModal";
@@ -45,6 +45,7 @@ interface BarangRow {
   jenis_inventori: string;
   sub_jenis_aset?: string | null;
   no_buyback?: string | null;
+  barcode_no?: number | null;
 }
 
 interface FormData {
@@ -136,11 +137,12 @@ function PercentInput({
 
 /* ─── Preview & Pilih Barcode sebelum Print ─── */
 function BarcodePreviewModal({
-  open, onClose, idItem, namaProduk, kadar, beratGram, jumlah,
+  open, onClose, idItem, barcodeNo, namaProduk, kadar, beratGram, jumlah,
 }: {
   open: boolean;
   onClose: () => void;
   idItem: string;
+  barcodeNo?: number | null;
   namaProduk: string;
   kadar: string;
   beratGram: string;
@@ -170,15 +172,19 @@ function BarcodePreviewModal({
   useEffect(() => {
     if (!open || !idItem) return;
     const timer = setTimeout(() => {
+      // id_item penuh (mis. "24K-CIN-0149-0001", 17 char) masih kepadetan buat label
+      // 30x20mm walau "-"-nya dibuang (~156 modul CODE128 — masih lebih tipis dari
+      // resolusi printer thermal). Begitu barang sudah tersimpan & punya barcode_no
+      // (nomor pendek dari DB, lihat migration 028), barcode encode nomor itu saja
+      // (~79 modul, jauh lebih renggang/gampang discan). id_item lengkap tetap
+      // dicetak sebagai teks biasa di bawah barcode untuk dibaca manusia. Barang yang
+      // belum tersimpan (belum punya barcode_no) pakai fallback id_item tanpa "-".
+      // Lihat idItemScanCandidates() di lib/csv.ts untuk pencocokan saat scan.
+      const payload = barcodeNo != null ? String(barcodeNo).padStart(6, "0") : idItem.replace(/-/g, "");
       svgRefs.current.forEach((el) => {
         if (!el) return;
         try {
-          // Tanda "-" di id_item cuma pemanis tampilan, bukan data — dibuang sebelum
-          // di-encode supaya CODE128-nya lebih renggang (modul lebih lebar = lebih
-          // gampang discan). Teks id_item lengkap (dengan "-") tetap dicetak di bawah
-          // barcode untuk dibaca manusia. Lihat idItemScanCandidates() di lib/csv.ts
-          // untuk pencocokan saat scan (mendukung label lama yang masih ada "-"-nya).
-          JsBarcode(el, idItem.replace(/-/g, ""), {
+          JsBarcode(el, payload, {
             format: "CODE128",
             displayValue: false,
             height: 100,
@@ -196,7 +202,7 @@ function BarcodePreviewModal({
       });
     }, 40);
     return () => clearTimeout(timer);
-  }, [open, idItem, jumlah]);
+  }, [open, idItem, barcodeNo, jumlah]);
 
   const selectedCount = checked.filter(Boolean).length;
 
@@ -292,6 +298,12 @@ function BarcodePreviewModal({
             ×
           </button>
         </div>
+        {barcodeNo == null && (
+          <p className="px-6 pt-3 text-xs text-amber-700 bg-amber-50">
+            Barang ini belum disimpan, jadi barcode-nya masih pakai format lama (lebih padat).
+            Simpan dulu lalu buka lagi untuk barcode yang paling gampang discan.
+          </p>
+        )}
 
         {/* Select all toggle */}
         <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
@@ -417,6 +429,7 @@ function DetailBarangPopup({
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState("");
   const [showBarcodePreview, setShowBarcodePreview] = useState(false);
+  const [barcodeNo, setBarcodeNo] = useState<number | null>(null);
   const [catatHutang, setCatatHutang] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const jenisTouchedRef = useRef(false);
@@ -450,6 +463,7 @@ function DetailBarangPopup({
     } else {
       setForm({ ...emptyForm, jenis_inventori: defaultJenisInventori ?? "Stock Dalam", sub_jenis_aset: "" });
     }
+    setBarcodeNo(editData?.barcode_no ?? null);
     setMsg("");
     setShowBarcodePreview(false);
   }, [open, editData, defaultJenisInventori]);
@@ -560,12 +574,20 @@ function DetailBarangPopup({
       // di DB, supaya aman dipakai banyak user input bersamaan — lalu insert-nya dicoba ulang
       // kalau (jarang sekali) tetap kena bentrok unique constraint.
       const kode = await ensureKode(form.jenis_barang);
+      let inserted: { barcode_no: number | null } | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         payload.id_item = await nextIdItemAtomic(supabase, form.kadar.trim(), kode, beratGramNum);
-        ({ error } = await supabase.from("inventori").insert(payload));
+        const res = await supabase.from("inventori").insert(payload).select("barcode_no").single();
+        error = res.error;
+        inserted = res.data;
         if (!error || error.code !== "23505") break;
       }
-      if (!error) setForm((f) => ({ ...f, id_item: payload.id_item }));
+      if (!error) {
+        setForm((f) => ({ ...f, id_item: payload.id_item }));
+        // Supaya tombol "Cetak Barcode" langsung pakai barcode_no (lebih renggang/gampang
+        // discan) tanpa perlu tutup-buka popup lagi setelah barang baru disimpan.
+        setBarcodeNo(inserted?.barcode_no ?? null);
+      }
     }
 
     if (error) { setSaving(false); setMsg("Gagal menyimpan: " + error.message); return; }
@@ -1004,6 +1026,7 @@ function DetailBarangPopup({
         open={showBarcodePreview}
         onClose={() => setShowBarcodePreview(false)}
         idItem={form.id_item}
+        barcodeNo={barcodeNo}
         namaProduk={form.nama_produk}
         kadar={form.kadar}
         beratGram={form.berat_gram}
@@ -1295,10 +1318,7 @@ function InventoriContent({ onLock, onOpenChangePin }: {
     processedScanRef.current = scanKey;
 
     const idItem = scanCode.trim().toUpperCase();
-    // Barcode baru meng-encode id_item TANPA "-" (lihat idItemScanCandidates di lib/csv.ts),
-    // jadi dibandingkan tanpa "-" di kedua sisi supaya label lama (dengan "-") & baru (tanpa) sama-sama cocok.
-    const normalized = idItem.replace(/-/g, "");
-    const found = items.find((i) => i.id_item.toUpperCase().replace(/-/g, "") === normalized);
+    const found = items.find((i) => matchesBarcodeScan(i.id_item, i.barcode_no, idItem));
     if (found) {
       focusItem(found);
       setScanResult({ type: "found", item: found });
