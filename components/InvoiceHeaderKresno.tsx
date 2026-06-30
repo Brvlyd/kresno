@@ -41,10 +41,10 @@ export function InvoiceHeaderKresno({ judul, noNota, tanggal, extraLine }: Invoi
           <div style={{ fontSize: "8pt", fontWeight: 700, color: "#222", letterSpacing: "0.06em" }}>{judul}</div>
           <div style={{ height: "1pt", width: "44pt", backgroundColor: INVOICE_GOLD_LT }} />
         </div>
-        <div style={{ fontSize: "6.5pt", color: "#444" }}>
+        <div style={{ fontSize: "7pt", fontWeight: 700, color: "#000" }}>
           Jl. Kios Pasar Grabag Petak Blok KA No. 7A-7B
         </div>
-        <div style={{ fontSize: "6.5pt", color: "#444" }}>
+        <div style={{ fontSize: "7pt", fontWeight: 700, color: "#000" }}>
           (Depan Terminal Lama), Grabag, Magelang, Jawa Tengah
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: "12pt", marginTop: "2pt", fontSize: "6.5pt", color: "#444" }}>
@@ -67,7 +67,7 @@ export function InvoiceHeaderKresno({ judul, noNota, tanggal, extraLine }: Invoi
         <div style={{ fontWeight: 900, fontSize: "11pt", color: "#000", marginTop: "2pt" }}>
           {noNota}
         </div>
-        <div style={{ fontSize: "7.5pt", color: "#555", marginTop: "2pt" }}>
+        <div style={{ fontSize: "7pt", fontWeight: 700, color: "#000", marginTop: "2pt" }}>
           Tanggal : {tanggal}
         </div>
         {extraLine && (

@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { idItemScanCandidates } from "@/lib/csv";
 
 /**
  * Konfigurasi prefix scanner — program kedua scanner barcode untuk menambahkan
@@ -67,10 +68,13 @@ export default function BarcodeScannerListener() {
           }
 
           const supabase = createClient();
+          // Barcode baru meng-encode id_item TANPA "-" (lebih renggang/gampang discan),
+          // label lama masih dengan "-". idItemScanCandidates mengembalikan kedua
+          // kemungkinan bentuknya supaya keduanya tetap bisa ditemukan.
           const { data } = await supabase
             .from("inventori")
             .select("id")
-            .eq("id_item", idItem)
+            .in("id_item", idItemScanCandidates(idItem))
             .maybeSingle();
 
           if (!data) {

@@ -31,7 +31,7 @@ export function InvoiceBuyback({ mode, data }: InvoiceBuybackProps) {
       {/* ── TABEL BARANG ── */}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "8pt", marginBottom: "8pt" }}>
         <thead>
-          <tr style={{ backgroundColor: INVOICE_GOLD, color: "#fff" }}>
+          <tr style={{ backgroundColor: "#fff", color: "#000" }}>
             {[
               { label: "No",          w: "22pt", align: "center" as const },
               { label: "Nama Barang", w: "",     align: "left"   as const },
@@ -83,8 +83,8 @@ export function InvoiceBuyback({ mode, data }: InvoiceBuybackProps) {
           </div>
           <div style={{
             display: "flex", justifyContent: "space-between",
-            padding: "4pt 10pt", backgroundColor: INVOICE_GOLD,
-            color: "#fff", fontWeight: 900, fontSize: "11pt",
+            padding: "4pt 10pt", backgroundColor: "#fff",
+            color: "#000", fontWeight: 900, fontSize: "11pt",
           }}>
             <span>TOTAL</span>
             <span>: {fmtRupiah(data.total)}</span>

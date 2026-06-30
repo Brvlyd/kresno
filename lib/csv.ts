@@ -138,6 +138,25 @@ function formatIdItem(kadar: string, kode: string, beratGram: number, seq: numbe
 }
 
 /**
+ * Barcode yang dicetak meng-encode id_item TANPA tanda "-" (CODE128-nya jadi lebih
+ * renggang/gampang discan — dashes hanya pemanis tampilan, bukan data). Tapi label
+ * lama yang sudah dicetak sebelum perubahan ini masih meng-encode id_item APA ADANYA
+ * (dengan "-"). Dipakai untuk mencocokkan hasil scan ke id_item di database terlepas
+ * dari label mana yang dipakai (lama atau baru).
+ */
+export function idItemScanCandidates(rawCode: string): string[] {
+  const code = rawCode.trim().toUpperCase();
+  const candidates = new Set([code]);
+  // Format id_item 4-bagian: {2 digit karat}K-{3 kode}-{4 berat}-{4 urutan} = 17 char
+  // dengan "-", 14 char tanpa "-". Sisipkan kembali "-" di posisi yang sama supaya
+  // cocok dengan id_item asli di database.
+  if (!code.includes("-") && code.length === 14) {
+    candidates.add(`${code.slice(0, 3)}-${code.slice(3, 6)}-${code.slice(6, 10)}-${code.slice(10, 14)}`);
+  }
+  return Array.from(candidates);
+}
+
+/**
  * Buat id_item berikutnya untuk sebuah (kadar, kode, berat), dan perbarui counter-nya.
  * HANYA dipakai untuk pratinjau lokal (live preview) di form — bisa beda dari yang akhirnya
  * tersimpan kalau ada user lain yang nambah barang di waktu yang sama. Untuk id_item yang

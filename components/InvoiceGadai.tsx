@@ -35,7 +35,7 @@ export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
       {/* ── TABEL BARANG ── */}
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "8pt", marginBottom: "8pt" }}>
         <thead>
-          <tr style={{ backgroundColor: INVOICE_GOLD, color: "#fff" }}>
+          <tr style={{ backgroundColor: "#fff", color: "#000" }}>
             {[
               { label: "No",           w: "22pt", align: "center" as const },
               { label: "Jenis Barang", w: "",     align: "left"   as const },
@@ -82,7 +82,7 @@ export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
       {/* ── NOMINAL GADAI + JANGKA WAKTU ── */}
       <div style={{ display: "flex", gap: "10pt", marginBottom: "8pt" }}>
         <div style={{ flex: 1, border: `1pt solid ${INVOICE_GOLD}`, borderRadius: "4pt", overflow: "hidden" }}>
-          <div style={{ backgroundColor: INVOICE_GOLD, color: "#fff", fontWeight: 700, padding: "3pt 8pt", fontSize: "7.5pt", textAlign: "center" }}>
+          <div style={{ backgroundColor: "#fff", color: "#000", fontWeight: 700, padding: "3pt 8pt", fontSize: "7.5pt", textAlign: "center" }}>
             NOMINAL GADAI
           </div>
           <div style={{ padding: "8pt 10pt" }}>
@@ -93,7 +93,7 @@ export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
           </div>
         </div>
         <div style={{ flex: 1, border: `1pt solid ${INVOICE_GOLD}`, borderRadius: "4pt", overflow: "hidden" }}>
-          <div style={{ backgroundColor: INVOICE_GOLD, color: "#fff", fontWeight: 700, padding: "3pt 8pt", fontSize: "7.5pt", textAlign: "center" }}>
+          <div style={{ backgroundColor: "#fff", color: "#000", fontWeight: 700, padding: "3pt 8pt", fontSize: "7.5pt", textAlign: "center" }}>
             JANGKA WAKTU
           </div>
           <div style={{ padding: "6pt 10pt", fontSize: "9.5pt", fontWeight: 700 }}>

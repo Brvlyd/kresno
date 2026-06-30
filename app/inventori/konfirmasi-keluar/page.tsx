@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppLayout from "@/components/AppLayout";
+import PinGate from "@/components/PinGate";
 import { createClient } from "@/lib/supabase/client";
 import { STATUS_OPTIONS } from "@/lib/csv";
 import StorageImage from "@/components/StorageImage";
@@ -261,8 +262,12 @@ function KonfirmasiKeluarContent() {
 
 export default function KonfirmasiKeluarPage() {
   return (
-    <Suspense fallback={<AppLayout><div className="flex-1 flex items-center justify-center"><p className="text-gray-400">Memuat...</p></div></AppLayout>}>
-      <KonfirmasiKeluarContent />
-    </Suspense>
+    <PinGate pageTitle="Halaman Inventori">
+      {() => (
+        <Suspense fallback={<AppLayout><div className="flex-1 flex items-center justify-center"><p className="text-gray-400">Memuat...</p></div></AppLayout>}>
+          <KonfirmasiKeluarContent />
+        </Suspense>
+      )}
+    </PinGate>
   );
 }

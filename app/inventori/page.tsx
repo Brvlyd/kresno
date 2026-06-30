@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
+import PinGate from "@/components/PinGate";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -172,7 +173,12 @@ function BarcodePreviewModal({
       svgRefs.current.forEach((el) => {
         if (!el) return;
         try {
-          JsBarcode(el, idItem, {
+          // Tanda "-" di id_item cuma pemanis tampilan, bukan data — dibuang sebelum
+          // di-encode supaya CODE128-nya lebih renggang (modul lebih lebar = lebih
+          // gampang discan). Teks id_item lengkap (dengan "-") tetap dicetak di bawah
+          // barcode untuk dibaca manusia. Lihat idItemScanCandidates() di lib/csv.ts
+          // untuk pencocokan saat scan (mendukung label lama yang masih ada "-"-nya).
+          JsBarcode(el, idItem.replace(/-/g, ""), {
             format: "CODE128",
             displayValue: false,
             height: 100,
@@ -1167,7 +1173,10 @@ function ScanResultPopup({
 }
 
 /* ═══ Main Inventori Page ═══ */
-function InventoriContent() {
+function InventoriContent({ onLock, onOpenChangePin }: {
+  onLock: () => void;
+  onOpenChangePin: () => void;
+}) {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1286,7 +1295,10 @@ function InventoriContent() {
     processedScanRef.current = scanKey;
 
     const idItem = scanCode.trim().toUpperCase();
-    const found = items.find((i) => i.id_item.toUpperCase() === idItem);
+    // Barcode baru meng-encode id_item TANPA "-" (lihat idItemScanCandidates di lib/csv.ts),
+    // jadi dibandingkan tanpa "-" di kedua sisi supaya label lama (dengan "-") & baru (tanpa) sama-sama cocok.
+    const normalized = idItem.replace(/-/g, "");
+    const found = items.find((i) => i.id_item.toUpperCase().replace(/-/g, "") === normalized);
     if (found) {
       focusItem(found);
       setScanResult({ type: "found", item: found });
@@ -1360,13 +1372,36 @@ function InventoriContent() {
       <div id="inventori-screen" className="flex-1 flex flex-col bg-white min-h-screen">
         <div className="px-4 sm:px-6 pt-6 pb-8 flex flex-col gap-5">
           {/* Title */}
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
-              Daftar Barang (Inventori)
-            </h1>
-            <p className="text-base text-gray-500 mt-1">
-              Lihat, tambah, dan kelola semua barang emas yang ada di toko.
-            </p>
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+                Daftar Barang (Inventori)
+              </h1>
+              <p className="text-base text-gray-500 mt-1">
+                Lihat, tambah, dan kelola semua barang emas yang ada di toko.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={onOpenChangePin}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-colors hover:bg-amber-50"
+                style={{ borderColor: "#C99A36", color: "#C99A36" }}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Ganti PIN
+              </button>
+              <button
+                onClick={onLock}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Kunci Halaman
+              </button>
+            </div>
           </div>
 
           {/* 3 Tab Jenis Inventori */}
@@ -1906,8 +1941,12 @@ function InventoriContent() {
 
 export default function InventoriPage() {
   return (
-    <Suspense fallback={<AppLayout><div className="flex-1 flex items-center justify-center"><p className="text-gray-400">Memuat...</p></div></AppLayout>}>
-      <InventoriContent />
-    </Suspense>
+    <PinGate pageTitle="Halaman Inventori">
+      {({ lock, openChangePin }) => (
+        <Suspense fallback={<AppLayout><div className="flex-1 flex items-center justify-center"><p className="text-gray-400">Memuat...</p></div></AppLayout>}>
+          <InventoriContent onLock={lock} onOpenChangePin={openChangePin} />
+        </Suspense>
+      )}
+    </PinGate>
   );
 }

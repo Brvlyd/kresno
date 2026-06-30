@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AppLayout from "@/components/AppLayout";
+import PinGate from "@/components/PinGate";
 import { createClient } from "@/lib/supabase/client";
 import {
   JENIS_HUTANG_OPTIONS, PEMBAYARAN_PELUNASAN_OPTIONS, STATUS_OPTIONS, KADAR_PATOKAN_OPTIONS,
@@ -442,8 +443,12 @@ function TambahHutangContent() {
 
 export default function TambahHutangPage() {
   return (
-    <Suspense fallback={<AppLayout><div className="flex-1 flex items-center justify-center min-h-screen"><p className="text-gray-400">Memuat...</p></div></AppLayout>}>
-      <TambahHutangContent />
-    </Suspense>
+    <PinGate pageTitle="Halaman Hutang & Piutang">
+      {() => (
+        <Suspense fallback={<AppLayout><div className="flex-1 flex items-center justify-center min-h-screen"><p className="text-gray-400">Memuat...</p></div></AppLayout>}>
+          <TambahHutangContent />
+        </Suspense>
+      )}
+    </PinGate>
   );
 }

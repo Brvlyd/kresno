@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppLayout from "@/components/AppLayout";
+import PinGate from "@/components/PinGate";
 import { createClient } from "@/lib/supabase/client";
 import { fmtRupiah, fmtTanggal, jenisHutangLabel } from "@/lib/hutangPiutang";
 
@@ -47,7 +48,10 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export default function HutangPiutangPage() {
+function HutangPiutangContent({ onLock, onOpenChangePin }: {
+  onLock: () => void;
+  onOpenChangePin: () => void;
+}) {
   const supabase = createClient();
   const router = useRouter();
 
@@ -106,13 +110,36 @@ export default function HutangPiutangPage() {
     <AppLayout>
       <div className="flex-1 flex flex-col bg-white min-h-screen">
         <div className="px-4 sm:px-6 pt-6 pb-10 space-y-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
-              Hutang &amp; Piutang Usaha
-            </h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Lacak hutang/pinjaman yang dilakukan toko dan piutang/pinjaman yang diberikan oleh toko.
-            </p>
+          <div className="flex items-start justify-between flex-wrap gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900" style={{ fontFamily: "var(--font-playfair)" }}>
+                Hutang &amp; Piutang Usaha
+              </h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Lacak hutang/pinjaman yang dilakukan toko dan piutang/pinjaman yang diberikan oleh toko.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={onOpenChangePin}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-colors hover:bg-amber-50"
+                style={{ borderColor: "#C99A36", color: "#C99A36" }}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Ganti PIN
+              </button>
+              <button
+                onClick={onLock}
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+                Kunci Halaman
+              </button>
+            </div>
           </div>
 
           {/* Tabs */}
@@ -316,5 +343,15 @@ export default function HutangPiutangPage() {
         </div>
       </div>
     </AppLayout>
+  );
+}
+
+export default function HutangPiutangPage() {
+  return (
+    <PinGate pageTitle="Halaman Hutang & Piutang">
+      {({ lock, openChangePin }) => (
+        <HutangPiutangContent onLock={lock} onOpenChangePin={openChangePin} />
+      )}
+    </PinGate>
   );
 }

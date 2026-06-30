@@ -1,24 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef, Fragment } from "react";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
+import { useState, useEffect, Fragment } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
 import { hitungTotalBunga } from "@/lib/gadai";
-import { verifyKeuanganPin, isKeuanganUnlocked, lockKeuangan } from "@/app/keuangan/actions";
-import { useIdleTimeout } from "@/lib/useIdleTimeout";
-
-/** Lock PIN Keuangan berlaku lagi kalau benar-benar idle (tanpa klik/keyboard/scroll) selama ini. */
-const KEUANGAN_IDLE_LOCK_MINUTES = 30;
+import PinGate from "@/components/PinGate";
 
 /* ═══════════════════════════════════════════════════════
    KONSTANTA & HELPER
 ═══════════════════════════════════════════════════════ */
-const DEFAULT_PIN = "1234";
-/** Email tujuan kode reset PIN — kotak masuk toko, bukan email pegawai perorangan. */
-const RESET_PIN_EMAIL = "tokomaskresno5758@gmail.com";
 
 const fmtRp = (n: number) =>
   "Rp " + Math.round(n || 0).toLocaleString("id-ID");
@@ -314,437 +305,10 @@ function filterLabel(
   return "Hari Ini";
 }
 
-/* ═══════════════════════════════════════════════════════
-   KOMPONEN: PIN LOCK SCREEN
-═══════════════════════════════════════════════════════ */
-function PinLockScreen({
-  storedPin, onUnlock, onPinReset,
-}: {
-  storedPin: string;
-  onUnlock: () => void;
-  onPinReset: (newPin: string) => void;
-}) {
-  const router = useRouter();
-  const [pin, setPin] = useState("");
-  const [error, setError] = useState(false);
-  const [shake, setShake] = useState(false);
-  const [showForgotPin, setShowForgotPin] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const pinLen = storedPin.length;
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  async function tryPin(p: string) {
-    const ok = await verifyKeuanganPin(p);
-    if (ok) {
-      onUnlock();
-    } else {
-      setError(true);
-      setShake(true);
-      setTimeout(() => { setPin(""); setError(false); setShake(false); inputRef.current?.focus(); }, 900);
-    }
-  }
-
-  function addDigit(d: string) {
-    if (error) return;
-    const next = pin + d;
-    if (next.length > pinLen) return;
-    setPin(next);
-    if (next.length === pinLen) setTimeout(() => tryPin(next), 80);
-  }
-
-  function handleTyped(raw: string) {
-    if (error) return;
-    const digits = raw.replace(/\D/g, "").slice(0, pinLen);
-    setPin(digits);
-    if (digits.length === pinLen) setTimeout(() => tryPin(digits), 80);
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-6 px-4"
-      style={{ backgroundColor: "#6F5333" }}
-      onClick={() => inputRef.current?.focus()}
-    >
-      {/* Input asli supaya PIN bisa diketik via keyboard fisik, disamarkan di atas titik-titik PIN */}
-      <input
-        ref={inputRef}
-        type="password"
-        inputMode="numeric"
-        autoComplete="off"
-        value={pin}
-        onChange={(e) => handleTyped(e.target.value)}
-        className="absolute opacity-0 w-px h-px"
-        aria-label="Masukkan PIN"
-      />
-      {/* Tombol Kembali */}
-      <button
-        onClick={() => router.back()}
-        className="absolute top-5 left-5 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white/80 hover:text-white hover:bg-white/10 transition-all"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-        </svg>
-        Kembali
-      </button>
-
-      {/* Logo */}
-      <Image
-        src="/logo-kresno.png"
-        alt="Toko Mas Kresno"
-        width={150}
-        height={175}
-        priority
-        className="object-contain drop-shadow-2xl"
-      />
-
-      {/* Judul */}
-      <div className="text-center">
-        <h2 className="text-white text-2xl font-extrabold tracking-wide">
-          Halaman Keuangan
-        </h2>
-        <p className="text-white/70 text-sm mt-1">
-          Masukkan PIN untuk melanjutkan
-        </p>
-      </div>
-
-      {/* Titik-titik PIN */}
-      <div className={`flex gap-3 ${shake ? "animate-bounce" : ""}`}>
-        {Array.from({ length: pinLen }, (_, i) => (
-          <div
-            key={i}
-            className={`w-4 h-4 rounded-full border-2 transition-all duration-150 ${
-              error
-                ? "border-red-400 bg-red-400"
-                : i < pin.length
-                  ? "border-white bg-white"
-                  : "border-white/50 bg-transparent"
-            }`}
-          />
-        ))}
-      </div>
-
-      {error && (
-        <p className="text-red-300 text-sm font-semibold -mt-2">
-          PIN salah. Coba lagi.
-        </p>
-      )}
-
-      {/* Numpad */}
-      <div className="grid grid-cols-3 gap-3 w-full max-w-[260px]">
-        {["1","2","3","4","5","6","7","8","9"].map((d) => (
-          <button
-            key={d}
-            onClick={() => addDigit(d)}
-            className="h-16 rounded-2xl text-white text-2xl font-bold transition-all active:scale-90"
-            style={{ backgroundColor: "rgba(255,255,255,0.18)" }}
-          >
-            {d}
-          </button>
-        ))}
-        <button
-          onClick={() => { if (!error) setPin(p => p.slice(0, -1)); }}
-          className="h-16 rounded-2xl text-white/70 text-sm font-semibold transition-all active:scale-90"
-          style={{ backgroundColor: "rgba(255,255,255,0.08)" }}
-        >
-          ← Hapus
-        </button>
-        <button
-          onClick={() => addDigit("0")}
-          className="h-16 rounded-2xl text-white text-2xl font-bold transition-all active:scale-90"
-          style={{ backgroundColor: "rgba(255,255,255,0.18)" }}
-        >
-          0
-        </button>
-        <div />
-      </div>
-
-      {/* Lupa PIN */}
-      <button
-        onClick={(e) => { e.stopPropagation(); setShowForgotPin(true); }}
-        className="text-sm font-semibold text-white/70 hover:text-white underline transition-colors"
-      >
-        Lupa PIN?
-      </button>
-
-      <ForgotPinModal
-        open={showForgotPin}
-        onClose={() => setShowForgotPin(false)}
-        onReset={(newPin) => {
-          onPinReset(newPin);
-          setShowForgotPin(false);
-          onUnlock();
-        }}
-      />
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════
-   KOMPONEN: LUPA PIN — kirim kode OTP ke email toko (lewat Supabase Auth),
-   lalu set PIN baru kalau kodenya benar.
-═══════════════════════════════════════════════════════ */
-function ForgotPinModal({
-  open, onClose, onReset,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onReset: (newPin: string) => void;
-}) {
-  const supabase = createClient();
-  const [step, setStep] = useState<"request" | "verify">("request");
-  const [sending, setSending] = useState(false);
-  const [code, setCode] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [verifying, setVerifying] = useState(false);
-  const [cooldown, setCooldown] = useState(0);
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      setStep("request"); setCode(""); setNewPin(""); setConfirmPin("");
-      setMsg(null); setCooldown(0);
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (cooldown <= 0) return;
-    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
-    return () => clearTimeout(t);
-  }, [cooldown]);
-
-  async function sendCode() {
-    setSending(true); setMsg(null);
-    const { error } = await supabase.auth.signInWithOtp({ email: RESET_PIN_EMAIL });
-    setSending(false);
-    if (error) { setMsg({ type: "err", text: "Gagal mengirim kode: " + error.message }); return; }
-    setStep("verify");
-    setCooldown(60);
-    setMsg({ type: "ok", text: `Kode telah dikirim ke ${RESET_PIN_EMAIL}.` });
-  }
-
-  async function resetPin() {
-    if (!/^\d{4,10}$/.test(code)) { setMsg({ type: "err", text: "Kode dari email tidak valid." }); return; }
-    if (newPin.length < 4) { setMsg({ type: "err", text: "PIN baru minimal 4 angka." }); return; }
-    if (!/^\d+$/.test(newPin)) { setMsg({ type: "err", text: "PIN hanya boleh angka." }); return; }
-    if (newPin !== confirmPin) { setMsg({ type: "err", text: "Konfirmasi PIN tidak cocok." }); return; }
-
-    setVerifying(true); setMsg(null);
-    const { error: verifyError } = await supabase.auth.verifyOtp({
-      email: RESET_PIN_EMAIL, token: code, type: "email",
-    });
-    if (verifyError) {
-      setVerifying(false);
-      setMsg({ type: "err", text: "Kode salah atau sudah kedaluwarsa: " + verifyError.message });
-      return;
-    }
-
-    const { error: updateError } = await supabase
-      .from("keuangan_pin")
-      .update({ pin: newPin, updated_at: new Date().toISOString() })
-      .eq("id", 1);
-    setVerifying(false);
-
-    if (updateError) { setMsg({ type: "err", text: "Gagal menyimpan PIN baru: " + updateError.message }); return; }
-    await verifyKeuanganPin(newPin); // set cookie unlock juga, biar konsisten dgn onUnlock() di bawah
-    setMsg({ type: "ok", text: "PIN berhasil direset!" });
-    setTimeout(() => onReset(newPin), 900);
-  }
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={(e) => e.stopPropagation()}>
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-1">Lupa PIN Keuangan</h3>
-
-        {step === "request" ? (
-          <>
-            <p className="text-sm text-gray-500 mb-4">
-              Kode reset akan dikirim ke email toko: <strong>{RESET_PIN_EMAIL}</strong>.
-            </p>
-            <button
-              onClick={sendCode}
-              disabled={sending}
-              className="w-full py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-50"
-              style={{ backgroundColor: "#C99A36" }}
-            >
-              {sending ? "Mengirim..." : "Kirim Kode ke Email"}
-            </button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm text-gray-500 mb-4">
-              Masukkan kode dari email, lalu buat PIN baru.
-            </p>
-            <div className="space-y-3">
-              <div>
-                <label className="text-sm font-semibold text-gray-700 block mb-1">Kode dari Email</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  maxLength={10}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-center text-xl tracking-[0.3em] focus:outline-none focus:border-[#C99A36]"
-                  placeholder="Kode dari email"
-                />
-              </div>
-              {(
-                [
-                  { label: "PIN Baru (minimal 4 angka)", val: newPin, set: setNewPin },
-                  { label: "Konfirmasi PIN Baru", val: confirmPin, set: setConfirmPin },
-                ] as { label: string; val: string; set: (v: string) => void }[]
-              ).map(({ label, val, set }) => (
-                <div key={label}>
-                  <label className="text-sm font-semibold text-gray-700 block mb-1">{label}</label>
-                  <input
-                    type="password"
-                    inputMode="numeric"
-                    maxLength={8}
-                    value={val}
-                    onChange={(e) => set(e.target.value.replace(/\D/g, ""))}
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] focus:outline-none focus:border-[#C99A36]"
-                  />
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={sendCode}
-              disabled={cooldown > 0 || sending}
-              className="text-sm font-semibold mt-3 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed"
-              style={{ color: cooldown > 0 ? undefined : "#C99A36" }}
-            >
-              {cooldown > 0 ? `Kirim ulang kode (${cooldown}s)` : "Kirim ulang kode"}
-            </button>
-          </>
-        )}
-
-        {msg && (
-          <p className={`mt-3 text-sm font-semibold py-2 px-3 rounded-lg ${
-            msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
-          }`}>{msg.text}</p>
-        )}
-
-        <div className="flex gap-3 mt-5">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
-          >
-            Batal
-          </button>
-          {step === "verify" && (
-            <button
-              onClick={resetPin}
-              disabled={verifying}
-              className="flex-1 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-50"
-              style={{ backgroundColor: "#C99A36" }}
-            >
-              {verifying ? "Memverifikasi..." : "Reset PIN"}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════════════
-   KOMPONEN: GANTI PIN MODAL
-═══════════════════════════════════════════════════════ */
-function ChangePinModal({ open, onClose, currentPin, onChanged }: {
-  open: boolean;
-  onClose: () => void;
-  currentPin: string;
-  onChanged: (newPin: string) => void;
-}) {
-  const supabase = createClient();
-  const [oldPin, setOldPin] = useState("");
-  const [newPin, setNewPin] = useState("");
-  const [confirmPin, setConfirmPin] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-
-  useEffect(() => {
-    if (open) { setOldPin(""); setNewPin(""); setConfirmPin(""); setMsg(null); }
-  }, [open]);
-
-  async function save() {
-    if (oldPin !== currentPin) { setMsg({ type: "err", text: "PIN lama tidak sesuai." }); return; }
-    if (newPin.length < 4) { setMsg({ type: "err", text: "PIN baru minimal 4 angka." }); return; }
-    if (!/^\d+$/.test(newPin)) { setMsg({ type: "err", text: "PIN hanya boleh angka." }); return; }
-    if (newPin !== confirmPin) { setMsg({ type: "err", text: "Konfirmasi PIN tidak cocok." }); return; }
-
-    setSaving(true); setMsg(null);
-    const { error } = await supabase
-      .from("keuangan_pin")
-      .update({ pin: newPin, updated_at: new Date().toISOString() })
-      .eq("id", 1);
-    setSaving(false);
-    if (error) { setMsg({ type: "err", text: "Gagal menyimpan PIN: " + error.message }); return; }
-    onChanged(newPin);
-    setMsg({ type: "ok", text: "PIN berhasil diubah!" });
-    setTimeout(onClose, 1200);
-  }
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
-        <h3 className="text-xl font-bold text-gray-900 mb-1">Ganti PIN Keuangan</h3>
-        <p className="text-sm text-gray-500 mb-4">
-          PIN ini melindungi halaman keuangan dari akses pegawai biasa.
-        </p>
-        <div className="space-y-3">
-          {(
-            [
-              { label: "PIN Lama", val: oldPin, set: setOldPin },
-              { label: "PIN Baru (minimal 4 angka)", val: newPin, set: setNewPin },
-              { label: "Konfirmasi PIN Baru", val: confirmPin, set: setConfirmPin },
-            ] as { label: string; val: string; set: (v: string) => void }[]
-          ).map(({ label, val, set }) => (
-            <div key={label}>
-              <label className="text-sm font-semibold text-gray-700 block mb-1">{label}</label>
-              <input
-                type="password"
-                inputMode="numeric"
-                maxLength={8}
-                value={val}
-                onChange={(e) => set(e.target.value.replace(/\D/g, ""))}
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] focus:outline-none focus:border-[#C99A36]"
-              />
-            </div>
-          ))}
-        </div>
-        {msg && (
-          <p className={`mt-3 text-sm font-semibold py-2 px-3 rounded-lg ${
-            msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
-          }`}>{msg.text}</p>
-        )}
-        <div className="flex gap-3 mt-5">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
-          >
-            Batal
-          </button>
-          <button
-            onClick={save}
-            disabled={saving}
-            className="flex-1 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-50"
-            style={{ backgroundColor: "#C99A36" }}
-          >
-            {saving ? "Menyimpan..." : "Simpan PIN"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+/** Apakah akhir periode yang dipilih sudah lewat (di masa lalu) — dipakai untuk membedakan
+ * tampilan stok/aset "real-time saat ini" vs "rekonstruksi per akhir periode". */
+function isPeriodeLewat(dateTo: Date): boolean {
+  return dateTo.getTime() < new Date().getTime();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -881,10 +445,9 @@ function Pager({ page, totalPages, total, pageSize, onPrev, onNext }: {
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: KONTEN UTAMA KEUANGAN
 ═══════════════════════════════════════════════════════ */
-function KeuanganContent({ onLock, currentPin, onPinChanged }: {
+function KeuanganContent({ onLock, onOpenChangePin }: {
   onLock: () => void;
-  currentPin: string;
-  onPinChanged: (newPin: string) => void;
+  onOpenChangePin: () => void;
 }) {
   const supabase = createClient();
 
@@ -908,11 +471,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const [gadaiList, setGadaiList] = useState<GadaiRow[]>([]);
   const [gadaiAktifSemua, setGadaiAktifSemua] = useState<GadaiRow[]>([]);
   const [servisPending, setServisPending] = useState<ServisRow[]>([]);
+  const [keluarRiwayat, setKeluarRiwayat] = useState<{ inventori_id: string | null; jumlah_keluar: number; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   /* ── UI ── */
   const [tab, setTab] = useState<"stok" | "transaksi" | "laba_rugi" | "aset" | "log">("stok");
-  const [showChangePin, setShowChangePin] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("bulanan");
   const [pageByKey, setPageByKey] = useState<Record<string, number>>({});
@@ -929,8 +492,13 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
       const [from, to] = getDateRange(mode, customDate, customMonth, rangeFrom, rangeTo);
       const fromISO = from.toISOString();
       const toISO = to.toISOString();
-      const fromDate = from.toISOString().slice(0, 10);
-      const toDate = to.toISOString().slice(0, 10);
+      // toISOString() konversi ke UTC dulu — untuk zona waktu di depan UTC (WIB/WITA/WIT)
+      // ini menggeser tanggal mundur 1 hari saat di-slice. Kolom tanggal_masuk/tanggal_gadai
+      // bertipe DATE polos (tanpa jam), jadi bandingkan pakai tanggal lokal apa adanya.
+      const toLocalDateStr = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      const fromDate = toLocalDateStr(from);
+      const toDate = toLocalDateStr(to);
 
       const [
         { data: allStok },
@@ -939,6 +507,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
         { data: gadai },
         { data: gadaiAktif },
         { data: servisProses },
+        { data: keluarSemua },
       ] = await Promise.all([
         supabase.from("inventori").select("*").order("tanggal_masuk", { ascending: false }),
         supabase
@@ -969,11 +538,15 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
           .select("*")
           .in("status", ["Menunggu", "Diproses"])
           .order("tanggal_masuk", { ascending: true }),
+        supabase.from("inventori_keluar").select("inventori_id, jumlah_keluar, created_at"),
       ]);
 
       if (cancelled) return;
 
       setStokAll((allStok ?? []) as StokRow[]);
+      setKeluarRiwayat(
+        (keluarSemua ?? []) as { inventori_id: string | null; jumlah_keluar: number; created_at: string }[],
+      );
 
       setStokKeluar(
         (keluar ?? []).map((k) => {
@@ -1006,7 +579,32 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   }, [mode, customDate, customMonth, rangeFrom, rangeTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Derived values ── */
-  const sisaStok = stokAll.filter((r) => r.status_inventori === "Tersedia");
+  // "Sisa Stok" sebenarnya direkonstruksi per akhir periode yang dipilih (dateTo), bukan
+  // status_inventori saat ini — supaya filter periode lampau (mis. "Tahun Lalu", sebelum
+  // sistem ini dipakai) tidak ikut menampilkan stok yang baru masuk/keluar setelahnya.
+  // Item dihitung "tersedia per dateTo" kalau sudah masuk sebelum/pada dateTo DAN belum
+  // pernah ada riwayat keluar (inventori_keluar) sebelum/pada dateTo.
+  const dateToTime = dateTo.getTime();
+  const periodeSudahLewat = isPeriodeLewat(dateTo);
+  const keluarPerItem = new Map<string, { keluarPertama: number; totalKeluar: number }>();
+  for (const k of keluarRiwayat) {
+    if (!k.inventori_id) continue;
+    const t = new Date(k.created_at).getTime();
+    const acc = keluarPerItem.get(k.inventori_id) ?? { keluarPertama: Infinity, totalKeluar: 0 };
+    acc.keluarPertama = Math.min(acc.keluarPertama, t);
+    acc.totalKeluar += k.jumlah_keluar;
+    keluarPerItem.set(k.inventori_id, acc);
+  }
+  const sisaStok = stokAll
+    .filter((r) => new Date(r.tanggal_masuk).getTime() <= dateToTime)
+    .filter((r) => {
+      const keluar = keluarPerItem.get(r.id);
+      return !keluar || keluar.keluarPertama > dateToTime;
+    })
+    .map((r) => {
+      const keluar = keluarPerItem.get(r.id);
+      return keluar ? { ...r, jumlah: r.jumlah + keluar.totalKeluar } : r;
+    });
   const stokMasuk = stokAll.filter((r) => {
     const d = new Date(r.tanggal_masuk);
     return d >= dateFrom && d <= dateTo;
@@ -1072,8 +670,15 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
   const servisTransaksiPg = paginateFlat(servisListFiltered, pageByKey["servisTransaksi"] ?? 0, LIST_PAGE_SIZE);
   const gadaiTransaksiPg = paginateFlat(gadaiListFiltered, pageByKey["gadaiTransaksi"] ?? 0, LIST_PAGE_SIZE);
 
-  const gadaiAktifSemuaFiltered = gadaiAktifSemua.filter((g) => matchSearch([g.no_gadai, g.pelanggan_nama, g.nama_barang], searchAset));
-  const servisPendingFiltered = servisPending.filter((s) => matchSearch([s.no_servis, s.pelanggan_nama, s.nama_barang, s.jenis_servis], searchAset));
+  // Gadai/servis yang statusnya MASIH aktif/menunggu sekarang sudah pasti juga berstatus
+  // belum-lunas/belum-selesai di setiap titik waktu sejak tanggal pengajuannya (status hanya
+  // maju, tidak pernah mundur) — jadi cukup saring berdasarkan tanggal pengajuan <= dateTo
+  // supaya entri yang baru diajukan setelah periode lampau tidak ikut muncul.
+  const gadaiAktifAsOf = gadaiAktifSemua.filter((g) => new Date(g.tanggal_gadai).getTime() <= dateToTime);
+  const servisPendingAsOf = servisPending.filter((s) => new Date(s.tanggal_masuk).getTime() <= dateToTime);
+
+  const gadaiAktifSemuaFiltered = gadaiAktifAsOf.filter((g) => matchSearch([g.no_gadai, g.pelanggan_nama, g.nama_barang], searchAset));
+  const servisPendingFiltered = servisPendingAsOf.filter((s) => matchSearch([s.no_servis, s.pelanggan_nama, s.nama_barang, s.jenis_servis], searchAset));
   const totalGadaiAktifF = gadaiAktifSemuaFiltered.reduce((s, g) => s + g.nilai_pinjaman, 0);
   const totalBungaPotensialF = gadaiAktifSemuaFiltered.reduce((s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0);
   const totalNilaiServisPendingF = servisPendingFiltered.reduce((s, r) => s + r.estimasi_biaya, 0);
@@ -1301,8 +906,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "8pt", marginBottom: "12pt" }}>
               {[
                 { l: "Nilai Modal Stok", v: fmtRp(totalNilaiModal), s: "Estimasi jual: " + fmtRp(totalNilaiJual), c: "#92400E" },
-                { l: "Modal Tertahan (Gadai Aktif)", v: fmtRp(gadaiAktifSemua.reduce((s, g) => s + g.nilai_pinjaman, 0)), s: gadaiAktifSemua.length + " gadai belum lunas", c: "#EA580C" },
-                { l: "Servis Belum Selesai", v: servisPending.length + " order", s: "Est. " + fmtRp(servisPending.reduce((s, r) => s + r.estimasi_biaya, 0)), c: "#7C3AED" },
+                { l: "Modal Tertahan (Gadai Aktif)", v: fmtRp(gadaiAktifAsOf.reduce((s, g) => s + g.nilai_pinjaman, 0)), s: gadaiAktifAsOf.length + " gadai belum lunas", c: "#EA580C" },
+                { l: "Servis Belum Selesai", v: servisPendingAsOf.length + " order", s: "Est. " + fmtRp(servisPendingAsOf.reduce((s, r) => s + r.estimasi_biaya, 0)), c: "#7C3AED" },
               ].map((c) => (
                 <div key={c.l} style={{ border: "1pt solid #d1d5db", borderRadius: "6pt", padding: "7pt 9pt" }}>
                   <p style={{ fontSize: "7pt", color: "#6b7280", marginBottom: "3pt", textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.l}</p>
@@ -1327,7 +932,7 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                onClick={() => setShowChangePin(true)}
+                onClick={onOpenChangePin}
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 text-sm font-semibold transition-colors hover:bg-amber-50"
                 style={{ borderColor: "#C99A36", color: "#C99A36" }}
               >
@@ -1519,7 +1124,9 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
             style={{ background: "linear-gradient(135deg, #6F5333 0%, #9A7248 100%)" }}
           >
             <p className="text-sm font-semibold opacity-75">
-              Total Berat Semua Stok Emas Tersedia Saat Ini — per Karat
+              {periodeSudahLewat
+                ? `Total Berat Stok Emas Tersedia per Akhir Periode (${label}) — per Karat`
+                : "Total Berat Semua Stok Emas Tersedia Saat Ini — per Karat"}
             </p>
 
             {kadarKeysSisa.length > 0 && (
@@ -1599,9 +1206,13 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
               <div className={(showPreview || tab === "stok") ? "block print-section" : "hidden print:block print-section"}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Sisa Stok Tersedia</h2>
-                  <p className="text-sm text-gray-500 print:hidden">Data real-time seluruh barang yang masih tersedia di toko.</p>
+                  <p className="text-sm text-gray-500 print:hidden">
+                    {periodeSudahLewat
+                      ? `Rekonstruksi stok yang tersedia per akhir periode "${label}", berdasarkan tanggal masuk & riwayat barang keluar.`
+                      : "Data real-time seluruh barang yang masih tersedia di toko."}
+                  </p>
                   <p className="hidden print:block text-xs text-gray-500">
-                    Data stok real-time per {fmtTgl(new Date())} — {sisaStok.length} item &bull; {fmtGram(totalGramSisa)} &bull; Nilai Modal: {fmtRp(totalNilaiModal)}
+                    {periodeSudahLewat ? `Data stok per akhir periode ${label}` : `Data stok real-time per ${fmtTgl(new Date())}`} — {sisaStok.length} item &bull; {fmtGram(totalGramSisa)} &bull; Nilai Modal: {fmtRp(totalNilaiModal)}
                   </p>
                 </div>
 
@@ -1619,7 +1230,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
 
                 {sisaStok.length === 0 ? (
                   <div className="bg-white rounded-2xl p-10 text-center shadow-sm border border-gray-100">
-                    <p className="text-gray-400 text-lg">Tidak ada stok tersedia saat ini.</p>
+                    <p className="text-gray-400 text-lg">
+                      {periodeSudahLewat
+                        ? `Tidak ada stok yang sudah tersedia per akhir periode "${label}".`
+                        : "Tidak ada stok tersedia saat ini."}
+                    </p>
                   </div>
                 ) : (
                   <>
@@ -2395,8 +2010,14 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
               <div className={(showPreview || tab === "aset") ? "block print-section" : "hidden print:block print-page-break print-section"}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Nilai Aset &amp; Modal</h2>
-                  <p className="text-sm text-gray-500 print:hidden">Distribusi nilai stok berdasarkan kadar dan kategori.</p>
-                  <p className="hidden print:block text-xs text-gray-500">Data real-time per {fmtTgl(new Date())}</p>
+                  <p className="text-sm text-gray-500 print:hidden">
+                    {periodeSudahLewat
+                      ? `Distribusi nilai stok & modal tertahan per akhir periode "${label}".`
+                      : "Distribusi nilai stok berdasarkan kadar dan kategori."}
+                  </p>
+                  <p className="hidden print:block text-xs text-gray-500">
+                    {periodeSudahLewat ? `Data per akhir periode ${label}` : `Data real-time per ${fmtTgl(new Date())}`}
+                  </p>
                 </div>
 
                 <SearchBar
@@ -2410,7 +2031,9 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100" style={{ backgroundColor: "#FEFCE8" }}>
                       <h3 className="font-extrabold text-gray-900">Nilai Aset per Kadar Emas</h3>
-                      <p className="text-xs text-gray-500 mt-0.5">Berdasarkan seluruh stok tersedia saat ini</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {periodeSudahLewat ? `Berdasarkan stok yang tersedia per akhir periode "${label}"` : "Berdasarkan seluruh stok tersedia saat ini"}
+                      </p>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -2530,8 +2153,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                     </div>
                   </div>
 
-                  {/* Gadai Aktif — seluruh data, tidak dibatasi periode */}
-                  {gadaiAktifSemua.length > 0 && (() => {
+                  {/* Gadai Aktif — disaring ke gadai yang sudah diajukan per akhir periode */}
+                  {gadaiAktifAsOf.length > 0 && (() => {
                     if (searchAset && gadaiAktifSemuaFiltered.length === 0) {
                       return (
                         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
@@ -2544,9 +2167,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                         <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
                           style={{ backgroundColor: "#FFF7ED" }}>
                           <div>
-                            <h3 className="font-extrabold text-gray-900">Modal Tertahan — Gadai Aktif Saat Ini</h3>
+                            <h3 className="font-extrabold text-gray-900">
+                              {periodeSudahLewat ? `Modal Tertahan — Gadai Aktif per ${label}` : "Modal Tertahan — Gadai Aktif Saat Ini"}
+                            </h3>
                             <p className="text-xs text-gray-500 mt-0.5">
-                              Seluruh gadai aktif — {gadaiAktifSemuaFiltered.length} nasabah &bull; Potensi bunga: <span className="font-bold text-green-700">{fmtRp(totalBungaPotensialF)}</span>
+                              {gadaiAktifSemuaFiltered.length} nasabah &bull; Potensi bunga: <span className="font-bold text-green-700">{fmtRp(totalBungaPotensialF)}</span>
                             </p>
                           </div>
                           <span className="text-lg font-black text-orange-600">{fmtRp(totalGadaiAktifF)}</span>
@@ -2596,8 +2221,8 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
                     );
                   })()}
 
-                  {/* Servis Dalam Proses */}
-                  {servisPending.length > 0 && (() => {
+                  {/* Servis Dalam Proses — disaring ke servis yang sudah masuk per akhir periode */}
+                  {servisPendingAsOf.length > 0 && (() => {
                     const now = new Date();
                     if (searchAset && servisPendingFiltered.length === 0) {
                       return (
@@ -2911,13 +2536,6 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
           )}
         </div>
       </AppLayout>
-
-      <ChangePinModal
-        open={showChangePin}
-        onClose={() => setShowChangePin(false)}
-        currentPin={currentPin}
-        onChanged={onPinChanged}
-      />
     </>
   );
 }
@@ -2926,96 +2544,11 @@ function KeuanganContent({ onLock, currentPin, onPinChanged }: {
    EXPORT UTAMA — Gate PIN
 ═══════════════════════════════════════════════════════ */
 export default function KeuanganPage() {
-  const supabase = createClient();
-  const [unlocked, setUnlocked] = useState(false);
-  const [unlockChecked, setUnlockChecked] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [pinLoaded, setPinLoaded] = useState(false);
-  const [currentPin, setCurrentPin] = useState(DEFAULT_PIN);
-
-  useEffect(() => {
-    setMounted(true);
-    isKeuanganUnlocked().then((v) => {
-      setUnlocked(v);
-      setUnlockChecked(true);
-    });
-    supabase
-      .from("keuangan_pin")
-      .select("pin")
-      .eq("id", 1)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.pin) setCurrentPin(data.pin);
-        setPinLoaded(true);
-      });
-
-    // Kunci kalau tab/browser benar-benar ditutup atau di-refresh.
-    const handlePageHide = () => { lockKeuangan(); setUnlocked(false); };
-    window.addEventListener("pagehide", handlePageHide);
-
-    // Kunci begitu tab ini disembunyikan — pindah ke tab lain, minimize,
-    // atau kunci layar. Dicek lewat document.hidden, bukan blur, supaya
-    // tidak ikut terkunci cuma karena klik ke devtools/jendela lain yang
-    // masih di layar yang sama.
-    const handleVisibility = () => {
-      if (document.hidden) {
-        lockKeuangan();
-        setUnlocked(false);
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    // Sinkronkan ulang status terkunci/tidak saat halaman ini dipulihkan dari
-    // bfcache (mis. tekan Back browser) — tanpa ini, state React "unlocked"
-    // di tab tersebut tetap beku di nilai lamanya meski cookie sudah dihapus
-    // oleh pagehide di atas. Sama seperti pola di AuthGuard.
-    const handlePageShow = () => {
-      isKeuanganUnlocked().then((v) => {
-        setUnlocked(v);
-        setUnlockChecked(true);
-      });
-    };
-    window.addEventListener("pageshow", handlePageShow);
-
-    return () => {
-      window.removeEventListener("pagehide", handlePageHide);
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("pageshow", handlePageShow);
-      // Kunci juga saat keluar dari halaman ini lewat navigasi di dalam app
-      // (klik menu lain di sidebar) — itu cuma unmount React, bukan reload,
-      // jadi pagehide di atas tidak ikut terpanggil.
-      lockKeuangan();
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Kunci ulang begitu benar-benar idle (tanpa klik/keyboard/scroll sama
-  // sekali) selama KEUANGAN_IDLE_LOCK_MINUTES menit. Selama masih dipakai,
-  // tidak akan terkunci.
-  useIdleTimeout(KEUANGAN_IDLE_LOCK_MINUTES, () => {
-    lockKeuangan();
-    setUnlocked(false);
-  });
-
-  if (!mounted || !pinLoaded || !unlockChecked) return null;
-
-  if (!unlocked) {
-    return (
-      <PinLockScreen
-        storedPin={currentPin}
-        onUnlock={() => setUnlocked(true)}
-        onPinReset={setCurrentPin}
-      />
-    );
-  }
-
   return (
-    <KeuanganContent
-      currentPin={currentPin}
-      onPinChanged={setCurrentPin}
-      onLock={() => {
-        lockKeuangan();
-        setUnlocked(false);
-      }}
-    />
+    <PinGate pageTitle="Halaman Keuangan">
+      {({ lock, openChangePin }) => (
+        <KeuanganContent onLock={lock} onOpenChangePin={openChangePin} />
+      )}
+    </PinGate>
   );
 }
