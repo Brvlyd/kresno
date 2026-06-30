@@ -95,8 +95,16 @@ export function kodeForJenis(
   throw new Error(`Tidak bisa membuat kode unik untuk jenis "${jenis}"`);
 }
 
-/** Format id_item: {karat 2 digit}K-{kode 3 huruf}-{berat gram x100, 4 digit}-{urutan, 4 digit} */
-const ID_ITEM_RE = /^(\d{1,2})K-([A-Z0-9]+)-(\d+)-(\d+)$/i;
+/** Format id_item LAMA (barang yang ditambahkan sebelum dipendekkan):
+ *  {karat 2 digit}K-{kode 3 huruf}-{berat gram x100, 4 digit}-{urutan, 4 digit} */
+const ID_ITEM_RE_LAMA = /^(\d{1,2})K-([A-Z0-9]+)-(\d+)-(\d+)$/i;
+
+/** Format id_item TERBARU (ringkas, idealnya <=10 karakter — barcode yang discan sudah
+ *  pakai barcode_no terpisah, jadi id_item bebas dipendekkan demi keterbacaan teksnya):
+ *  {karat 2 digit}{kode 3 huruf}{berat gram dibulatkan, 2 digit}{urutan, >=3 digit}.
+ *  Urutan bisa melebar lebih dari 3 digit kalau 1 kombinasi karat+jenis sudah dipakai
+ *  >999 kali — jarang terjadi, dibiarkan melebar drpd tabrakan/kehilangan data. */
+const ID_ITEM_RE_BARU = /^(\d{2})([A-Z0-9]{3})(\d{2})(\d{3,})$/i;
 
 /** "24K", "6K", "18.5K" -> "24K", "06K", "19K" (karat dibulatkan, selalu 2 digit) */
 function formatKaratKode(kadar: string): string {
@@ -104,17 +112,20 @@ function formatKaratKode(kadar: string): string {
   return `${String(Math.max(0, num)).padStart(2, "0")}K`;
 }
 
-/** 1.49 (gram) -> "0149" — 2 desimal tersirat, minimal 4 digit (lebih dari 99.99g akan melebar) */
-function formatBeratKode(beratGram: number): string {
-  const centigram = Math.max(0, Math.round(beratGram * 100));
-  return String(centigram).padStart(4, "0");
+/** 1.49 (gram) -> "01" — cuma tag cepat dikenali di id_item, DIBULATKAN ke gram bulat
+ *  (bukan acuan harga; kolom berat_gram di database tetap presisi penuh, tidak kepengaruh). */
+function formatBeratKodeRingkas(beratGram: number): string {
+  const gram = Math.min(99, Math.max(0, Math.round(beratGram)));
+  return String(gram).padStart(2, "0");
 }
 
-/** Hitung nomor urut terakhir per-(karat, kode) dari daftar id_item yang sudah ada */
+/** Hitung nomor urut terakhir per-(karat, kode) dari daftar id_item yang sudah ada
+ *  (format lama maupun baru, supaya pratinjau nomor urut tetap nyambung). */
 export function buildSeqCounters(existing: { id_item: string }[]): Map<string, number> {
   const counters = new Map<string, number>();
   for (const item of existing) {
-    const match = item.id_item.match(ID_ITEM_RE);
+    const lama = item.id_item.match(ID_ITEM_RE_LAMA);
+    const match = lama ?? item.id_item.match(ID_ITEM_RE_BARU);
     if (!match) continue;
     const [, karatDigits, kode, , urutan] = match;
     const key = `${karatDigits.padStart(2, "0")}K-${kode.toUpperCase()}`;
@@ -130,11 +141,11 @@ function idItemSeqKey(kadar: string, kode: string): string {
   return `${formatKaratKode(kadar)}-${kode.trim().toUpperCase()}`;
 }
 
-/** Rakit id_item final dari nomor urut yang sudah didapat */
+/** Rakit id_item final dari nomor urut yang sudah didapat — format ringkas tanpa "-" */
 function formatIdItem(kadar: string, kode: string, beratGram: number, seq: number): string {
-  const karatKode = formatKaratKode(kadar);
+  const karatDigits = formatKaratKode(kadar).replace("K", "");
   const kodeUpper = kode.trim().toUpperCase();
-  return `${karatKode}-${kodeUpper}-${formatBeratKode(beratGram)}-${String(seq).padStart(4, "0")}`;
+  return `${karatDigits}${kodeUpper}${formatBeratKodeRingkas(beratGram)}${String(seq).padStart(3, "0")}`;
 }
 
 /**
