@@ -217,12 +217,17 @@ function BarcodePreviewModal({
     });
     if (!selected.length) return;
 
-    const LABEL_W = 30; // mm — fisik label Xprinter XP-420B
-    const LABEL_H = 20; // mm
-    // Lebar halaman dipakai = jumlah label di baris paling penuh, bukan setting kolom mentah.
-    // Jadi cetak 1 barcode saat layout "3 Kolom" tetap jadi 1 label 30x20mm, bukan halaman 90mm kosong.
-    const effectiveCols = Math.min(columns, selected.length);
-    const pageWidth = effectiveCols * LABEL_W;
+    const LABEL_W = 33; // mm — fisik 1 label di kertas roll (label thermal 33x15mm, 3 line)
+    const LABEL_H = 15; // mm
+    const GAP = 1; // mm — jarak antar label di kertas roll
+    // Kertas rollnya fisik SELALU 3 kolom lebar (3x33mm + 2x1mm jarak) — lihat foto kertas label.
+    // Halaman cetak (@page) HARUS selalu dibuat selebar itu juga, walau cuma sebagian
+    // kolom yang diisi barcode. Kalau halaman dibuat lebih sempit (mis. 33mm utk "1
+    // Kolom"), printer/driver bakal men-scale isinya supaya pas dgn lebar kertas fisik
+    // -- hasilnya 1 barcode malah jadi besar & buram, bukan tetap 1 label kecil.
+    // Makanya kolom yang TIDAK dipakai diisi <div> kosong (bukan dihilangkan dari grid).
+    const PAPER_COLS = 3;
+    const pageWidth = PAPER_COLS * LABEL_W + (PAPER_COLS - 1) * GAP;
 
     const rowsHtml: string[] = [];
     for (let r = 0; r < selected.length; r += columns) {
@@ -238,7 +243,8 @@ function BarcodePreviewModal({
         </div>`
         )
         .join("");
-      rowsHtml.push(`<div class="row">${labelsHtml}</div>`);
+      const blankHtml = `<div class="label label-empty"></div>`.repeat(PAPER_COLS - rowItems.length);
+      rowsHtml.push(`<div class="row">${labelsHtml}${blankHtml}</div>`);
     }
 
     const w = window.open("", "_blank", "width=400,height=300");
@@ -250,7 +256,8 @@ function BarcodePreviewModal({
         html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
         .row {
           display: grid;
-          grid-template-columns: repeat(${effectiveCols}, ${LABEL_W}mm);
+          grid-template-columns: repeat(${PAPER_COLS}, ${LABEL_W}mm);
+          column-gap: ${GAP}mm;
           width: ${pageWidth}mm;
           height: ${LABEL_H}mm;
           page-break-after: always;
@@ -260,15 +267,16 @@ function BarcodePreviewModal({
         .label {
           width: ${LABEL_W}mm; height: ${LABEL_H}mm; overflow: hidden;
           display: flex; flex-direction: column; align-items: center; justify-content: center;
-          text-align: center; padding: 0.6mm 1mm;
+          text-align: center; padding: 0.4mm 1mm;
         }
-        .label .toko { font-size: 5.5pt; font-weight: bold; line-height: 1.15; }
+        .label-empty { visibility: hidden; }
+        .label .toko { font-size: 4pt; font-weight: bold; line-height: 1.1; }
         .label svg {
-          width: 26.5mm; height: 8.5mm; margin: 0.3mm 0;
+          width: 29mm; height: 6.2mm; margin: 0.2mm 0;
           shape-rendering: crispEdges;
         }
-        .label .kode { font-size: 6pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.15; }
-        .label .nama { font-size: 5pt; max-width: ${LABEL_W - 2}mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.1; }
+        .label .kode { font-size: 4.5pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.1; }
+        .label .nama { font-size: 3.5pt; max-width: ${LABEL_W - 2}mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.05; }
       </style></head>
       <body>${rowsHtml.join("")}
       <script>
@@ -324,26 +332,19 @@ function BarcodePreviewModal({
         <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm text-gray-600 font-medium">Tata letak kertas</p>
           <div className="flex gap-1.5">
-            {([1, 2, 3] as const).map((n) => {
-              const disabled = n !== 3;
-              return (
-                <button
-                  key={n}
-                  onClick={() => !disabled && changeColumns(n)}
-                  disabled={disabled}
-                  title={disabled ? "Masih dalam perbaikan" : undefined}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-colors ${
-                    disabled
-                      ? "border-gray-200 text-gray-300 cursor-not-allowed opacity-60"
-                      : columns === n
-                      ? "border-[#C99A36] bg-amber-50 text-[#C99A36]"
-                      : "border-gray-200 text-gray-500 hover:bg-gray-50"
-                  }`}
-                >
-                  {n} Kolom
-                </button>
-              );
-            })}
+            {([1, 2, 3] as const).map((n) => (
+              <button
+                key={n}
+                onClick={() => changeColumns(n)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                  columns === n
+                    ? "border-[#C99A36] bg-amber-50 text-[#C99A36]"
+                    : "border-gray-200 text-gray-500 hover:bg-gray-50"
+                }`}
+              >
+                {n} Kolom
+              </button>
+            ))}
           </div>
         </div>
 
@@ -1250,7 +1251,8 @@ function InventoriContent({ onLock, onOpenChangePin }: {
       supabase
         .from("harga_emas")
         .select("karat,harga_beli,harga_jual")
-        .eq("tanggal", todayStr),
+        .eq("tanggal", todayStr)
+        .eq("label", ""),
       supabase.from("jenis_barang_kode").select("nama,kode"),
     ]);
     const rows = (invRes.data ?? []) as BarangRow[];

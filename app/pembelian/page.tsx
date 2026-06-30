@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { kodeForJenis, nextIdItemAtomic, KODE_JENIS_SEED } from "@/lib/csv";
-import { hitungHasil } from "@/lib/hutangPiutang";
 import { generateNoBuyback } from "@/lib/buyback";
 import type { InvoiceBuybackData } from "@/lib/buyback";
 import { InvoiceBuyback } from "@/components/InvoiceBuyback";
@@ -43,20 +42,21 @@ interface FormData {
   kadar: string;
   berat_gram: string;
   jumlah: string;
-  persen_modal: string;
-  persen_jual: string;
+  taksiran_harga_beli: string;
+  harga_emas_hari_ini: string;
   supplier: string;
   keterangan: string;
 }
 
 const emptyForm: FormData = {
   nama_produk: "", kadar: "", berat_gram: "", jumlah: "1",
-  persen_modal: "", persen_jual: "", supplier: "", keterangan: "",
+  taksiran_harga_beli: "", harga_emas_hari_ini: "", supplier: "", keterangan: "",
 };
 
-/** Harga (Rp) = Berat x Persentase x Harga emas 24K hari itu — SELALU patokan 24K. */
-function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaEmas24K: number): number {
-  return Math.round(hitungHasil(beratGram, persentase) * hargaEmas24K);
+/** Format angka jadi "1.234.567" (titik tiap ribuan) buat input Rupiah */
+function formatRibuan(v: string): string {
+  const digits = v.replace(/\D/g, "");
+  return digits ? parseInt(digits, 10).toLocaleString("id-ID") : "";
 }
 
 export default function PembelianPage() {
@@ -81,7 +81,7 @@ export default function PembelianPage() {
     setLoading(true);
     const todayStr = new Date().toISOString().split("T")[0];
     const [hargaRes, riwayatRes, kodeRes] = await Promise.all([
-      supabase.from("harga_emas").select("karat,harga_beli,harga_jual").eq("tanggal", todayStr),
+      supabase.from("harga_emas").select("karat,harga_beli,harga_jual").eq("tanggal", todayStr).eq("label", ""),
       supabase
         .from("inventori")
         .select("id,id_item,no_buyback,nama_produk,kadar,berat_gram,jumlah,harga_beli,supplier,tanggal_masuk")
@@ -105,6 +105,16 @@ export default function PembelianPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Isi awal "Harga Emas Hari Ini" dari patokan 24K (Dashboard) begitu kepanggil/berubah,
+  // TAPI cuma kalau field-nya masih kosong — supaya tidak menimpa harga yang sedang diketik
+  // staff (harganya boleh beda tiap transaksi, makanya tetap bisa diedit manual).
+  useEffect(() => {
+    const beli24 = hargaEmasByKarat[24]?.harga_beli;
+    if (beli24 != null && beli24 > 0 && !form.harga_emas_hari_ini) {
+      setForm((f) => ({ ...f, harga_emas_hari_ini: String(beli24) }));
+    }
+  }, [hargaEmasByKarat]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const missingFields = (): string[] => {
     const missing: string[] = [];
     if (!form.nama_produk.trim()) missing.push("Nama / Deskripsi Barang");
@@ -114,9 +124,8 @@ export default function PembelianPage() {
     }
     if (!form.berat_gram.trim() || (parseFloat(form.berat_gram) || 0) <= 0) missing.push("Berat (gram)");
     if (!form.jumlah.trim() || (parseInt(form.jumlah) || 0) < 1) missing.push("Jumlah");
-    if (!form.persen_modal.trim() || (parseFloat(form.persen_modal) || 0) <= 0) missing.push("Persentase Modal");
-    if (!form.persen_jual.trim() || (parseFloat(form.persen_jual) || 0) <= 0) missing.push("Persentase Jual");
-    if (!hargaEmasByKarat[24]) missing.push("Harga Emas 24K hari ini (isi dulu di halaman Dashboard)");
+    if (!form.taksiran_harga_beli.trim() || (parseInt(form.taksiran_harga_beli.replace(/\D/g, "")) || 0) <= 0) missing.push("Taksiran Harga Beli");
+    if (!form.harga_emas_hari_ini.trim() || (parseInt(form.harga_emas_hari_ini.replace(/\D/g, "")) || 0) <= 0) missing.push("Harga Emas Hari Ini");
     if (!form.supplier.trim()) missing.push("Nama Penjual");
     return missing;
   };
@@ -128,15 +137,26 @@ export default function PembelianPage() {
       return;
     }
     const beratGramNum = parseFloat(form.berat_gram) || 0;
-    const hargaEmas24K = hargaEmasByKarat[24];
-    if (!hargaEmas24K) return;
     setSaving(true); setMsg("");
 
-    const persenModalNum = parseFloat(form.persen_modal) || 0;
-    const persenJualNum = parseFloat(form.persen_jual) || 0;
-    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaEmas24K.harga_beli);
-    const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaEmas24K.harga_jual);
+    const hargaBeliRp = parseInt(form.taksiran_harga_beli.replace(/\D/g, ""), 10) || 0;
+    const hargaEmasHariIniNum = parseInt(form.harga_emas_hari_ini.replace(/\D/g, ""), 10) || 0;
     const jumlahNum = parseInt(form.jumlah) || 1;
+    const tanggalMasuk = new Date().toISOString().split("T")[0];
+
+    // Update patokan 24K hari ini (dipakai jg oleh halaman lain — POS, Inventori, Dashboard)
+    // supaya selaras dgn harga yang baru saja diketik staff di sini. harga_jual baris ini
+    // SENGAJA dipertahankan apa adanya (bukan ikut diisi 0), supaya kalkulasi % penjualan
+    // di halaman lain yang masih memakainya tidak ikut berubah gara-gara transaksi buyback.
+    const { error: hargaError } = await supabase.from("harga_emas").upsert(
+      {
+        tanggal: tanggalMasuk, karat: 24, label: "",
+        harga_beli: hargaEmasHariIniNum,
+        harga_jual: hargaEmasByKarat[24]?.harga_jual ?? 0,
+      },
+      { onConflict: "tanggal,karat,label" }
+    );
+    if (hargaError) { setSaving(false); setMsg("Gagal menyimpan harga emas: " + hargaError.message); return; }
 
     const { kode, isNew } = kodeForJenis("Emas Rosok", jenisKodeMap);
     if (isNew) {
@@ -144,7 +164,6 @@ export default function PembelianPage() {
       setJenisKodeMap((prev) => ({ ...prev, "Emas Rosok": kode }));
     }
     const noBuyback = generateNoBuyback();
-    const tanggalMasuk = new Date().toISOString().split("T")[0];
 
     const payload = {
       id_item: "",
@@ -156,10 +175,11 @@ export default function PembelianPage() {
       status_inventori: "Tersedia",
       status_laporan: "Draf",
       kategori: "Emas Rosok",
-      persen_modal: persenModalNum,
-      persen_jual: persenJualNum,
+      // Barang rosok belum dijual lagi apa adanya (biasanya dilebur/diproses ulang dulu),
+      // jadi harga_jual sengaja dikosongkan (0) -- diisi manual lewat Inventori kalau nanti
+      // memang mau langsung dijual.
       harga_beli: hargaBeliRp,
-      harga_jual: hargaJualRp,
+      harga_jual: 0,
       supplier: form.supplier.trim(),
       keterangan: form.keterangan.trim(),
       gambar_url: null,
@@ -306,29 +326,28 @@ export default function PembelianPage() {
 
                 <div>
                   <div className="grid grid-cols-2 gap-2 mb-1.5">
-                    {["Persentase Modal (%)", "Persentase Jual (%)"].map((h) => (
+                    {["Taksiran Harga Beli", "Harga Emas Hari Ini"].map((h) => (
                       <label key={h} className="text-sm font-semibold text-gray-600">{h}</label>
                     ))}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {(["persen_modal", "persen_jual"] as const).map((key) => (
+                    {(["taksiran_harga_beli", "harga_emas_hari_ini"] as const).map((key) => (
                       <div key={key} className="flex items-center border border-gray-300 rounded-xl overflow-hidden focus-within:border-[#C99A36] focus-within:ring-1 focus-within:ring-[#C99A36]/20">
+                        <span className="px-3 py-3 text-base font-semibold text-gray-500 bg-gray-50 border-r border-gray-200 select-none shrink-0">Rp</span>
                         <input
-                          type="number"
-                          inputMode="decimal"
-                          min={0}
-                          step="0.01"
+                          type="text"
+                          inputMode="numeric"
                           value={form[key]}
-                          onChange={(e) => set(key, e.target.value)}
+                          onChange={(e) => set(key, formatRibuan(e.target.value))}
                           placeholder="0"
                           className="flex-1 px-3 py-3 text-base focus:outline-none bg-white min-w-0"
                         />
-                        <span className="px-3 py-3 text-base font-semibold text-gray-500 bg-gray-50 border-l border-gray-200 select-none shrink-0">%</span>
                       </div>
                     ))}
                   </div>
                   <p className="text-xs text-gray-400 mt-1.5">
-                    % dari harga emas 24K hari ini (Dashboard) — bukan harga sesuai karat barang ini.
+                    Taksiran Harga Beli: total harga utk berat di atas (1 barang, sebelum dikali Jumlah).
+                    Harga Emas Hari Ini: patokan 24K — otomatis kepakai jg di Dashboard/POS/Inventori, boleh diubah tiap transaksi.
                   </p>
                 </div>
 

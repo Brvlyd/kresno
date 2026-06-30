@@ -367,6 +367,7 @@ function POSContent() {
       .select("harga_jual")
       .eq("tanggal", todayStrIso)
       .eq("karat", 24)
+      .eq("label", "")
       .maybeSingle()
       .then(({ data }) => setHargaEmas24Jual(data?.harga_jual ?? null));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

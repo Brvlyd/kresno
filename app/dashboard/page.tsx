@@ -5,12 +5,12 @@ import AppLayout from "@/components/AppLayout";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { KADAR_PATOKAN_OPTIONS } from "@/lib/hutangPiutang";
 
 /* ─── Types ─── */
 interface HargaEmas {
   id?: string;
   karat: number;
+  label?: string;
   harga_beli: number;
   harga_jual: number;
   tanggal?: string;
@@ -91,14 +91,14 @@ function RupiahInput({
 const HARGA_DRAFT_KEY = "kresno_harga_emas_draft";
 
 function emptyRow(): HargaEmas {
-  return { karat: 0, harga_beli: 0, harga_jual: 0 };
+  return { karat: 0, label: "", harga_beli: 0, harga_jual: 0 };
 }
 
 // Baris awal: satu per satu (bukan langsung 24K/22K/18K) — atau lanjutkan dari yang
 // sudah tersimpan hari ini di DB kalau ada.
 function buildRowsFromExisting(existing: HargaEmas[]): HargaEmas[] {
   if (existing.length > 0) {
-    return existing.map((e) => ({ karat: e.karat, harga_beli: e.harga_beli, harga_jual: e.harga_jual }));
+    return existing.map((e) => ({ karat: e.karat, label: e.label ?? "", harga_beli: e.harga_beli, harga_jual: e.harga_jual }));
   }
   return [emptyRow()];
 }
@@ -157,7 +157,7 @@ function HargaPopup({
     saveHargaDraft(today, rows);
   }, [open, rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updateRow = (i: number, field: keyof HargaEmas, val: number) => {
+  const updateRow = <K extends keyof HargaEmas>(i: number, field: K, val: HargaEmas[K]) => {
     const nr = [...rows];
     nr[i] = { ...nr[i], [field]: val };
     setRows(nr);
@@ -172,8 +172,8 @@ function HargaPopup({
       const { error } = await supabase
         .from("harga_emas")
         .upsert(
-          { tanggal: today, karat: row.karat, harga_beli: row.harga_beli, harga_jual: row.harga_jual },
-          { onConflict: "tanggal,karat" }
+          { tanggal: today, karat: row.karat, label: row.label?.trim() ?? "", harga_beli: row.harga_beli, harga_jual: row.harga_jual },
+          { onConflict: "tanggal,karat,label" }
         );
       if (error) { setMsg("Gagal menyimpan: " + error.message); setSaving(false); return; }
     }
@@ -228,8 +228,8 @@ function HargaPopup({
         {/* Body */}
         <div className="px-6 py-5">
           {/* Column headers */}
-          <div className="grid grid-cols-3 gap-3 mb-3">
-            {["Karat", "Harga Beli (Rp/gram)", "Harga Jual (Rp/gram)"].map((h) => (
+          <div className="grid grid-cols-4 gap-3 mb-3">
+            {["Karat", "Label Harga (opsional)", "Harga Beli (Rp/gram)", "Harga Jual (Rp/gram)"].map((h) => (
               <span key={h} className="text-sm font-semibold text-gray-600">{h}</span>
             ))}
           </div>
@@ -237,17 +237,26 @@ function HargaPopup({
           {/* Input rows */}
           <div className="space-y-3">
             {rows.map((row, i) => (
-              <div key={i} className="grid grid-cols-3 gap-3">
-                <select
-                  value={row.karat || ""}
-                  onChange={(e) => updateRow(i, "karat", Number(e.target.value))}
-                  className="w-full border border-gray-300 rounded-xl py-3 px-3 text-base font-semibold focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors bg-white"
-                >
-                  <option value="" disabled>Pilih karat</option>
-                  {KADAR_PATOKAN_OPTIONS.map((k) => (
-                    <option key={k} value={k}>{k}K</option>
-                  ))}
-                </select>
+              <div key={i} className="grid grid-cols-4 gap-3">
+                <div className="relative">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={row.karat || ""}
+                    onChange={(e) => updateRow(i, "karat", Number(e.target.value))}
+                    placeholder="mis. 6"
+                    className="w-full border border-gray-300 rounded-xl py-3 pl-4 pr-8 text-base font-semibold focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold select-none">K</span>
+                </div>
+                <input
+                  type="text"
+                  value={row.label ?? ""}
+                  onChange={(e) => updateRow(i, "label", e.target.value)}
+                  placeholder="mis. Harga A"
+                  className="w-full border border-gray-300 rounded-xl py-3 px-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                />
                 <RupiahInput
                   value={row.harga_beli}
                   onChange={(n) => updateRow(i, "harga_beli", n)}
@@ -262,7 +271,9 @@ function HargaPopup({
             ))}
           </div>
           <p className="text-xs text-gray-400 mt-2.5">
-            Tinggal pilih karat dan ketik angkanya — format Rupiah (mis. Rp 1.050.000) terisi otomatis.
+            Karat bebas diisi angka berapapun (10K, 12K, dst). Karat yang sama boleh dipakai
+            berkali-kali kalau punya beberapa tingkat harga — isi Label Harga (mis. &quot;Harga A&quot;,
+            &quot;Harga B&quot;) supaya tidak saling timpa.
           </p>
 
           {/* Add row */}
@@ -391,9 +402,10 @@ export default function DashboardPage() {
         invQuery,
         supabase
           .from("harga_emas")
-          .select("id,karat,harga_beli,harga_jual,tanggal")
+          .select("id,karat,label,harga_beli,harga_jual,tanggal")
           .eq("tanggal", todayStr)
-          .order("karat", { ascending: false }),
+          .order("karat", { ascending: false })
+          .order("label", { ascending: true }),
         supabase.from("hutang").select("harga_total").eq("status", "Belum Lunas"),
         supabase.from("piutang").select("jumlah_piutang").eq("status", "Belum Lunas"),
       ]);
@@ -625,9 +637,14 @@ export default function DashboardPage() {
                   ))
                 ) : hargaEmas.length > 0 ? (
                   hargaEmas.map((row) => (
-                    <div key={row.karat} className="grid grid-cols-3 gap-4">
-                      <div className="relative border-2 rounded-lg px-4 py-3 flex items-center" style={{ borderColor: "#F0DDA8", backgroundColor: "#FDF6E3" }}>
+                    <div key={row.id ?? `${row.karat}-${row.label}`} className="grid grid-cols-3 gap-4">
+                      <div className="relative border-2 rounded-lg px-4 py-3 flex items-center gap-2" style={{ borderColor: "#F0DDA8", backgroundColor: "#FDF6E3" }}>
                         <span className="text-lg font-extrabold" style={{ color: "#6F5333" }}>{row.karat}K</span>
+                        {row.label && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-white" style={{ color: "#6F5333" }}>
+                            {row.label}
+                          </span>
+                        )}
                       </div>
                       <div className="border border-gray-200 rounded-lg px-4 py-3 bg-white text-gray-900 text-base font-bold">
                         Rp {fmt(row.harga_beli)}
