@@ -3,15 +3,9 @@ import { JENIS_BARANG_BASE } from "@/lib/csv";
 /** Pilihan jenis perhiasan — sama dengan kategori barang di Inventori */
 export const JENIS_PERHIASAN_OPTIONS = JENIS_BARANG_BASE;
 
-/** Pilihan kadar emas standar */
-export const KADAR_OPTIONS = [
-  "24K (99.99%)",
-  "22K (91.6%)",
-  "18K (75%)",
-  "16K (66.6%)",
-  "14K (58.5%)",
-  "9K (37.5%)",
-];
+/** Pilihan kadar emas standar — dipakai sebagai baseSeed untuk MasterDataPicker
+ * (lihat tabel kadar_master di Supabase untuk kadar tambahan yang diketik user). */
+export const KADAR_OPTIONS = ["24K", "22K", "20K", "18K", "16K", "14K", "9K", "8K", "6K"];
 
 /** Pilihan jangka waktu gadai (bulan) */
 export const JANGKA_WAKTU_OPTIONS = [1, 3, 6, 12];

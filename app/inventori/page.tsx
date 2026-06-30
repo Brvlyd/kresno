@@ -3,14 +3,23 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { kodeForJenis, buildSeqCounters, nextIdItem, KODE_JENIS_SEED } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
+import { KADAR_OPTIONS } from "@/lib/gadai";
 import { AddJenisModal } from "@/components/AddJenisModal";
 import StorageImage from "@/components/StorageImage";
 import { useJenisBarang } from "@/lib/useJenisBarang";
+import { useCustomList } from "@/lib/useCustomList";
+import { useNamaBarangList } from "@/lib/masterData";
+import { MasterDataPicker } from "@/components/MasterDataPicker";
+import { AutocompleteField } from "@/components/AutocompleteField";
 import JsBarcode from "jsbarcode";
+
+const KADAR_FORMAT_RE = /^\d+(\.\d+)?K$/;
+const validateKadarFormat = (v: string): string | null =>
+  KADAR_FORMAT_RE.test(v.trim().toUpperCase()) ? null : "Format kadar harus angka diikuti K, contoh: 24K atau 18K.";
 
 /* ─── Types ─── */
 interface BarangRow {
@@ -385,11 +394,13 @@ function DetailBarangPopup({
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState("");
-  const [showAddJenis, setShowAddJenis] = useState(false);
   const [showBarcodePreview, setShowBarcodePreview] = useState(false);
   const [catatHutang, setCatatHutang] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const jenisTouchedRef = useRef(false);
+
+  const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
+  const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
 
   useEffect(() => {
     if (!open) return;
@@ -525,6 +536,8 @@ function DetailBarangPopup({
 
     if (error) { setSaving(false); setMsg("Gagal menyimpan: " + error.message); return; }
 
+    recordNamaBarang(payload.nama_produk);
+
     if (!editData && catatHutang && payload.supplier) {
       const jatuhTempo = new Date();
       jatuhTempo.setDate(jatuhTempo.getDate() + 30);
@@ -613,52 +626,26 @@ function DetailBarangPopup({
           {/* Jenis Barang */}
           <div>
             <label className="block text-base font-semibold text-gray-700 mb-1.5">Jenis Barang</label>
-            <p className="text-sm text-gray-400 mb-1.5">Pilih jenis barang ini. Tidak ada di daftar? Tambahkan jenis baru.</p>
-            <div className="flex flex-wrap gap-2">
-              {jenisOptions.map((j) => (
-                <div key={j} className="relative">
-                  <button
-                    type="button"
-                    onClick={() => { jenisTouchedRef.current = true; set("jenis_barang", j); }}
-                    className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
-                      form.jenis_barang === j
-                        ? "bg-[#C99A36] border-[#C99A36] text-white"
-                        : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                    }`}
-                  >
-                    {j}
-                  </button>
-                  {customJenis.includes(j) && (
-                    <button
-                      type="button"
-                      onClick={() => onDeleteJenis(j)}
-                      title={`Hapus jenis "${j}" dari daftar`}
-                      className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center hover:bg-red-600 transition-colors"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-              ))}
+            <p className="text-sm text-gray-400 mb-1.5">Cari atau pilih jenis barang ini. Tidak ada di daftar? Tambahkan jenis baru.</p>
+            <MasterDataPicker
+              value={form.jenis_barang}
+              onChange={(v) => { jenisTouchedRef.current = true; set("jenis_barang", v); }}
+              options={jenisOptions}
+              onAddNew={onAddJenis}
+              placeholder="Cari atau pilih jenis barang..."
+              modalTitle="Tambah Jenis Barang Baru"
+              modalLabel="Nama Jenis Barang"
+            />
+            {customJenis.includes(form.jenis_barang) && (
               <button
                 type="button"
-                onClick={() => setShowAddJenis(true)}
-                className="px-4 py-2.5 rounded-full text-base font-semibold border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#C99A36] hover:text-[#C99A36] transition-colors"
+                onClick={() => { onDeleteJenis(form.jenis_barang); set("jenis_barang", JENIS[0]); }}
+                className="mt-1.5 text-xs font-semibold text-red-500 hover:underline"
               >
-                + Jenis Baru
+                Hapus jenis &ldquo;{form.jenis_barang}&rdquo; dari daftar
               </button>
-            </div>
+            )}
           </div>
-
-          <AddJenisModal
-            open={showAddJenis}
-            onClose={() => setShowAddJenis(false)}
-            onAdd={async (nama) => {
-              const result = await onAddJenis(nama);
-              if (result) { jenisTouchedRef.current = true; set("jenis_barang", result); }
-              return result;
-            }}
-          />
 
           {/* Jenis Inventori */}
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4">
@@ -709,11 +696,14 @@ function DetailBarangPopup({
             <label className="block text-base font-semibold text-gray-700 mb-1.5">
               {form.jenis_inventori === "Aset" ? "Item / Deskripsi Aset" : "Nama Barang"}
             </label>
-            <input
+            <AutocompleteField
               value={form.nama_produk}
-              onChange={(e) => set("nama_produk", e.target.value)}
+              onChange={(v) => set("nama_produk", v)}
+              onSelect={(v) => set("nama_produk", v)}
+              suggestions={namaBarangOptions.filter((n) => n.toLowerCase().includes(form.nama_produk.trim().toLowerCase())).slice(0, 8)}
+              renderLabel={(n) => n}
               placeholder="Contoh: Gelang Rantai Singapur"
-              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+              inputClassName="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
             />
           </div>
 
@@ -780,11 +770,16 @@ function DetailBarangPopup({
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="flex flex-col gap-1">
-                <input
+                <MasterDataPicker
                   value={form.kadar}
-                  onChange={(e) => set("kadar", e.target.value.toUpperCase())}
+                  onChange={(v) => set("kadar", v.toUpperCase())}
+                  options={kadarOptions}
+                  onAddNew={addCustomKadar}
+                  validate={validateKadarFormat}
                   placeholder="24K"
-                  className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                  modalTitle="Tambah Kadar Baru"
+                  modalLabel="Kadar Emas"
+                  modalPlaceholder="Contoh: 24K"
                 />
                 <span className="text-xs text-gray-400">Angka + K (contoh: 24K)</span>
               </div>
@@ -1020,10 +1015,135 @@ function HapusPopup({
   );
 }
 
+/* ─── Hasil Scan Barcode (konfirmasi ditemukan / tidak ditemukan) ─── */
+type ScanResult =
+  | { type: "found"; item: BarangRow }
+  | { type: "notfound"; code: string };
+
+function ScanResultPopup({
+  result, onClose, onEdit,
+}: {
+  result: ScanResult | null;
+  onClose: () => void;
+  onEdit: (item: BarangRow) => void;
+}) {
+  if (!result) return null;
+
+  if (result.type === "notfound") {
+    return (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-2">Barang Tidak Ditemukan</h3>
+          <p className="text-gray-500 text-base mb-1">
+            Kode barcode <strong className="font-mono">{result.code}</strong> tidak cocok dengan barang manapun di inventori.
+          </p>
+          <p className="text-gray-400 text-sm mb-6">
+            Pastikan barcode sudah benar, atau barang ini belum didaftarkan ke inventori.
+          </p>
+          <button
+            onClick={onClose}
+            className="w-full py-3.5 rounded-xl bg-red-500 hover:bg-red-600 text-white font-bold text-base transition-colors"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const item = result.item;
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-green-50 border-b border-green-100 px-6 py-5 text-center">
+          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <svg className="w-8 h-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/>
+            </svg>
+          </div>
+          <h3 className="text-xl font-bold text-gray-900">Barang Berhasil Dipindai</h3>
+          <p className="text-gray-500 text-sm mt-1">Detail barang hasil scan barcode:</p>
+        </div>
+
+        <div className="px-6 py-5">
+          <div className="flex items-center gap-3 mb-4">
+            {item.gambar_url ? (
+              <StorageImage src={item.gambar_url} alt={item.nama_produk} className="w-14 h-14 rounded-xl object-cover border border-gray-200 flex-shrink-0" />
+            ) : (
+              <div className="w-14 h-14 rounded-xl bg-gray-50 border border-gray-200 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-lg font-bold text-gray-900 truncate">{item.nama_produk}</p>
+              <p className="text-sm text-gray-400 font-mono">{item.id_item}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              <p className="text-[10px] text-amber-600 font-semibold uppercase">Karat</p>
+              <p className="text-base font-bold text-gray-900">{item.kadar || "—"}</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              <p className="text-[10px] text-amber-600 font-semibold uppercase">Berat</p>
+              <p className="text-base font-bold text-gray-900">{item.berat_gram}g</p>
+            </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-center">
+              <p className="text-[10px] text-amber-600 font-semibold uppercase">Stok</p>
+              <p className="text-base font-bold text-gray-900">{item.jumlah} pcs</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_BADGE[item.status_inventori] ?? "bg-gray-100 text-gray-600"}`}>
+              {item.status_inventori}
+            </span>
+            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
+              {item.jenis_inventori ?? "Stock Dalam"}
+            </span>
+          </div>
+
+          {item.jumlah <= 5 && (
+            <p className="text-red-600 text-sm font-semibold mt-3">⚠ Stok menipis, tersisa {item.jumlah} pcs.</p>
+          )}
+        </div>
+
+        <div className="px-6 pb-6 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3.5 rounded-xl border border-gray-300 text-gray-700 font-bold text-base hover:bg-gray-50 transition-colors"
+          >
+            Tutup
+          </button>
+          <button
+            onClick={() => { onEdit(item); onClose(); }}
+            className="flex-1 py-3.5 rounded-xl text-white font-bold text-base transition-all hover:opacity-90"
+            style={{ backgroundColor: "#C99A36" }}
+          >
+            Ubah Barang
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══ Main Inventori Page ═══ */
 function InventoriContent() {
   const supabase = createClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const processedScanRef = useRef<string | null>(null);
 
   const [items, setItems] = useState<BarangRow[]>([]);
   const [filtered, setFiltered] = useState<BarangRow[]>([]);
@@ -1042,8 +1162,21 @@ function InventoriContent() {
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
   const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
   const [jenisKodeMap, setJenisKodeMap] = useState<Record<string, string>>(KODE_JENIS_SEED);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
 
   const { allJenis, customJenis, addCustomJenis, deleteCustomJenis: deleteCustomJenisRaw } = useJenisBarang(JENIS);
+
+  // Pilih barang & pastikan tab/filter yang aktif tidak menyembunyikannya dari daftar
+  // (mis. barang hasil scan ada di tab "Aset" padahal tab yang sedang dibuka "Stock Dalam").
+  const focusItem = useCallback((item: BarangRow) => {
+    setSelected(item);
+    setActiveTab((item.jenis_inventori as typeof JENIS_INVENTORI[number]) ?? "Stock Dalam");
+    setFilterSubJenis("Semua");
+    setFilterJenis("Pilih Jenis Inventori");
+    setFilterStatus("Semua");
+    setSearch("");
+    setSearchAllTabs(false);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1073,14 +1206,14 @@ function InventoriContent() {
     }
     setJenisKodeMap(kodeMap);
 
-    // Auto-select from URL param
+    // Auto-select from URL param (link dari Dashboard / Konfirmasi Keluar)
     const idParam = searchParams.get("id");
     if (idParam) {
       const found = rows.find((r) => r.id === idParam);
-      if (found) setSelected(found);
+      if (found) focusItem(found);
     }
     setLoading(false);
-  }, [searchParams]);
+  }, [searchParams, focusItem]);
 
   // Ambil kode 3-huruf untuk jenis_barang; kalau belum ada, generate & simpan permanen
   const ensureKode = useCallback(async (jenis: string): Promise<string> => {
@@ -1102,6 +1235,28 @@ function InventoriContent() {
   }, [filterJenis, deleteCustomJenisRaw]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Hasil scan barcode (dari BarcodeScannerListener, lewat ?scan=KODE) -> tampilkan
+  // popup konfirmasi "ditemukan" dengan detail barang, atau popup "tidak ditemukan".
+  useEffect(() => {
+    const scanCode = searchParams.get("scan");
+    if (!scanCode || items.length === 0) return;
+    // Kunci dedup pakai kode + nonce "t" (bukan kode saja) supaya scan barang yang
+    // sama dua kali berturut-turut tetap memicu popup baru, bukan diabaikan.
+    const scanKey = `${scanCode}:${searchParams.get("t") ?? ""}`;
+    if (processedScanRef.current === scanKey) return;
+    processedScanRef.current = scanKey;
+
+    const idItem = scanCode.trim().toUpperCase();
+    const found = items.find((i) => i.id_item.toUpperCase() === idItem);
+    if (found) {
+      focusItem(found);
+      setScanResult({ type: "found", item: found });
+    } else {
+      setScanResult({ type: "notfound", code: idItem });
+    }
+    router.replace("/inventori");
+  }, [items, searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply filters + sort, and keep selected in sync with latest DB data
   useEffect(() => {
@@ -1701,6 +1856,11 @@ function InventoriContent() {
         item={hapusItem}
         onClose={() => setHapusItem(null)}
         onConfirm={hapus}
+      />
+      <ScanResultPopup
+        result={scanResult}
+        onClose={() => setScanResult(null)}
+        onEdit={(item) => { setEditItem(item); setShowPopup(true); }}
       />
     </AppLayout>
   );

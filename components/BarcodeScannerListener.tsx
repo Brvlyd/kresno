@@ -57,6 +57,15 @@ export default function BarcodeScannerListener() {
           const idItem = code.slice(1).trim().toUpperCase();
           if (!idItem) return;
 
+          if (prefix === PREFIX_CEK) {
+            // Halaman /inventori sendiri yang mencari & menampilkan popup
+            // konfirmasi (ditemukan / tidak ditemukan) berdasarkan ?scan=.
+            // "&t=" dipakai sebagai nonce supaya scan barang yang sama dua kali
+            // berturut-turut tetap memicu popup baru (bukan diabaikan sebagai duplikat).
+            router.push(`/inventori?scan=${encodeURIComponent(idItem)}&t=${Date.now()}`);
+            return;
+          }
+
           const supabase = createClient();
           const { data } = await supabase
             .from("inventori")
@@ -68,12 +77,7 @@ export default function BarcodeScannerListener() {
             window.alert(`Barang dengan ID "${idItem}" tidak ditemukan di inventori.`);
             return;
           }
-
-          if (prefix === PREFIX_CEK) {
-            router.push(`/inventori?id=${data.id}`);
-          } else {
-            router.push(`/inventori/konfirmasi-keluar?id=${data.id}`);
-          }
+          router.push(`/inventori/konfirmasi-keluar?id=${data.id}`);
           return;
         }
 
@@ -88,18 +92,7 @@ export default function BarcodeScannerListener() {
         }
 
         if (pathname.startsWith("/inventori")) {
-          const supabase = createClient();
-          const { data } = await supabase
-            .from("inventori")
-            .select("id")
-            .eq("id_item", idItem)
-            .maybeSingle();
-
-          if (!data) {
-            window.alert(`Barang dengan ID "${idItem}" tidak ditemukan di inventori.`);
-            return;
-          }
-          router.push(`/inventori?id=${data.id}`);
+          router.push(`/inventori?scan=${encodeURIComponent(idItem)}&t=${Date.now()}`);
         }
         return;
       }

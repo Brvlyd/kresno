@@ -9,7 +9,15 @@ import { generateNoBuyback } from "@/lib/buyback";
 import type { InvoiceBuybackData } from "@/lib/buyback";
 import { InvoiceBuyback } from "@/components/InvoiceBuyback";
 import { printClean } from "@/lib/print";
-import { fmtRupiah, fmtGram, tglIndo } from "@/lib/gadai";
+import { fmtRupiah, fmtGram, tglIndo, KADAR_OPTIONS } from "@/lib/gadai";
+import { useCustomList } from "@/lib/useCustomList";
+import { useNamaBarangList } from "@/lib/masterData";
+import { MasterDataPicker } from "@/components/MasterDataPicker";
+import { AutocompleteField } from "@/components/AutocompleteField";
+
+const KADAR_FORMAT_RE = /^\d+(\.\d+)?K$/;
+const validateKadarFormat = (v: string): string | null =>
+  KADAR_FORMAT_RE.test(v.trim().toUpperCase()) ? null : "Format kadar harus angka diikuti K, contoh: 24K atau 18K.";
 
 interface BuybackRow {
   id: string;
@@ -63,6 +71,9 @@ export default function PembelianPage() {
   const [loading, setLoading] = useState(true);
   const [buybackReady, setBuybackReady] = useState<InvoiceBuybackData | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+
+  const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
+  const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
 
   const set = (key: keyof FormData, val: string) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -177,6 +188,7 @@ export default function PembelianPage() {
       harga_per_gram: beratGramNum > 0 ? Math.round(hargaBeliRp / beratGramNum) : 0,
       total: Math.round(hargaBeliRp * jumlahNum),
     });
+    recordNamaBarang(payload.nama_produk);
     setForm(emptyForm);
     setMsg("");
     load();
@@ -239,11 +251,14 @@ export default function PembelianPage() {
 
                 <div>
                   <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama / Deskripsi Barang</label>
-                  <input
+                  <AutocompleteField
                     value={form.nama_produk}
-                    onChange={(e) => set("nama_produk", e.target.value)}
+                    onChange={(v) => set("nama_produk", v)}
+                    onSelect={(v) => set("nama_produk", v)}
+                    suggestions={namaBarangOptions.filter((n) => n.toLowerCase().includes(form.nama_produk.trim().toLowerCase())).slice(0, 8)}
+                    renderLabel={(n) => n}
                     placeholder="Contoh: Cincin Rosok Patah"
-                    className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                    inputClassName="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36]"
                   />
                 </div>
 
@@ -254,11 +269,16 @@ export default function PembelianPage() {
                     ))}
                   </div>
                   <div className="grid grid-cols-3 gap-2">
-                    <input
+                    <MasterDataPicker
                       value={form.kadar}
-                      onChange={(e) => set("kadar", e.target.value.toUpperCase())}
+                      onChange={(v) => set("kadar", v.toUpperCase())}
+                      options={kadarOptions}
+                      onAddNew={addCustomKadar}
+                      validate={validateKadarFormat}
                       placeholder="24K"
-                      className="border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36]"
+                      modalTitle="Tambah Kadar Baru"
+                      modalLabel="Kadar Emas"
+                      modalPlaceholder="Contoh: 24K"
                     />
                     <input
                       type="number"

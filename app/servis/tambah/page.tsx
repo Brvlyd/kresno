@@ -12,8 +12,11 @@ import {
 import type { InvoiceServisData } from "@/lib/servis";
 import { InvoiceServis } from "@/components/InvoiceServis";
 import { printClean } from "@/lib/print";
-import { AddJenisModal } from "@/components/AddJenisModal";
 import { useJenisBarang } from "@/lib/useJenisBarang";
+import { useCustomList } from "@/lib/useCustomList";
+import { useNamaBarangList } from "@/lib/masterData";
+import { MasterDataPicker } from "@/components/MasterDataPicker";
+import { AutocompleteField } from "@/components/AutocompleteField";
 import StorageImage from "@/components/StorageImage";
 
 interface FormData {
@@ -71,10 +74,13 @@ function TambahServisContent() {
   const [savedNoServis, setSavedNoServis] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [showAddJenis, setShowAddJenis] = useState(false);
   const estimasiTouchedRef = useRef(false);
 
   const { allJenis: jenisOptions, addCustomJenis } = useJenisBarang(JENIS_PERHIASAN_OPTIONS);
+  const { all: kerusakanOptions, addCustom: addCustomKerusakan } = useCustomList("jenis_kerusakan_custom", JENIS_KERUSAKAN_OPTIONS);
+  const { all: tindakanOptions, addCustom: addCustomTindakan } = useCustomList("jenis_tindakan_custom", JENIS_TINDAKAN_OPTIONS);
+  const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
+  const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
 
   const set = <K extends keyof FormData>(key: K, val: FormData[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -171,6 +177,7 @@ function TambahServisContent() {
 
     setSavedId(data.id);
     setSavedNoServis(data.no_servis);
+    recordNamaBarang(form.nama_barang);
     return { id: data.id, no_servis: data.no_servis };
   };
 
@@ -378,48 +385,27 @@ function TambahServisContent() {
 
             <div>
               <label className="block text-base font-semibold text-gray-700 mb-1.5">Jenis Perhiasan</label>
-              <div className="flex flex-wrap gap-2">
-                {jenisOptions.map((j) => (
-                  <button
-                    key={j}
-                    type="button"
-                    onClick={() => set("jenis_perhiasan", j)}
-                    className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
-                      form.jenis_perhiasan === j
-                        ? "bg-[#C99A36] border-[#C99A36] text-white"
-                        : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                    }`}
-                  >
-                    {j}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setShowAddJenis(true)}
-                  className="px-4 py-2.5 rounded-full text-base font-semibold border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#C99A36] hover:text-[#C99A36] transition-colors"
-                >
-                  + Jenis Baru
-                </button>
-              </div>
-
-              <AddJenisModal
-                open={showAddJenis}
-                onClose={() => setShowAddJenis(false)}
-                onAdd={async (nama) => {
-                  const result = await addCustomJenis(nama);
-                  if (result) set("jenis_perhiasan", result);
-                  return result;
-                }}
+              <MasterDataPicker
+                value={form.jenis_perhiasan}
+                onChange={(v) => set("jenis_perhiasan", v)}
+                options={jenisOptions}
+                onAddNew={addCustomJenis}
+                placeholder="Cari atau pilih jenis perhiasan..."
+                modalTitle="Tambah Jenis Perhiasan Baru"
+                modalLabel="Nama Jenis Perhiasan"
               />
             </div>
 
             <div>
               <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Barang</label>
-              <input
+              <AutocompleteField
                 value={form.nama_barang}
-                onChange={(e) => set("nama_barang", e.target.value)}
+                onChange={(v) => set("nama_barang", v)}
+                onSelect={(v) => set("nama_barang", v)}
+                suggestions={namaBarangOptions.filter((n) => n.toLowerCase().includes(form.nama_barang.trim().toLowerCase())).slice(0, 8)}
+                renderLabel={(n) => n}
                 placeholder="Contoh: Gelang Rantai Singapur"
-                className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+                inputClassName="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
               />
             </div>
 
@@ -438,17 +424,16 @@ function TambahServisContent() {
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-600 mb-1.5">Kadar Emas</label>
-                <input
-                  type="text"
-                  list="kadar-servis-options"
+                <MasterDataPicker
                   value={form.kadar}
-                  onChange={(e) => set("kadar", e.target.value)}
+                  onChange={(v) => set("kadar", v)}
+                  options={kadarOptions}
+                  onAddNew={addCustomKadar}
                   placeholder="Contoh: 24K, 18K"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                  modalTitle="Tambah Kadar Baru"
+                  modalLabel="Kadar Emas"
+                  modalPlaceholder="Contoh: 24K"
                 />
-                <datalist id="kadar-servis-options">
-                  {KADAR_OPTIONS.map((k) => <option key={k} value={k} />)}
-                </datalist>
               </div>
             </div>
 
@@ -514,25 +499,27 @@ function TambahServisContent() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1.5">Jenis Kerusakan</label>
-                  <select
+                  <MasterDataPicker
                     value={form.jenis_kerusakan}
-                    onChange={(e) => set("jenis_kerusakan", e.target.value)}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
-                  >
-                    <option value="">Pilih kerusakan</option>
-                    {JENIS_KERUSAKAN_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
-                  </select>
+                    onChange={(v) => set("jenis_kerusakan", v)}
+                    options={kerusakanOptions}
+                    onAddNew={addCustomKerusakan}
+                    placeholder="Cari atau pilih jenis kerusakan..."
+                    modalTitle="Tambah Jenis Kerusakan Baru"
+                    modalLabel="Nama Jenis Kerusakan"
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1.5">Jenis Tindakan</label>
-                  <select
+                  <MasterDataPicker
                     value={form.jenis_tindakan}
-                    onChange={(e) => set("jenis_tindakan", e.target.value)}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
-                  >
-                    <option value="">Pilih tindakan</option>
-                    {JENIS_TINDAKAN_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                    onChange={(v) => set("jenis_tindakan", v)}
+                    options={tindakanOptions}
+                    onAddNew={addCustomTindakan}
+                    placeholder="Cari atau pilih jenis tindakan..."
+                    modalTitle="Tambah Jenis Tindakan Baru"
+                    modalLabel="Nama Jenis Tindakan"
+                  />
                 </div>
               </div>
 

@@ -11,8 +11,11 @@ import {
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { printClean } from "@/lib/print";
-import { AddJenisModal } from "@/components/AddJenisModal";
 import { useJenisBarang } from "@/lib/useJenisBarang";
+import { useCustomList } from "@/lib/useCustomList";
+import { useNamaBarangList } from "@/lib/masterData";
+import { MasterDataPicker } from "@/components/MasterDataPicker";
+import { AutocompleteField } from "@/components/AutocompleteField";
 import StorageImage from "@/components/StorageImage";
 
 interface BarangItemForm {
@@ -70,11 +73,11 @@ export default function TambahPengajuanGadaiPage() {
   const [savedNoGadai, setSavedNoGadai] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  const [showAddJenis, setShowAddJenis] = useState(false);
-  const [addJenisForIdx, setAddJenisForIdx] = useState<number | null>(null);
   const jatuhTempoTouchedRef = useRef(false);
 
   const { allJenis: jenisOptions, addCustomJenis } = useJenisBarang(JENIS_PERHIASAN_OPTIONS);
+  const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
+  const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
 
   const set = <K extends keyof FormData>(key: K, val: FormData[K]) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -234,6 +237,7 @@ export default function TambahPengajuanGadaiPage() {
     setSaving(false);
     setSavedId(data.id);
     setSavedNoGadai(data.no_gadai);
+    form.items.forEach((it) => recordNamaBarang(it.nama_barang));
     return { id: data.id, no_gadai: data.no_gadai };
   };
 
@@ -412,38 +416,27 @@ export default function TambahPengajuanGadaiPage() {
 
               <div>
                 <label className="block text-base font-semibold text-gray-700 mb-1.5">Jenis Perhiasan</label>
-                <div className="flex flex-wrap gap-2">
-                  {jenisOptions.map((j) => (
-                    <button
-                      key={j}
-                      type="button"
-                      onClick={() => setItem(idx, "jenis_perhiasan", j)}
-                      className={`px-4 py-2.5 rounded-full text-base font-semibold border-2 transition-colors ${
-                        item.jenis_perhiasan === j
-                          ? "bg-[#C99A36] border-[#C99A36] text-white"
-                          : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                      }`}
-                    >
-                      {j}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() => { setAddJenisForIdx(idx); setShowAddJenis(true); }}
-                    className="px-4 py-2.5 rounded-full text-base font-semibold border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#C99A36] hover:text-[#C99A36] transition-colors"
-                  >
-                    + Jenis Baru
-                  </button>
-                </div>
+                <MasterDataPicker
+                  value={item.jenis_perhiasan}
+                  onChange={(v) => setItem(idx, "jenis_perhiasan", v)}
+                  options={jenisOptions}
+                  onAddNew={addCustomJenis}
+                  placeholder="Cari atau pilih jenis perhiasan..."
+                  modalTitle="Tambah Jenis Perhiasan Baru"
+                  modalLabel="Nama Jenis Perhiasan"
+                />
               </div>
 
               <div>
                 <label className="block text-base font-semibold text-gray-700 mb-1.5">Nama Barang</label>
-                <input
+                <AutocompleteField
                   value={item.nama_barang}
-                  onChange={(e) => setItem(idx, "nama_barang", e.target.value)}
+                  onChange={(v) => setItem(idx, "nama_barang", v)}
+                  onSelect={(v) => setItem(idx, "nama_barang", v)}
+                  suggestions={namaBarangOptions.filter((n) => n.toLowerCase().includes(item.nama_barang.trim().toLowerCase())).slice(0, 8)}
+                  renderLabel={(n) => n}
                   placeholder="Contoh: Gelang Rantai Singapur"
-                  className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
+                  inputClassName="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/20"
                 />
               </div>
 
@@ -462,17 +455,16 @@ export default function TambahPengajuanGadaiPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-semibold text-gray-600 mb-1.5">Kadar Emas</label>
-                  <input
-                    type="text"
-                    list="kadar-gadai-options"
+                  <MasterDataPicker
                     value={item.kadar}
-                    onChange={(e) => setItem(idx, "kadar", e.target.value)}
+                    onChange={(v) => setItem(idx, "kadar", v)}
+                    options={kadarOptions}
+                    onAddNew={addCustomKadar}
                     placeholder="Contoh: 24K, 18K"
-                    className="w-full border border-gray-300 rounded-xl px-3 py-3 text-base focus:outline-none focus:border-[#C99A36] bg-white"
+                    modalTitle="Tambah Kadar Baru"
+                    modalLabel="Kadar Emas"
+                    modalPlaceholder="Contoh: 24K"
                   />
-                  <datalist id="kadar-gadai-options">
-                    {KADAR_OPTIONS.map((k) => <option key={k} value={k} />)}
-                  </datalist>
                 </div>
               </div>
 
@@ -530,16 +522,6 @@ export default function TambahPengajuanGadaiPage() {
               </div>
             </div>
           ))}
-
-          <AddJenisModal
-            open={showAddJenis}
-            onClose={() => setShowAddJenis(false)}
-            onAdd={async (nama) => {
-              const result = await addCustomJenis(nama);
-              if (result && addJenisForIdx !== null) setItem(addJenisForIdx, "jenis_perhiasan", result);
-              return result;
-            }}
-          />
 
           <button
             type="button"
