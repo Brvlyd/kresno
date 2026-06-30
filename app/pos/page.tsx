@@ -44,6 +44,7 @@ interface InvItem {
   gambar_url?: string;
   jenis_inventori?: string;
   barcode_no?: number | null;
+  id_item_lama?: string | null;
 }
 
 interface Pelanggan {
@@ -382,7 +383,7 @@ function POSContent() {
     processedScanRef.current = scanKey;
 
     const idItem = scanCode.trim().toUpperCase();
-    const found = items.find((i) => matchesBarcodeScan(i.id_item, i.barcode_no, idItem));
+    const found = items.find((i) => matchesBarcodeScan(i.id_item, i.barcode_no, i.id_item_lama, idItem));
     if (!found) {
       setScanResult({ type: "notfound", code: idItem });
     } else {

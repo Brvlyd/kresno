@@ -68,10 +68,10 @@ export default function BarcodeScannerListener() {
           }
 
           const supabase = createClient();
-          // Tiga generasi format barcode bisa beredar: id_item dengan "-" (label paling
-          // lama), id_item tanpa "-" (percobaan sebelumnya), atau barcode_no — nomor
-          // pendek dari DB (format terbaru, paling renggang/gampang discan). Coba
-          // id_item dulu, baru barcode_no kalau hasil scan-nya cuma angka.
+          // Beberapa generasi format barcode bisa beredar: id_item saat ini (dengan/tanpa
+          // "-"), barcode_no — nomor pendek dari DB (format terbaru, paling renggang/gampang
+          // discan), atau id_item_lama — id_item versi sebelum diringkas (barang yang sudah
+          // ada sebelum migration 029, label fisiknya belum tentu sudah dicetak ulang).
           let { data } = await supabase
             .from("inventori")
             .select("id")
@@ -82,6 +82,13 @@ export default function BarcodeScannerListener() {
               .from("inventori")
               .select("id")
               .eq("barcode_no", parseInt(idItem, 10))
+              .maybeSingle());
+          }
+          if (!data) {
+            ({ data } = await supabase
+              .from("inventori")
+              .select("id")
+              .in("id_item_lama", idItemScanCandidates(idItem))
               .maybeSingle());
           }
 

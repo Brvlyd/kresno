@@ -46,6 +46,7 @@ interface BarangRow {
   sub_jenis_aset?: string | null;
   no_buyback?: string | null;
   barcode_no?: number | null;
+  id_item_lama?: string | null;
 }
 
 interface FormData {
@@ -1318,7 +1319,7 @@ function InventoriContent({ onLock, onOpenChangePin }: {
     processedScanRef.current = scanKey;
 
     const idItem = scanCode.trim().toUpperCase();
-    const found = items.find((i) => matchesBarcodeScan(i.id_item, i.barcode_no, idItem));
+    const found = items.find((i) => matchesBarcodeScan(i.id_item, i.barcode_no, i.id_item_lama, idItem));
     if (found) {
       focusItem(found);
       setScanResult({ type: "found", item: found });
@@ -1348,6 +1349,7 @@ function InventoriContent({ onLock, onOpenChangePin }: {
       const q = search.toLowerCase();
       result = result.filter((r) =>
         r.id_item.toLowerCase().includes(q) ||
+        (r.id_item_lama ?? "").toLowerCase().includes(q) ||
         r.nama_produk.toLowerCase().includes(q) ||
         r.kadar.toLowerCase().includes(q)
       );

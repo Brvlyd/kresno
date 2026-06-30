@@ -170,16 +170,20 @@ export function idItemScanCandidates(rawCode: string): string[] {
 /**
  * Cocokkan hasil scan ke 1 barang, terlepas dari format barcode mana yang dipakai saat
  * label itu dicetak: id_item lengkap dengan "-" (label paling lama), id_item tanpa "-"
- * (percobaan sebelumnya), atau barcode_no — nomor pendek dari DB (lihat migration 028,
- * format terbaru, paling renggang/gampang discan).
+ * (percobaan sebelumnya), id_item_lama — id_item versi sebelum diringkas (lihat migration
+ * 029, dipakai barang yang sudah ada sebelum format ringkas berlaku), atau barcode_no —
+ * nomor pendek dari DB (lihat migration 028, format terbaru, paling renggang/gampang discan).
  */
 export function matchesBarcodeScan(
   idItem: string,
   barcodeNo: number | null | undefined,
+  idItemLama: string | null | undefined,
   scanCode: string
 ): boolean {
   const scanned = scanCode.trim().toUpperCase();
-  if (idItem.toUpperCase().replace(/-/g, "") === scanned.replace(/-/g, "")) return true;
+  const normalized = scanned.replace(/-/g, "");
+  if (idItem.toUpperCase().replace(/-/g, "") === normalized) return true;
+  if (idItemLama && idItemLama.toUpperCase().replace(/-/g, "") === normalized) return true;
   if (barcodeNo != null && /^\d+$/.test(scanned) && Number(scanned) === barcodeNo) return true;
   return false;
 }
