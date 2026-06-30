@@ -16,7 +16,7 @@ import { useCustomList } from "@/lib/useCustomList";
 import { useNamaBarangList } from "@/lib/masterData";
 import { MasterDataPicker } from "@/components/MasterDataPicker";
 import { AutocompleteField } from "@/components/AutocompleteField";
-import JsBarcode from "jsbarcode";
+import QRCode from "qrcode";
 
 const KADAR_FORMAT_RE = /^\d+(\.\d+)?K$/;
 const validateKadarFormat = (v: string): string | null =>
@@ -151,7 +151,7 @@ function BarcodePreviewModal({
 }) {
   const [checked, setChecked] = useState<boolean[]>([]);
   const [columns, setColumns] = useState<1 | 2 | 3>(3);
-  const svgRefs = useRef<(SVGSVGElement | null)[]>([]);
+  const [qrSvg, setQrSvg] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("barcodePrintColumns");
@@ -168,88 +168,65 @@ function BarcodePreviewModal({
     setChecked(Array(jumlah).fill(true));
   }, [open, jumlah]);
 
-  // Setiap unit dalam 1 batch (jumlah sama) dicetak dengan barcode IDENTIK — persis id_item,
-  // tanpa akhiran nomor unit, supaya hasil scan label manapun pasti cocok dengan id_item di database.
+  // Setiap unit dalam 1 batch (jumlah sama) dicetak dengan QR code IDENTIK — persis id_item,
+  // tanpa akhiran nomor unit, supaya hasil scan label manapun pasti cocok dengan id_item di
+  // database. Dulu pakai barcode CODE128 1D, tapi kepadetan/susah discan di label kecil --
+  // diganti QR (2D) karena lebih toleran ke ukuran cetak yang mungil & error sedikit lebih
+  // bisa dikoreksi printer thermal. Scanner yang dipakai toko sudah scanner 2D (imager).
   useEffect(() => {
     if (!open || !idItem) return;
-    const timer = setTimeout(() => {
-      // id_item penuh (mis. "24K-CIN-0149-0001", 17 char) masih kepadetan buat label
-      // 30x20mm walau "-"-nya dibuang (~156 modul CODE128 — masih lebih tipis dari
-      // resolusi printer thermal). Begitu barang sudah tersimpan & punya barcode_no
-      // (nomor pendek dari DB, lihat migration 028), barcode encode nomor itu saja
-      // (~79 modul, jauh lebih renggang/gampang discan). id_item lengkap tetap
-      // dicetak sebagai teks biasa di bawah barcode untuk dibaca manusia. Barang yang
-      // belum tersimpan (belum punya barcode_no) pakai fallback id_item tanpa "-".
-      // Lihat idItemScanCandidates() di lib/csv.ts untuk pencocokan saat scan.
-      const payload = barcodeNo != null ? String(barcodeNo).padStart(6, "0") : idItem.replace(/-/g, "");
-      svgRefs.current.forEach((el) => {
-        if (!el) return;
-        try {
-          JsBarcode(el, payload, {
-            format: "CODE128",
-            displayValue: false,
-            height: 100,
-            margin: 0,
-            width: 2,
-            lineColor: "#000000",
-            background: "#ffffff",
-          });
-          // Tanpa ini, browser memaksa proporsi (preserveAspectRatio bawaan) supaya pas
-          // dengan lebar label -> tinggi batang barcode jadi cuma terisi sebagian kecil
-          // dari tinggi yang dialokasikan ("letterbox"), batangnya jadi pendek & susah
-          // discan. "none" supaya tinggi batang dipakai penuh sesuai ukuran cetak.
-          el.setAttribute("preserveAspectRatio", "none");
-        } catch { /* ignore */ }
-      });
-    }, 40);
-    return () => clearTimeout(timer);
-  }, [open, idItem, barcodeNo, jumlah]);
+    let cancelled = false;
+    // id_item penuh (mis. "24K-CIN-0149-0001") tetap bisa, tapi begitu barang sudah
+    // tersimpan & punya barcode_no (nomor pendek dari DB, lihat migration 028), QR
+    // encode nomor itu saja supaya payload makin pendek/makin renggang modulnya.
+    // id_item lengkap tetap dicetak sebagai teks biasa di bawah QR utk dibaca manusia.
+    // Lihat idItemScanCandidates() di lib/csv.ts untuk pencocokan saat scan.
+    const payload = barcodeNo != null ? String(barcodeNo).padStart(6, "0") : idItem.replace(/-/g, "");
+    QRCode.toString(payload, {
+      type: "svg",
+      margin: 0,
+      errorCorrectionLevel: "M",
+      color: { dark: "#000000", light: "#ffffff" },
+    })
+      .then((svg) => { if (!cancelled) setQrSvg(svg); })
+      .catch(() => { if (!cancelled) setQrSvg(""); });
+    return () => { cancelled = true; };
+  }, [open, idItem, barcodeNo]);
 
   const selectedCount = checked.filter(Boolean).length;
 
   const doPrint = () => {
-    const selected: { code: string; svg: string }[] = [];
-    checked.forEach((on, i) => {
-      if (!on) return;
-      const el = svgRefs.current[i];
-      if (!el) return;
-      selected.push({ code: idItem, svg: el.outerHTML });
-    });
-    if (!selected.length) return;
+    if (!qrSvg || selectedCount === 0) return;
 
     const LABEL_W = 33; // mm — fisik 1 label di kertas roll (label thermal 33x15mm, 3 line)
     const LABEL_H = 15; // mm
     const GAP = 1; // mm — jarak antar label di kertas roll
     // Kertas rollnya fisik SELALU 3 kolom lebar (3x33mm + 2x1mm jarak) — lihat foto kertas label.
     // Halaman cetak (@page) HARUS selalu dibuat selebar itu juga, walau cuma sebagian
-    // kolom yang diisi barcode. Kalau halaman dibuat lebih sempit (mis. 33mm utk "1
+    // kolom yang diisi QR. Kalau halaman dibuat lebih sempit (mis. 33mm utk "1
     // Kolom"), printer/driver bakal men-scale isinya supaya pas dgn lebar kertas fisik
-    // -- hasilnya 1 barcode malah jadi besar & buram, bukan tetap 1 label kecil.
+    // -- hasilnya 1 label malah jadi besar & buram, bukan tetap 1 label kecil.
     // Makanya kolom yang TIDAK dipakai diisi <div> kosong (bukan dihilangkan dari grid).
     const PAPER_COLS = 3;
     const pageWidth = PAPER_COLS * LABEL_W + (PAPER_COLS - 1) * GAP;
 
-    const rowsHtml: string[] = [];
-    for (let r = 0; r < selected.length; r += columns) {
-      const rowItems = selected.slice(r, r + columns);
-      const labelsHtml = rowItems
-        .map(
-          ({ code, svg }) => `
+    const labelHtml = `
         <div class="label">
-          <div class="toko">Toko Mas Kresno</div>
-          ${svg}
-          <div class="kode">${code}</div>
-          <div class="nama">${namaProduk}</div>
-        </div>`
-        )
-        .join("");
-      const blankHtml = `<div class="label label-empty"></div>`.repeat(PAPER_COLS - rowItems.length);
+          ${qrSvg}
+          <div class="kode">${idItem}</div>
+        </div>`;
+
+    const rowsHtml: string[] = [];
+    for (let r = 0; r < selectedCount; r += columns) {
+      const rowCount = Math.min(columns, selectedCount - r);
+      const labelsHtml = labelHtml.repeat(rowCount);
+      const blankHtml = `<div class="label label-empty"></div>`.repeat(PAPER_COLS - rowCount);
       rowsHtml.push(`<div class="row">${labelsHtml}${blankHtml}</div>`);
     }
 
     const w = window.open("", "_blank", "width=400,height=300");
     if (!w) return;
-    w.document.write(`<html><head><title>Barcode ${idItem}</title>
+    w.document.write(`<html><head><title>QR ${idItem}</title>
       <style>
         @page { size: ${pageWidth}mm ${LABEL_H}mm; margin: 0; }
         * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -267,16 +244,17 @@ function BarcodePreviewModal({
         .label {
           width: ${LABEL_W}mm; height: ${LABEL_H}mm; overflow: hidden;
           display: flex; flex-direction: column; align-items: center; justify-content: center;
-          text-align: center; padding: 0.4mm 1mm;
+          text-align: center; padding: 0.3mm 0.5mm;
         }
         .label-empty { visibility: hidden; }
-        .label .toko { font-size: 4pt; font-weight: bold; line-height: 1.1; }
+        /* Fokus ke QR dulu (toko & nama produk sengaja dilepas dari label) supaya
+           ukuran QR bisa dimaksimalkan -- QR persegi jauh lebih toleran ke label
+           mungil & cetak kurang sempurna dibanding barcode 1D sebelumnya. */
         .label svg {
-          width: 29mm; height: 6.2mm; margin: 0.2mm 0;
+          width: 11.5mm; height: 11.5mm;
           shape-rendering: crispEdges;
         }
-        .label .kode { font-size: 4.5pt; font-weight: bold; letter-spacing: 0.5px; line-height: 1.1; }
-        .label .nama { font-size: 3.5pt; max-width: ${LABEL_W - 2}mm; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.05; }
+        .label .kode { font-size: 4.5pt; font-weight: bold; letter-spacing: 0.4px; line-height: 1.1; margin-top: 0.3mm; }
       </style></head>
       <body>${rowsHtml.join("")}
       <script>
@@ -371,10 +349,9 @@ function BarcodePreviewModal({
                     )}
                   </div>
                 </div>
-                <svg
-                  ref={(el) => { svgRefs.current[i] = el; }}
-                  className="w-full"
-                  style={{ height: 30 }}
+                <div
+                  className="w-12 h-12 mx-auto [&>svg]:w-full [&>svg]:h-full"
+                  dangerouslySetInnerHTML={{ __html: qrSvg }}
                 />
                 <p className="text-[10px] font-bold text-gray-800 tracking-wide">{idItem}</p>
                 <p className="text-[9px] text-gray-400 truncate w-full text-center">{namaProduk}</p>
@@ -393,7 +370,7 @@ function BarcodePreviewModal({
           </button>
           <button
             onClick={doPrint}
-            disabled={selectedCount === 0}
+            disabled={selectedCount === 0 || !qrSvg}
             className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-white font-bold transition-all hover:opacity-90 disabled:opacity-40"
             style={{ backgroundColor: "#C99A36" }}
           >
