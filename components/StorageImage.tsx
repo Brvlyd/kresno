@@ -27,5 +27,5 @@ export default function StorageImage({
   }, [src]);
 
   if (!resolved) return null;
-  return <img src={resolved} alt={alt} className={className} style={style} />;
+  return <img src={resolved} alt={alt} className={className} style={style} loading="lazy" />;
 }

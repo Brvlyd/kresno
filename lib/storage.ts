@@ -2,12 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const PUBLIC_URL_MARKER = "/object/public/";
 
-/**
- * URL yang tersimpan di kolom gambar_url/foto_*_url dibuat lewat getPublicUrl()
- * jaman bucket masih public. Sejak bucket dikunci jadi private (lihat migration
- * 021_lock_down_rls.sql), URL itu sendiri tidak lagi bisa diakses langsung —
- * harus ditukar jadi signed URL pakai bucket+path yang diekstrak darinya.
- */
+// Module-level cache: storedUrl → Promise<signedUrl | null>
+// Prevents duplicate createSignedUrl calls when multiple components show the same image.
+const signedUrlCache = new Map<string, Promise<string | null>>();
+
 function parseStoredUrl(url: string): { bucket: string; path: string } | null {
   const idx = url.indexOf(PUBLIC_URL_MARKER);
   if (idx === -1) return null;
@@ -25,9 +23,21 @@ export async function resolveImageUrl(
   if (!storedUrl) return null;
   const parsed = parseStoredUrl(storedUrl);
   if (!parsed) return storedUrl;
-  const { data, error } = await supabase.storage
+
+  if (signedUrlCache.has(storedUrl)) {
+    return signedUrlCache.get(storedUrl)!;
+  }
+
+  const promise = supabase.storage
     .from(parsed.bucket)
-    .createSignedUrl(parsed.path, expiresInSeconds);
-  if (error || !data) return null;
-  return data.signedUrl;
+    .createSignedUrl(parsed.path, expiresInSeconds)
+    .then(({ data, error }) => {
+      if (error || !data) { signedUrlCache.delete(storedUrl); return null; }
+      // Evict cache slightly before the signed URL expires
+      setTimeout(() => signedUrlCache.delete(storedUrl), (expiresInSeconds - 60) * 1000);
+      return data.signedUrl;
+    });
+
+  signedUrlCache.set(storedUrl, promise);
+  return promise;
 }
