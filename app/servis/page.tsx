@@ -123,7 +123,7 @@ function DetailServisPopup({
           aside, nav, #servis-screen, #servis-detail-overlay, #servis-invoice-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm; }
+          @page { size: A5 landscape; margin: 10mm 5mm; }
         }
       `}</style>
       {/* Invoice — hidden on screen, visible on print */}

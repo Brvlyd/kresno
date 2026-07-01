@@ -219,7 +219,7 @@ function TambahServisContent() {
           aside, nav, #servis-form-screen, #servis-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm; }
+          @page { size: A5 landscape; margin: 10mm 5mm; }
         }
       `}</style>
 

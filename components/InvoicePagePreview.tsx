@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /* Lebar area cetak nota: kertas A5 landscape (210mm) dikurangi margin
-   cetak 10mm kiri-kanan — harus sama persis dengan `@page { size: A5
-   landscape; margin: 10mm; }` di tiap halaman cetak, supaya preview di
+   cetak 5mm kiri-kanan — harus sama persis dengan `@page { size: A5
+   landscape; margin: 10mm 5mm; }` di tiap halaman cetak, supaya preview di
    layar terlihat seperti ukuran kertas asli. */
-const PAGE_WIDTH_PX = (190 / 25.4) * 96; // 190mm → px @96dpi ≈ 718px
+const PAGE_WIDTH_PX = (200 / 25.4) * 96; // 200mm → px @96dpi ≈ 756px
 
 export function InvoicePagePreview({ children }: { children: ReactNode }) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -39,7 +39,7 @@ export function InvoicePagePreview({ children }: { children: ReactNode }) {
         className="mx-auto bg-white shadow-lg ring-1 ring-black/10"
         style={{
           width: PAGE_WIDTH_PX,
-          padding: "10mm",
+          padding: "10mm 5mm",
           transform: `scale(${scale})`,
           transformOrigin: "top center",
         }}
