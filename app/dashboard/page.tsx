@@ -235,6 +235,8 @@ function HargaPopup({
 
         {/* Body */}
         <div className="px-6 py-5">
+          <div className="overflow-x-auto">
+            <div className="min-w-[500px]">
           {/* Column headers */}
           <div className="grid grid-cols-4 gap-3 mb-3 pr-11">
             {["Karat", "Label Harga (opsional)", "Harga Beli (Rp/gram)", "Harga Jual (Rp/gram)"].map((h) => (
@@ -321,6 +323,8 @@ function HargaPopup({
               </div>
             ))}
           </div>
+            </div>{/* min-w-[500px] */}
+          </div>{/* overflow-x-auto */}
           <p className="text-xs text-gray-400 mt-2.5">
             Karat bebas diisi angka berapapun (10K, 12K, dst). Karat yang sama boleh dipakai
             berkali-kali kalau punya beberapa tingkat harga — isi Label Harga (mis. &quot;Harga A&quot;,
@@ -680,6 +684,8 @@ export default function DashboardPage() {
             </div>
 
             <div className="bg-white">
+              <div className="overflow-x-auto">
+                <div className="min-w-[440px]">
               {/* Column headers */}
               <div className="mx-6 mt-5 mb-2">
                 <div className="grid grid-cols-4 gap-4 px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide" style={{ backgroundColor: "#FDF6E3", color: "#6F5333" }}>
@@ -769,6 +775,8 @@ export default function DashboardPage() {
                 </div>
               )}
               </div>
+                </div>{/* min-w-[440px] */}
+              </div>{/* overflow-x-auto */}
             </div>
           </div>
 

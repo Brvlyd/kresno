@@ -16,8 +16,8 @@ import {
   type RiwayatTransaksi,
 } from "@/lib/riwayatTransaksi";
 
-const BASE_LIMIT = 100;
-const LOAD_MORE_STEP = 100;
+const DB_MAX = 500;   // maks baris DB yang dimuat per query
+const PAGE_SIZE = 15; // jumlah invoice yang ditampilkan per halaman
 
 export default function RiwayatTransaksiPage() {
   const supabase = createClient();
@@ -26,16 +26,16 @@ export default function RiwayatTransaksiPage() {
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [rowLimit, setRowLimit] = useState(BASE_LIMIT);
+  const [page, setPage] = useState(0);
 
   const [riwayat, setRiwayat] = useState<RiwayatTransaksi[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hasMore, setHasMore] = useState(false);
+  const [tooMany, setTooMany] = useState(false);
 
   const [selectedRiwayat, setSelectedRiwayat] = useState<RiwayatTransaksi | null>(null);
   const [printRiwayat, setPrintRiwayat] = useState<RiwayatTransaksi | null>(null);
 
-  async function loadRiwayat(opts: { search: string; dateFrom: string; dateTo: string; rowLimit: number }) {
+  async function loadRiwayat(opts: { search: string; dateFrom: string; dateTo: string }) {
     setLoading(true);
 
     let query = supabase
@@ -43,7 +43,7 @@ export default function RiwayatTransaksiPage() {
       .select(RIWAYAT_SELECT)
       .not("no_invoice", "is", null)
       .order("created_at", { ascending: false })
-      .limit(opts.rowLimit);
+      .limit(DB_MAX + 1); // +1 untuk deteksi apakah ada lebih banyak
 
     // Karakter koma/tanda kurung dibuang dari kata kunci supaya tidak menabrak
     // sintaks filter .or() milik PostgREST/Supabase.
@@ -57,8 +57,9 @@ export default function RiwayatTransaksiPage() {
     if (opts.dateTo) query = query.lte("created_at", `${opts.dateTo}T23:59:59`);
 
     const { data } = await query;
-    setHasMore((data ?? []).length >= opts.rowLimit);
-    setRiwayat(groupRiwayatRows((data ?? []) as RiwayatRow[]));
+    const rows = (data ?? []) as RiwayatRow[];
+    setTooMany(rows.length > DB_MAX);
+    setRiwayat(groupRiwayatRows(rows.slice(0, DB_MAX)));
     setLoading(false);
   }
 
@@ -66,33 +67,23 @@ export default function RiwayatTransaksiPage() {
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      loadRiwayat({ search, dateFrom, dateTo, rowLimit });
+      loadRiwayat({ search, dateFrom, dateTo });
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [search, dateFrom, dateTo, rowLimit]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [search, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  function updateSearch(v: string) {
-    setSearch(v);
-    setRowLimit(BASE_LIMIT);
-  }
-  function updateDateFrom(v: string) {
-    setDateFrom(v);
-    setRowLimit(BASE_LIMIT);
-  }
-  function updateDateTo(v: string) {
-    setDateTo(v);
-    setRowLimit(BASE_LIMIT);
-  }
+  function updateSearch(v: string)   { setSearch(v);   setPage(0); }
+  function updateDateFrom(v: string) { setDateFrom(v); setPage(0); }
+  function updateDateTo(v: string)   { setDateTo(v);   setPage(0); }
   function resetFilter() {
-    setSearch("");
-    setDateFrom("");
-    setDateTo("");
-    setRowLimit(BASE_LIMIT);
+    setSearch(""); setDateFrom(""); setDateTo(""); setPage(0);
   }
 
   const isFiltering = search.trim() !== "" || dateFrom !== "" || dateTo !== "";
+  const totalPages   = Math.ceil(riwayat.length / PAGE_SIZE);
+  const pagedRiwayat = riwayat.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
     <>
@@ -164,13 +155,19 @@ export default function RiwayatTransaksiPage() {
 
           {/* List transaksi */}
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
-            <div className="flex items-center gap-2 mb-3">
+            <div className="flex items-center gap-2 mb-1">
               <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
               <h3 className="font-bold text-gray-800">
                 Daftar Transaksi {!loading && `(${riwayat.length})`}
               </h3>
             </div>
-            <p className="text-xs text-gray-400 -mt-1 mb-2 ml-3">Klik transaksi untuk melihat detail barangnya.</p>
+            <p className="text-xs text-gray-400 mb-3 ml-3">Klik transaksi untuk melihat detail barangnya.</p>
+
+            {tooMany && (
+              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-100 px-3 py-2 rounded-lg mb-3">
+                ⚠ Data sangat banyak — hanya menampilkan {DB_MAX} transaksi terakhir. Gunakan filter tanggal untuk mempersempit hasil.
+              </p>
+            )}
 
             {loading ? (
               <p className="text-sm text-gray-400 py-4">Memuat riwayat...</p>
@@ -181,19 +178,46 @@ export default function RiwayatTransaksiPage() {
             ) : (
               <>
                 <div className="divide-y divide-gray-50">
-                  {riwayat.map((r) => (
+                  {pagedRiwayat.map((r) => (
                     <RiwayatRowItem key={r.noInvoice} r={r} onClick={() => setSelectedRiwayat(r)} />
                   ))}
                 </div>
-                {hasMore && (
-                  <button
-                    type="button"
-                    onClick={() => setRowLimit((n) => n + LOAD_MORE_STEP)}
-                    className="w-full text-center py-3 mt-2 text-sm font-semibold border-t border-dashed border-gray-200 hover:bg-amber-50 transition-colors"
-                    style={{ color: "#6F5333" }}
-                  >
-                    Muat Lebih Banyak
-                  </button>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-4 mt-2 border-t border-dashed border-gray-200">
+                    <p className="text-xs text-gray-400">
+                      {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, riwayat.length)} dari {riwayat.length} transaksi
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setPage(0)}
+                        disabled={page === 0}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 text-sm font-bold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                      >«</button>
+                      <button
+                        onClick={() => setPage((p) => p - 1)}
+                        disabled={page === 0}
+                        className="px-3 h-8 flex items-center rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                      >‹ Prev</button>
+                      <span
+                        className="px-3 h-8 flex items-center rounded-lg text-xs font-bold text-white"
+                        style={{ backgroundColor: "#C99A36" }}
+                      >
+                        {page + 1} / {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setPage((p) => p + 1)}
+                        disabled={page >= totalPages - 1}
+                        className="px-3 h-8 flex items-center rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                      >Next ›</button>
+                      <button
+                        onClick={() => setPage(totalPages - 1)}
+                        disabled={page >= totalPages - 1}
+                        className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 text-sm font-bold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                      >»</button>
+                    </div>
+                  </div>
                 )}
               </>
             )}
@@ -215,7 +239,7 @@ export default function RiwayatTransaksiPage() {
 
       {/* MODAL: PREVIEW & CETAK NOTA */}
       {printRiwayat && (
-        <div id="riwayat-print-overlay" className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/60">
+        <div id="riwayat-print-overlay" className="fixed inset-0 z-80 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
               <div>
@@ -236,7 +260,7 @@ export default function RiwayatTransaksiPage() {
             </div>
             <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
               <p className="text-[11px] text-gray-400 text-center">
-                Pertama kali print di komputer ini? Di kotak dialog print, klik “Lainnya” / “More settings” lalu matikan “Header dan footer” supaya alamat web tidak ikut tercetak.
+                Pertama kali print di komputer ini? Di kotak dialog print, klik &ldquo;Lainnya&rdquo; / &ldquo;More settings&rdquo; lalu matikan &ldquo;Header dan footer&rdquo; supaya alamat web tidak ikut tercetak.
               </p>
               <div className="flex gap-3">
                 <button

@@ -210,10 +210,19 @@ function BarcodePreviewModal({
     const PAPER_COLS = 3;
     const pageWidth = PAPER_COLS * LABEL_W + (PAPER_COLS - 1) * GAP;
 
+    // Format berat: hilangkan trailing zeros (misal "2.5000" → "2.5g")
+    const beratDisplay = `${Number(beratGram)}g`;
+
     const labelHtml = `
         <div class="label">
-          ${qrSvg}
-          <div class="kode">${idItem}</div>
+          <div class="info-left">
+            <span class="kadar">${kadar}</span>
+            <span class="berat">${beratDisplay}</span>
+          </div>
+          <div class="qr-area">
+            ${qrSvg}
+            <div class="kode">${idItem}</div>
+          </div>
         </div>`;
 
     const rowsHtml: string[] = [];
@@ -243,18 +252,25 @@ function BarcodePreviewModal({
         .row:last-child { page-break-after: auto; break-after: auto; }
         .label {
           width: ${LABEL_W}mm; height: ${LABEL_H}mm; overflow: hidden;
-          display: flex; flex-direction: column; align-items: center; justify-content: center;
-          text-align: center; padding: 0.3mm 0.5mm;
+          display: flex; flex-direction: row; align-items: center;
+          padding: 0.4mm 0.6mm; gap: 0.8mm;
         }
         .label-empty { visibility: hidden; }
-        /* Fokus ke QR dulu (toko & nama produk sengaja dilepas dari label) supaya
-           ukuran QR bisa dimaksimalkan -- QR persegi jauh lebih toleran ke label
-           mungil & cetak kurang sempurna dibanding barcode 1D sebelumnya. */
-        .label svg {
-          width: 11.5mm; height: 11.5mm;
-          shape-rendering: crispEdges;
+        /* Ruang kiri ~19mm — diisi kadar & berat */
+        .info-left {
+          flex: 1; min-width: 0;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+          text-align: center; gap: 0.5mm;
         }
-        .label .kode { font-size: 4.5pt; font-weight: bold; letter-spacing: 0.4px; line-height: 1.1; margin-top: 0.3mm; }
+        .kadar { font-size: 7pt; font-weight: 900; line-height: 1.1; }
+        .berat { font-size: 6pt;  font-weight: bold; line-height: 1.1; }
+        /* QR tetap 11.5mm — tidak diperkecil */
+        .qr-area {
+          flex-shrink: 0;
+          display: flex; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .qr-area svg { width: 11.5mm; height: 11.5mm; shape-rendering: crispEdges; }
+        .kode { font-size: 4.5pt; font-weight: bold; letter-spacing: 0.4px; line-height: 1.1; margin-top: 0.3mm; text-align: center; }
       </style></head>
       <body>${rowsHtml.join("")}
       <script>
@@ -349,12 +365,20 @@ function BarcodePreviewModal({
                     )}
                   </div>
                 </div>
-                <div
-                  className="w-12 h-12 mx-auto [&>svg]:w-full [&>svg]:h-full"
-                  dangerouslySetInnerHTML={{ __html: qrSvg }}
-                />
-                <p className="text-[10px] font-bold text-gray-800 tracking-wide">{idItem}</p>
-                <p className="text-[9px] text-gray-400 truncate w-full text-center">{namaProduk}</p>
+                {/* Preview: kiri = kadar+berat (ruang kosong), kanan = QR penuh + kode */}
+                <div className="flex items-center gap-1.5 w-full">
+                  <div className="flex flex-col items-center justify-center flex-1 min-w-0 gap-0.5">
+                    <p className="text-[10px] font-black text-gray-800 leading-tight">{kadar}</p>
+                    <p className="text-[9px] font-bold text-gray-500 leading-tight">{Number(beratGram)}g</p>
+                  </div>
+                  <div className="flex flex-col items-center shrink-0">
+                    <div
+                      className="w-12 h-12 [&>svg]:w-full [&>svg]:h-full"
+                      dangerouslySetInnerHTML={{ __html: qrSvg }}
+                    />
+                    <p className="text-[8px] font-bold text-gray-800 tracking-wide truncate max-w-[48px] text-center leading-tight">{idItem}</p>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
@@ -1301,7 +1325,6 @@ function InventoriContent({ onLock, onOpenChangePin }: {
     const found = items.find((i) => matchesBarcodeScan(i.id_item, i.barcode_no, i.id_item_lama, idItem));
     if (found) {
       focusItem(found);
-      setScanResult({ type: "found", item: found });
     } else {
       setScanResult({ type: "notfound", code: idItem });
     }

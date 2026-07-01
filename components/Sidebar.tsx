@@ -142,8 +142,7 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* ── MOBILE: spacer ── */}
-      <div className="lg:hidden print:hidden h-[58px]" />
+      {/* ── MOBILE: spacer dipindah ke AppLayout agar posisi benar ── */}
 
       {/* ── MOBILE: slide-down menu ── */}
       {mobileOpen && (

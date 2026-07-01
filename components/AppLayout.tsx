@@ -14,6 +14,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <Sidebar />
         {/* Main content — pushed right by the sidebar spacer inside Sidebar */}
         <div className="flex-1 flex flex-col min-w-0 overflow-x-hidden">
+          {/* Spacer agar konten tidak tertutup mobile top bar (h-[58px] fixed) */}
+          <div className="lg:hidden h-[58px] flex-shrink-0 print:hidden" />
           {children}
         </div>
       </div>

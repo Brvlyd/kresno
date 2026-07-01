@@ -75,7 +75,7 @@ function sumByKadar<T>(rows: T[], kadarOf: (r: T) => string, value: (r: T) => nu
 }
 
 /** Target jumlah baris per halaman tabel Sisa Stok di layar (cetakan tetap menampilkan semuanya). */
-const STOK_PAGE_SIZE = 25;
+const STOK_PAGE_SIZE = 20;
 
 /** Pecah daftar kelompok (mis. per karat atau per tanggal) jadi beberapa halaman tanpa
  * memutus satu kelompok di tengah, supaya baris header/subtotal tiap kelompok tidak
@@ -479,6 +479,9 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   const [showPreview, setShowPreview] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("bulanan");
   const [pageByKey, setPageByKey] = useState<Record<string, number>>({});
+  const [printSections, setPrintSections] = useState<Record<"stok" | "transaksi" | "laba_rugi" | "aset" | "log", boolean>>({
+    stok: true, transaksi: true, laba_rugi: true, aset: true, log: false,
+  });
 
   const label = filterLabel(mode, customDate, customMonth, rangeFrom, rangeTo);
   const [dateFrom, dateTo] = getDateRange(mode, customDate, customMonth, rangeFrom, rangeTo);
@@ -826,6 +829,13 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
     ["rentang", "Rentang Tanggal"],
   ];
 
+  const sectionCls = (id: "stok" | "transaksi" | "laba_rugi" | "aset" | "log", pageBreak = false): string => {
+    const enabled = printSections[id];
+    const show = showPreview ? enabled : tab === id;
+    const base = ["print-section", !enabled ? "print-exclude" : "", pageBreak && enabled ? "print-page-break" : ""].filter(Boolean).join(" ");
+    return show ? `block ${base}` : (enabled ? `hidden print:block ${base}` : `hidden ${base}`);
+  };
+
   return (
     <>
       {/* Print styles */}
@@ -833,17 +843,18 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
         @media print {
           aside, nav, .no-print { display: none !important; }
           .print-full { display: block !important; }
-          body { background: white !important; font-size: 10pt; color: #111; }
-          @page { margin: 15mm 18mm; size: A4; }
-          table { font-size: 8.5pt; border-collapse: collapse; width: 100%; }
+          .print-exclude { display: none !important; }
+          body { background: white !important; font-size: 9pt; color: #111; }
+          @page { margin: 12mm 15mm; size: A4; }
+          table { font-size: 7.5pt; border-collapse: collapse; width: 100%; }
           th { background: #f3f4f6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-          th, td { padding: 4pt 6pt !important; border-bottom: 0.5pt solid #e5e7eb; }
-          .print-section { page-break-inside: avoid; margin-bottom: 14pt; }
+          th, td { padding: 2pt 5pt !important; border-bottom: 0.5pt solid #e5e7eb; }
+          .print-section { page-break-inside: avoid; margin-bottom: 8pt; }
           .print-page-break { page-break-before: always; }
-          .rounded-2xl { border-radius: 6pt !important; }
+          .rounded-2xl { border-radius: 4pt !important; }
           .shadow-sm { box-shadow: none !important; }
-          h2 { font-size: 11pt; margin-bottom: 6pt; }
-          h3 { font-size: 10pt; }
+          h2 { font-size: 10pt; margin-bottom: 4pt; }
+          h3 { font-size: 9pt; }
         }
       `}</style>
 
@@ -852,34 +863,56 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
 
           {/* ── Bar Kontrol Pratinjau Cetak ── */}
           {showPreview && (
-            <div className="no-print sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-white border-b border-gray-200 shadow-sm flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">🧾</span>
-                <div>
-                  <p className="font-bold text-gray-900 text-sm">Pratinjau Laporan Keuangan</p>
-                  <p className="text-xs text-gray-500">Periksa kembali sebelum mencetak — periode {label}</p>
+            <div className="no-print sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 bg-white border-b border-gray-200 shadow-sm flex flex-col gap-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">🧾</span>
+                  <div>
+                    <p className="font-bold text-gray-900 text-sm">Pratinjau Laporan Keuangan</p>
+                    <p className="text-xs text-gray-500">Periode: {label}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowPreview(false)}
+                    className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Tutup Pratinjau
+                  </button>
+                  <button
+                    onClick={() => printClean()}
+                    className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-white text-sm font-bold transition-all hover:opacity-90 shadow-sm"
+                    style={{ backgroundColor: "#6F5333" }}
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                    </svg>
+                    Cetak Sekarang
+                  </button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setShowPreview(false)}
-                  className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl border-2 border-gray-300 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Tutup Pratinjau
-                </button>
-                <button
-                  onClick={() => printClean()}
-                  className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-white text-sm font-bold transition-all hover:opacity-90 shadow-sm"
-                  style={{ backgroundColor: "#6F5333" }}
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                  </svg>
-                  Cetak Sekarang
-                </button>
+              <div className="flex flex-wrap gap-1.5 items-center pt-1.5 border-t border-gray-100">
+                <span className="text-xs font-semibold text-gray-400 mr-1 whitespace-nowrap">Pilih bagian:</span>
+                {TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setPrintSections((p) => ({ ...p, [t.id]: !p[t.id] }))}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-semibold border-2 transition-colors ${
+                      printSections[t.id]
+                        ? "text-white border-transparent"
+                        : "bg-gray-50 text-gray-400 border-gray-200 line-through"
+                    }`}
+                    style={printSections[t.id] ? { backgroundColor: "#6F5333", borderColor: "#6F5333" } : {}}
+                  >
+                    {t.icon} {t.label}
+                  </button>
+                ))}
+                <span className="text-xs text-gray-400 ml-1">
+                  ({Object.values(printSections).filter(Boolean).length} bagian dipilih)
+                </span>
               </div>
             </div>
           )}
@@ -1169,7 +1202,8 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
           </div>
 
           {/* ── Navigasi Tab ── */}
-          <div className="grid grid-cols-5 gap-1 p-1 bg-gray-100 rounded-2xl no-print">
+          <div className="overflow-x-auto no-print">
+          <div className="grid grid-cols-5 gap-1 p-1 bg-gray-100 rounded-2xl min-w-[380px]">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -1186,6 +1220,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
               </button>
             ))}
           </div>
+          </div>{/* overflow-x-auto */}
           </>
           )}
 
@@ -1203,7 +1238,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
           ) : (
             <>
               {/* ══ TAB 1: SISA STOK ══ */}
-              <div className={(showPreview || tab === "stok") ? "block print-section" : "hidden print:block print-section"}>
+              <div className={sectionCls("stok")}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Sisa Stok Tersedia</h2>
                   <p className="text-sm text-gray-500 print:hidden">
@@ -1257,14 +1292,21 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                       }
                       const kadarKeysJenis = sortKadarDesc(Object.keys(rowsByKadar));
 
-                      // Paginasi di layar saja — pratinjau/cetakan tetap menampilkan semua baris.
-                      const groupPages = paginateGroups(kadarKeysJenis, rowsByKadar, STOK_PAGE_SIZE);
-                      const pageIdx = showPreview ? -1 : Math.min(pageByKey[`jenis:${jenis}`] ?? 0, groupPages.length - 1);
-                      const visibleKadarKeys = showPreview ? kadarKeysJenis : groupPages[pageIdx];
-                      const visibleItemCount = visibleKadarKeys.reduce((s, k) => s + rowsByKadar[k].length, 0);
-                      let rowNo = showPreview
-                        ? 0
-                        : groupPages.slice(0, pageIdx).reduce((s, pg) => s + pg.reduce((s2, k) => s2 + rowsByKadar[k].length, 0), 0);
+                      // Flat pagination per-baris supaya satu kadar besar (mis. 78 item 8K)
+                      // tetap dipotong tiap 20 baris, bukan jadi satu halaman raksasa.
+                      const allRowsFlat = kadarKeysJenis.flatMap((k) => rowsByKadar[k]);
+                      const { pageItems: stokPageItems, totalPages: stokTotalPages, safePage: stokSafePage } =
+                        paginateFlat(allRowsFlat, pageByKey[`jenis:${jenis}`] ?? 0, STOK_PAGE_SIZE);
+                      // Regroup hasil halaman ini per-kadar agar subtotal per-kadar tetap tampil.
+                      const pageRowsByKadar: Record<string, typeof rows> = {};
+                      for (const r of stokPageItems) {
+                        const k = normalizeKadar(r.kadar);
+                        if (!pageRowsByKadar[k]) pageRowsByKadar[k] = [];
+                        pageRowsByKadar[k].push(r);
+                      }
+                      const visibleKadarKeys = sortKadarDesc(Object.keys(pageRowsByKadar));
+                      const visibleItemCount = stokPageItems.length;
+                      let rowNo = stokSafePage * STOK_PAGE_SIZE;
 
                       return (
                         <div key={jenis} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-4">
@@ -1292,7 +1334,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                               </thead>
                               <tbody className="divide-y divide-gray-50">
                                 {visibleKadarKeys.map((k) => {
-                                  const groupRows = rowsByKadar[k];
+                                  const groupRows = pageRowsByKadar[k];
                                   const kBerat = groupRows.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
                                   const kModalPersen = weightedAvgPersen(groupRows, "persen_modal");
                                   const kJualPersen = weightedAvgPersen(groupRows, "persen_jual");
@@ -1347,22 +1389,22 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                               </tfoot>
                             </table>
                           </div>
-                          {!showPreview && groupPages.length > 1 && (
+                          {stokTotalPages > 1 && (
                             <div className="no-print flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50 text-sm flex-wrap">
                               <p className="text-gray-500">
-                                Menampilkan {visibleItemCount} dari {rows.length} item &bull; Halaman {pageIdx + 1} dari {groupPages.length}
+                                Menampilkan {visibleItemCount} dari {rows.length} item &bull; Halaman {stokSafePage + 1} dari {stokTotalPages}
                               </p>
                               <div className="flex items-center gap-2">
                                 <button
-                                  onClick={() => setPageByKey((p) => ({ ...p, [`jenis:${jenis}`]: Math.max(0, pageIdx - 1) }))}
-                                  disabled={pageIdx === 0}
+                                  onClick={() => setPageByKey((p) => ({ ...p, [`jenis:${jenis}`]: Math.max(0, stokSafePage - 1) }))}
+                                  disabled={stokSafePage === 0}
                                   className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
                                 >
                                   &lsaquo; Sebelumnya
                                 </button>
                                 <button
-                                  onClick={() => setPageByKey((p) => ({ ...p, [`jenis:${jenis}`]: Math.min(groupPages.length - 1, pageIdx + 1) }))}
-                                  disabled={pageIdx === groupPages.length - 1}
+                                  onClick={() => setPageByKey((p) => ({ ...p, [`jenis:${jenis}`]: Math.min(stokTotalPages - 1, stokSafePage + 1) }))}
+                                  disabled={stokSafePage === stokTotalPages - 1}
                                   className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
                                 >
                                   Selanjutnya &rsaquo;
@@ -1464,7 +1506,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
               </div>
 
               {/* ══ TAB 2: STOK MASUK & KELUAR ══ */}
-              <div className={(showPreview || tab === "transaksi") ? "block print-section" : "hidden print:block print-section"}>
+              <div className={sectionCls("transaksi")}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Stok Masuk &amp; Keluar</h2>
                   <p className="text-sm text-gray-500 print:hidden">Pergerakan stok selama periode: {label}</p>
@@ -1784,7 +1826,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
               </div>
 
               {/* ══ TAB 3: LABA RUGI ══ */}
-              <div className={(showPreview || tab === "laba_rugi") ? "block print-section" : "hidden print:block print-page-break print-section"}>
+              <div className={sectionCls("laba_rugi", true)}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Laporan Laba Rugi</h2>
                   <p className="text-sm text-gray-500 print:hidden">Rekapitulasi pemasukan dan pengeluaran periode: {label}</p>
@@ -2007,7 +2049,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
               </div>
 
               {/* ══ TAB 4: NILAI ASET ══ */}
-              <div className={(showPreview || tab === "aset") ? "block print-section" : "hidden print:block print-page-break print-section"}>
+              <div className={sectionCls("aset", true)}>
                 <div className="mb-3">
                   <h2 className="font-bold text-gray-800 text-lg">Nilai Aset &amp; Modal</h2>
                   <p className="text-sm text-gray-500 print:hidden">
@@ -2342,15 +2384,22 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                 const totalMasuk = allTx.filter((t) => t.isDebit).reduce((s, t) => s + t.nilai, 0);
                 const totalKeluar = allTx.filter((t) => !t.isDebit && t.nilai > 0).reduce((s, t) => s + t.nilai, 0);
 
-                // Paginasi per kelompok tanggal di layar — pratinjau/cetak tetap menampilkan semua baris.
-                const dateKeys = Object.keys(grouped);
-                const logGroupPages = paginateGroups(dateKeys, grouped, LIST_PAGE_SIZE);
-                const logPageIdx = showPreview ? -1 : Math.min(pageByKey["log"] ?? 0, logGroupPages.length - 1);
-                const visibleDateKeys = showPreview ? dateKeys : logGroupPages[logPageIdx];
-                const visibleTxCount = visibleDateKeys.reduce((s, k) => s + grouped[k].length, 0);
+                // Flat pagination per-transaksi supaya satu tanggal ramai tidak jadi halaman raksasa.
+                const { pageItems: logPageItems, totalPages: logTotalPages, safePage: logSafePage } =
+                  paginateFlat(txFiltered, pageByKey["log"] ?? 0, LIST_PAGE_SIZE);
+                const pageGrouped = logPageItems.reduce<Record<string, typeof allTx>>((acc, tx) => {
+                  const key = tx.date.toLocaleDateString("id-ID", {
+                    weekday: "long", day: "numeric", month: "long", year: "numeric",
+                  });
+                  if (!acc[key]) acc[key] = [];
+                  acc[key].push(tx);
+                  return acc;
+                }, {});
+                const visibleDateKeys = Object.keys(pageGrouped);
+                const visibleTxCount = logPageItems.length;
 
                 return (
-                  <div className={(showPreview || tab === "log") ? "block print-section" : "hidden print:block print-page-break print-section"}>
+                  <div className={sectionCls("log", true)}>
                     <div className="mb-3">
                       <h2 className="font-bold text-gray-800 text-lg">Log Seluruh Transaksi</h2>
                       <p className="text-sm text-gray-500 print:hidden">Semua aktivitas pada periode: {label}</p>
@@ -2393,7 +2442,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         {/* Grouped list */}
                         <div className="space-y-4">
                           {visibleDateKeys.map((dateLabel) => {
-                            const txs = grouped[dateLabel];
+                            const txs = pageGrouped[dateLabel];
                             const dayIn = txs.filter((t) => t.isDebit).reduce((s, t) => s + t.nilai, 0);
                             const dayOut = txs.filter((t) => !t.isDebit && t.nilai > 0).reduce((s, t) => s + t.nilai, 0);
                             return (
@@ -2474,22 +2523,22 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                           })}
                         </div>
 
-                        {!showPreview && logGroupPages.length > 1 && (
+                        {logTotalPages > 1 && (
                           <div className="no-print flex items-center justify-between gap-3 px-5 py-3 mt-4 rounded-xl border border-gray-200 bg-white shadow-sm text-sm flex-wrap">
                             <p className="text-gray-500">
-                              Menampilkan {visibleTxCount} dari {txFiltered.length} transaksi &bull; Halaman {logPageIdx + 1} dari {logGroupPages.length}
+                              Menampilkan {visibleTxCount} dari {txFiltered.length} transaksi &bull; Halaman {logSafePage + 1} dari {logTotalPages}
                             </p>
                             <div className="flex items-center gap-2">
                               <button
-                                onClick={() => setPageByKey((p) => ({ ...p, log: Math.max(0, logPageIdx - 1) }))}
-                                disabled={logPageIdx === 0}
+                                onClick={() => setPageByKey((p) => ({ ...p, log: Math.max(0, logSafePage - 1) }))}
+                                disabled={logSafePage === 0}
                                 className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
                               >
                                 &lsaquo; Sebelumnya
                               </button>
                               <button
-                                onClick={() => setPageByKey((p) => ({ ...p, log: Math.min(logGroupPages.length - 1, logPageIdx + 1) }))}
-                                disabled={logPageIdx === logGroupPages.length - 1}
+                                onClick={() => setPageByKey((p) => ({ ...p, log: Math.min(logTotalPages - 1, logSafePage + 1) }))}
+                                disabled={logSafePage === logTotalPages - 1}
                                 className="px-3 py-1.5 rounded-lg border border-gray-300 font-semibold text-gray-600 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
                               >
                                 Selanjutnya &rsaquo;

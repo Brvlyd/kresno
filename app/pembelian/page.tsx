@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
 import { kodeForJenis, nextIdItemAtomic, KODE_JENIS_SEED } from "@/lib/csv";
@@ -14,10 +14,13 @@ import { useCustomList } from "@/lib/useCustomList";
 import { useNamaBarangList } from "@/lib/masterData";
 import { MasterDataPicker } from "@/components/MasterDataPicker";
 import { AutocompleteField } from "@/components/AutocompleteField";
+import DateField from "@/components/DateField";
 
 const KADAR_FORMAT_RE = /^\d+(\.\d+)?K$/;
 const validateKadarFormat = (v: string): string | null =>
   KADAR_FORMAT_RE.test(v.trim().toUpperCase()) ? null : "Format kadar harus angka diikuti K, contoh: 24K atau 18K.";
+
+const PAGE_SIZE = 20;
 
 interface BuybackRow {
   id: string;
@@ -28,6 +31,16 @@ interface BuybackRow {
   berat_gram: number;
   jumlah: number;
   harga_beli: number;
+  supplier: string;
+  tanggal_masuk: string;
+}
+
+interface EditForm {
+  nama_produk: string;
+  kadar: string;
+  berat_gram: string;
+  jumlah: string;
+  harga_beli: string;
   supplier: string;
   tanggal_masuk: string;
 }
@@ -59,8 +72,22 @@ function formatRibuan(v: string): string {
   return digits ? parseInt(digits, 10).toLocaleString("id-ID") : "";
 }
 
+function rowToInvoiceData(r: BuybackRow): InvoiceBuybackData {
+  return {
+    no_buyback: r.no_buyback ?? "—",
+    tanggal: r.tanggal_masuk,
+    nama_barang: r.nama_produk,
+    kadar: r.kadar,
+    berat_gram: r.berat_gram,
+    jumlah: r.jumlah,
+    harga_per_gram: r.berat_gram > 0 ? Math.round(r.harga_beli / r.berat_gram) : 0,
+    total: Math.round(r.harga_beli * r.jumlah),
+  };
+}
+
 export default function PembelianPage() {
   const supabase = createClient();
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -71,6 +98,22 @@ export default function PembelianPage() {
   const [loading, setLoading] = useState(true);
   const [buybackReady, setBuybackReady] = useState<InvoiceBuybackData | null>(null);
   const [showPreview, setShowPreview] = useState(false);
+
+  // Filter & pagination state
+  const [search, setSearch] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [page, setPage] = useState(0);
+
+  // Detail & invoice dari riwayat
+  const [selectedRow, setSelectedRow] = useState<BuybackRow | null>(null);
+  const [previewRow, setPreviewRow] = useState<BuybackRow | null>(null);
+
+  // Edit mode dalam modal detail
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editMsg, setEditMsg] = useState("");
 
   const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
   const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
@@ -105,15 +148,19 @@ export default function PembelianPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Isi awal "Harga Emas Hari Ini" dari patokan 24K (Dashboard) begitu kepanggil/berubah,
-  // TAPI cuma kalau field-nya masih kosong — supaya tidak menimpa harga yang sedang diketik
-  // staff (harganya boleh beda tiap transaksi, makanya tetap bisa diedit manual).
   useEffect(() => {
     const beli24 = hargaEmasByKarat[24]?.harga_beli;
     if (beli24 != null && beli24 > 0 && !form.harga_emas_hari_ini) {
       setForm((f) => ({ ...f, harga_emas_hari_ini: String(beli24) }));
     }
   }, [hargaEmasByKarat]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounce search reset page
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setPage(0), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search, dateFrom, dateTo]);
 
   const missingFields = (): string[] => {
     const missing: string[] = [];
@@ -144,10 +191,6 @@ export default function PembelianPage() {
     const jumlahNum = parseInt(form.jumlah) || 1;
     const tanggalMasuk = new Date().toISOString().split("T")[0];
 
-    // Update patokan 24K hari ini (dipakai jg oleh halaman lain — POS, Inventori, Dashboard)
-    // supaya selaras dgn harga yang baru saja diketik staff di sini. harga_jual baris ini
-    // SENGAJA dipertahankan apa adanya (bukan ikut diisi 0), supaya kalkulasi % penjualan
-    // di halaman lain yang masih memakainya tidak ikut berubah gara-gara transaksi buyback.
     const { error: hargaError } = await supabase.from("harga_emas").upsert(
       {
         tanggal: tanggalMasuk, karat: 24, label: "",
@@ -175,9 +218,6 @@ export default function PembelianPage() {
       status_inventori: "Tersedia",
       status_laporan: "Draf",
       kategori: "Emas Rosok",
-      // Barang rosok belum dijual lagi apa adanya (biasanya dilebur/diproses ulang dulu),
-      // jadi harga_jual sengaja dikosongkan (0) -- diisi manual lewat Inventori kalau nanti
-      // memang mau langsung dijual.
       harga_beli: hargaBeliRp,
       harga_jual: 0,
       supplier: form.supplier.trim(),
@@ -190,9 +230,6 @@ export default function PembelianPage() {
       no_buyback: noBuyback,
     };
 
-    // id_item dirakit lewat fungsi atomik di DB (bukan dihitung dari snapshot existingIds di
-    // browser), supaya aman dipakai banyak user input bersamaan — lalu insert-nya dicoba ulang
-    // kalau (jarang sekali) tetap kena bentrok unique constraint.
     let error: { message: string; code?: string } | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       payload.id_item = await nextIdItemAtomic(supabase, form.kadar.trim(), kode, beratGramNum);
@@ -218,11 +255,99 @@ export default function PembelianPage() {
     load();
   };
 
+  // Filtered + paginated riwayat
+  const filteredRiwayat = riwayat.filter((r) => {
+    if (dateFrom && r.tanggal_masuk < dateFrom) return false;
+    if (dateTo && r.tanggal_masuk > dateTo) return false;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      if (
+        !r.nama_produk.toLowerCase().includes(q) &&
+        !r.supplier.toLowerCase().includes(q) &&
+        !(r.no_buyback ?? "").toLowerCase().includes(q)
+      ) return false;
+    }
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredRiwayat.length / PAGE_SIZE);
+  const pagedRiwayat = filteredRiwayat.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const isFiltering = search.trim() !== "" || dateFrom !== "" || dateTo !== "";
+
+  function resetFilter() {
+    setSearch(""); setDateFrom(""); setDateTo(""); setPage(0);
+  }
+
+  function closeDetailModal() {
+    setSelectedRow(null);
+    setEditMode(false);
+    setEditForm(null);
+    setEditMsg("");
+  }
+
+  function openEdit(r: BuybackRow) {
+    setEditForm({
+      nama_produk: r.nama_produk,
+      kadar: r.kadar,
+      berat_gram: String(r.berat_gram),
+      jumlah: String(r.jumlah),
+      harga_beli: r.harga_beli.toLocaleString("id-ID"),
+      supplier: r.supplier,
+      tanggal_masuk: r.tanggal_masuk,
+    });
+    setEditMsg("");
+    setEditMode(true);
+  }
+
+  async function saveEdit() {
+    if (!selectedRow || !editForm) return;
+    const nama = editForm.nama_produk.trim();
+    const kadar = editForm.kadar.trim().toUpperCase();
+    const berat = parseFloat(editForm.berat_gram);
+    const jumlah = parseInt(editForm.jumlah);
+    const hargaBeli = parseInt(editForm.harga_beli.replace(/\D/g, ""), 10);
+    const supplier = editForm.supplier.trim();
+
+    if (!nama) { setEditMsg("Nama barang tidak boleh kosong."); return; }
+    if (!KADAR_FORMAT_RE.test(kadar)) { setEditMsg("Format kadar harus angka diikuti K, contoh: 24K."); return; }
+    if (!berat || berat <= 0) { setEditMsg("Berat harus lebih dari 0."); return; }
+    if (!jumlah || jumlah < 1) { setEditMsg("Jumlah harus minimal 1."); return; }
+    if (!hargaBeli || hargaBeli <= 0) { setEditMsg("Harga beli harus lebih dari 0."); return; }
+    if (!supplier) { setEditMsg("Nama penjual tidak boleh kosong."); return; }
+
+    setEditSaving(true); setEditMsg("");
+    const { error } = await supabase
+      .from("inventori")
+      .update({
+        nama_produk: nama,
+        kadar,
+        berat_gram: berat,
+        jumlah,
+        harga_beli: hargaBeli,
+        supplier,
+        tanggal_masuk: editForm.tanggal_masuk,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", selectedRow.id);
+    setEditSaving(false);
+    if (error) { setEditMsg("Gagal menyimpan: " + error.message); return; }
+
+    const updated: BuybackRow = {
+      ...selectedRow,
+      nama_produk: nama, kadar, berat_gram: berat, jumlah,
+      harga_beli: hargaBeli, supplier, tanggal_masuk: editForm.tanggal_masuk,
+    };
+    setRiwayat((prev) => prev.map((r) => r.id === selectedRow.id ? updated : r));
+    setSelectedRow(updated);
+    setEditMode(false);
+    setEditForm(null);
+  }
+
   return (
     <>
       <style>{`
         @media print {
-          aside, nav, #pembelian-screen, #buyback-preview-overlay { display: none !important; }
+          aside, nav, #pembelian-screen, #buyback-preview-overlay, #riwayat-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
           @page { size: A5 landscape; margin: 10mm; }
@@ -230,6 +355,7 @@ export default function PembelianPage() {
       `}</style>
 
       {buybackReady && <InvoiceBuyback mode="print" data={buybackReady} />}
+      {previewRow && <InvoiceBuyback mode="print" data={rowToInvoiceData(previewRow)} />}
 
       <AppLayout>
         <div id="pembelian-screen" className="flex-1 flex flex-col bg-white min-h-screen">
@@ -391,47 +517,135 @@ export default function PembelianPage() {
               </div>
 
               {/* Riwayat */}
-              <div className="flex-1 border border-gray-200 rounded-2xl overflow-hidden">
+              <div className="flex-1 border border-gray-200 rounded-2xl overflow-hidden flex flex-col">
                 <div className="px-5 py-4 border-b border-gray-100 bg-amber-50">
                   <h3 className="font-extrabold text-gray-900">Riwayat Pembelian Rosok</h3>
-                  <p className="text-sm text-gray-600">{riwayat.length} transaksi tercatat</p>
+                  <p className="text-sm text-gray-600">
+                    {isFiltering
+                      ? `${filteredRiwayat.length} dari ${riwayat.length} transaksi`
+                      : `${riwayat.length} transaksi tercatat`}
+                  </p>
                 </div>
+
+                {/* Filter bar */}
+                <div className="px-5 py-4 border-b border-gray-100 bg-white space-y-3">
+                  <div className="relative">
+                    <svg className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Cari nama barang, penjual, atau no. nota..."
+                      className="w-full border border-gray-200 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Dari Tanggal</label>
+                      <DateField value={dateFrom} onChange={(v) => { setDateFrom(v); setPage(0); }} />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1 uppercase tracking-wide">Sampai Tanggal</label>
+                      <DateField value={dateTo} onChange={(v) => { setDateTo(v); setPage(0); }} />
+                    </div>
+                  </div>
+                  {isFiltering && (
+                    <button
+                      onClick={resetFilter}
+                      className="text-xs font-semibold hover:underline"
+                      style={{ color: "#6F5333" }}
+                    >
+                      ✕ Hapus Filter
+                    </button>
+                  )}
+                </div>
+
                 {loading ? (
                   <div className="p-4 space-y-3">
                     {[1, 2, 3].map((i) => (
                       <div key={i} className="h-14 bg-gray-100 animate-pulse rounded-lg" />
                     ))}
                   </div>
-                ) : riwayat.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-                    <p className="text-gray-500 text-base font-medium">Belum ada pembelian rosok tercatat.</p>
+                ) : filteredRiwayat.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 px-4 text-center flex-1">
+                    <p className="text-gray-500 text-base font-medium">
+                      {isFiltering ? "Tidak ada riwayat yang cocok dengan filter ini." : "Belum ada pembelian rosok tercatat."}
+                    </p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          {["No. Nota", "Tanggal", "Nama Barang", "Kadar", "Berat", "Jml", "Harga Beli", "Penjual"].map((h) => (
-                            <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {riwayat.map((r) => (
-                          <tr key={r.id} className="hover:bg-amber-50/30 transition-colors">
-                            <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{r.no_buyback ?? "—"}</td>
-                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{tglIndo(r.tanggal_masuk)}</td>
-                            <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
-                            <td className="px-4 py-3">{r.kadar}</td>
-                            <td className="px-4 py-3">{fmtGram(r.berat_gram * r.jumlah)}</td>
-                            <td className="px-4 py-3 text-center">{r.jumlah}</td>
-                            <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{fmtRupiah(r.harga_beli * r.jumlah)}</td>
-                            <td className="px-4 py-3 text-gray-600">{r.supplier}</td>
+                  <>
+                    <div className="overflow-x-auto flex-1">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            {["No. Nota", "Tanggal", "Nama Barang", "Kadar", "Berat", "Jml", "Harga Beli", "Penjual", ""].map((h) => (
+                              <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                            ))}
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-gray-50">
+                          {pagedRiwayat.map((r) => (
+                            <tr
+                              key={r.id}
+                              className="hover:bg-amber-50/50 transition-colors cursor-pointer"
+                              onClick={() => setSelectedRow(r)}
+                            >
+                              <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{r.no_buyback ?? "—"}</td>
+                              <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{tglIndo(r.tanggal_masuk)}</td>
+                              <td className="px-4 py-3 font-semibold text-gray-800">{r.nama_produk}</td>
+                              <td className="px-4 py-3">{r.kadar}</td>
+                              <td className="px-4 py-3">{fmtGram(r.berat_gram * r.jumlah)}</td>
+                              <td className="px-4 py-3 text-center">{r.jumlah}</td>
+                              <td className="px-4 py-3 font-semibold text-gray-900 whitespace-nowrap">{fmtRupiah(r.harga_beli * r.jumlah)}</td>
+                              <td className="px-4 py-3 text-gray-600">{r.supplier}</td>
+                              <td className="px-4 py-3">
+                                <span className="text-xs text-[#C99A36] font-semibold whitespace-nowrap">Lihat →</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-t border-dashed border-gray-200 bg-white">
+                        <p className="text-xs text-gray-400">
+                          {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, filteredRiwayat.length)} dari {filteredRiwayat.length} transaksi
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setPage(0)}
+                            disabled={page === 0}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 text-sm font-bold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                          >«</button>
+                          <button
+                            onClick={() => setPage((p) => p - 1)}
+                            disabled={page === 0}
+                            className="px-3 h-8 flex items-center rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                          >‹ Prev</button>
+                          <span
+                            className="px-3 h-8 flex items-center rounded-lg text-xs font-bold text-white"
+                            style={{ backgroundColor: "#C99A36" }}
+                          >
+                            {page + 1} / {totalPages}
+                          </span>
+                          <button
+                            onClick={() => setPage((p) => p + 1)}
+                            disabled={page >= totalPages - 1}
+                            className="px-3 h-8 flex items-center rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                          >Next ›</button>
+                          <button
+                            onClick={() => setPage(totalPages - 1)}
+                            disabled={page >= totalPages - 1}
+                            className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 text-sm font-bold text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+                          >»</button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -439,7 +653,7 @@ export default function PembelianPage() {
         </div>
       </AppLayout>
 
-      {/* Modal preview/cetak invoice buyback */}
+      {/* Modal preview/cetak invoice buyback BARU */}
       {showPreview && buybackReady && (
         <div id="buyback-preview-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
@@ -462,11 +676,221 @@ export default function PembelianPage() {
             </div>
             <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
               <p className="text-[11px] text-gray-400 text-center">
-                Pertama kali print di komputer ini? Di kotak dialog print, klik “Lainnya” / “More settings” lalu matikan “Header dan footer” supaya alamat web tidak ikut tercetak.
+                Pertama kali print di komputer ini? Di kotak dialog print, klik "Lainnya" / "More settings" lalu matikan "Header dan footer" supaya alamat web tidak ikut tercetak.
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setShowPreview(false)}
+                  className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
+                >
+                  ✕ Tutup
+                </button>
+                <button
+                  onClick={() => printClean()}
+                  className="flex-1 py-3 rounded-xl text-white font-bold hover:opacity-90 transition-all"
+                  style={{ backgroundColor: "#C99A36" }}
+                >
+                  🖨️ Cetak Invoice
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal DETAIL / EDIT RIWAYAT */}
+      {selectedRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 sticky top-0 bg-white z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {editMode ? "Edit Riwayat Buyback" : "Detail Riwayat Buyback"}
+                </h2>
+                <p className="text-xs text-gray-400 font-mono">{selectedRow.no_buyback ?? "—"}</p>
+              </div>
+              <button
+                onClick={closeDetailModal}
+                className="w-9 h-9 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* VIEW MODE */}
+            {!editMode && (
+              <>
+                <div className="px-6 py-5 space-y-3">
+                  {[
+                    { label: "No. Nota", value: selectedRow.no_buyback ?? "—", mono: true },
+                    { label: "Tanggal", value: tglIndo(selectedRow.tanggal_masuk) },
+                    { label: "Nama Barang", value: selectedRow.nama_produk },
+                    { label: "Kadar", value: selectedRow.kadar },
+                    { label: "Berat Total", value: fmtGram(selectedRow.berat_gram * selectedRow.jumlah) },
+                    { label: "Jumlah", value: String(selectedRow.jumlah) },
+                    { label: "Harga per Gram", value: selectedRow.berat_gram > 0 ? fmtRupiah(Math.round(selectedRow.harga_beli / selectedRow.berat_gram)) : "—" },
+                    { label: "Total Harga Beli", value: fmtRupiah(selectedRow.harga_beli * selectedRow.jumlah), bold: true },
+                    { label: "Penjual", value: selectedRow.supplier },
+                  ].map(({ label, value, mono, bold }) => (
+                    <div key={label} className="flex justify-between items-start gap-4">
+                      <span className="text-sm text-gray-500 shrink-0">{label}</span>
+                      <span className={`text-sm text-right ${bold ? "font-bold text-gray-900" : "text-gray-800"} ${mono ? "font-mono" : ""}`}>
+                        {value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-6 pb-5 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={closeDetailModal}
+                    className="py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 transition-colors"
+                  >
+                    Tutup
+                  </button>
+                  <button
+                    onClick={() => openEdit(selectedRow)}
+                    className="py-2.5 rounded-xl border-2 font-semibold text-sm transition-colors"
+                    style={{ borderColor: "#C99A36", color: "#C99A36" }}
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => { setPreviewRow(selectedRow); closeDetailModal(); }}
+                    className="py-2.5 rounded-xl text-white font-semibold text-sm hover:opacity-90 transition-all"
+                    style={{ backgroundColor: "#C99A36" }}
+                  >
+                    🖨️ Invoice
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* EDIT MODE */}
+            {editMode && editForm && (
+              <>
+                <div className="px-6 py-5 space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Nama / Deskripsi Barang</label>
+                    <input
+                      value={editForm.nama_produk}
+                      onChange={(e) => setEditForm((f) => f ? { ...f, nama_produk: e.target.value } : f)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Kadar</label>
+                      <input
+                        value={editForm.kadar}
+                        onChange={(e) => setEditForm((f) => f ? { ...f, kadar: e.target.value.toUpperCase() } : f)}
+                        placeholder="24K"
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Berat (gram)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editForm.berat_gram}
+                        onChange={(e) => setEditForm((f) => f ? { ...f, berat_gram: e.target.value } : f)}
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">Jumlah</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editForm.jumlah}
+                        onChange={(e) => setEditForm((f) => f ? { ...f, jumlah: e.target.value } : f)}
+                        className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Harga Beli (per item)</label>
+                    <div className="flex items-center border border-gray-300 rounded-xl overflow-hidden focus-within:border-[#C99A36]">
+                      <span className="px-3 py-2.5 text-sm font-semibold text-gray-500 bg-gray-50 border-r border-gray-200 shrink-0">Rp</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={editForm.harga_beli}
+                        onChange={(e) => setEditForm((f) => f ? { ...f, harga_beli: formatRibuan(e.target.value) } : f)}
+                        className="flex-1 px-3 py-2.5 text-sm focus:outline-none bg-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Nama Penjual</label>
+                    <input
+                      value={editForm.supplier}
+                      onChange={(e) => setEditForm((f) => f ? { ...f, supplier: e.target.value } : f)}
+                      className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Tanggal Masuk</label>
+                    <DateField
+                      value={editForm.tanggal_masuk}
+                      onChange={(v) => setEditForm((f) => f ? { ...f, tanggal_masuk: v } : f)}
+                    />
+                  </div>
+                  {editMsg && (
+                    <p className="text-sm font-semibold py-2 px-3 rounded-xl bg-red-50 text-red-600">{editMsg}</p>
+                  )}
+                </div>
+                <div className="px-6 pb-5 flex gap-3">
+                  <button
+                    onClick={() => { setEditMode(false); setEditForm(null); setEditMsg(""); }}
+                    className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={saveEdit}
+                    disabled={editSaving}
+                    className="flex-1 py-2.5 rounded-xl text-white font-semibold text-sm hover:opacity-90 transition-all disabled:opacity-50"
+                    style={{ backgroundColor: "#C99A36" }}
+                  >
+                    {editSaving ? "Menyimpan..." : "Simpan Perubahan"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal PREVIEW INVOICE dari RIWAYAT */}
+      {previewRow && (
+        <div id="riwayat-preview-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-gray-100 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-6 py-4 bg-white border-b border-gray-200 sticky top-0 z-10 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Invoice Buyback</h2>
+                <p className="text-xs text-gray-400 font-mono">{previewRow.no_buyback ?? "—"}</p>
+              </div>
+              <button
+                onClick={() => setPreviewRow(null)}
+                className="w-9 h-9 rounded-full bg-red-100 text-red-500 hover:bg-red-200 font-bold"
+              >
+                ×
+              </button>
+            </div>
+            <div className="p-6">
+              <InvoicePagePreview>
+                <InvoiceBuyback mode="preview" data={rowToInvoiceData(previewRow)} />
+              </InvoicePagePreview>
+            </div>
+            <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
+              <p className="text-[11px] text-gray-400 text-center">
+                Pertama kali print di komputer ini? Di kotak dialog print, klik "Lainnya" / "More settings" lalu matikan "Header dan footer" supaya alamat web tidak ikut tercetak.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setPreviewRow(null)}
                   className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-bold hover:bg-gray-50 transition-colors"
                 >
                   ✕ Tutup
