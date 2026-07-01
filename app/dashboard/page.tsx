@@ -97,10 +97,14 @@ function emptyRow(): HargaEmas {
 // Baris awal: satu per satu (bukan langsung 24K/22K/18K) — atau lanjutkan dari yang
 // sudah tersimpan hari ini di DB kalau ada.
 function buildRowsFromExisting(existing: HargaEmas[]): HargaEmas[] {
-  if (existing.length > 0) {
-    return existing.map((e) => ({ karat: e.karat, label: e.label ?? "", harga_beli: e.harga_beli, harga_jual: e.harga_jual }));
-  }
-  return [emptyRow()];
+  const row24K = existing.find(e => e.karat === 24);
+  const base24K: HargaEmas = row24K
+    ? { karat: 24, label: "", harga_beli: row24K.harga_beli, harga_jual: row24K.harga_jual }
+    : { karat: 24, label: "", harga_beli: 0, harga_jual: 0 };
+  const others = existing
+    .filter(e => e.karat !== 24)
+    .map(e => ({ karat: e.karat, label: e.label ?? "", harga_beli: e.harga_beli, harga_jual: e.harga_jual }));
+  return [base24K, ...others];
 }
 
 function loadHargaDraft(today: string): HargaEmas[] | null {
@@ -161,6 +165,10 @@ function HargaPopup({
     const nr = [...rows];
     nr[i] = { ...nr[i], [field]: val };
     setRows(nr);
+  };
+
+  const deleteRow = (i: number) => {
+    setRows(rows.filter((_, idx) => idx !== i));
   };
 
   const save = async () => {
@@ -228,7 +236,7 @@ function HargaPopup({
         {/* Body */}
         <div className="px-6 py-5">
           {/* Column headers */}
-          <div className="grid grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-4 gap-3 mb-3 pr-11">
             {["Karat", "Label Harga (opsional)", "Harga Beli (Rp/gram)", "Harga Jual (Rp/gram)"].map((h) => (
               <span key={h} className="text-sm font-semibold text-gray-600">{h}</span>
             ))}
@@ -237,36 +245,79 @@ function HargaPopup({
           {/* Input rows */}
           <div className="space-y-3">
             {rows.map((row, i) => (
-              <div key={i} className="grid grid-cols-4 gap-3">
-                <div className="relative">
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    min={1}
-                    value={row.karat || ""}
-                    onChange={(e) => updateRow(i, "karat", Number(e.target.value))}
-                    placeholder="mis. 6"
-                    className="w-full border border-gray-300 rounded-xl py-3 pl-4 pr-8 text-base font-semibold focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+              <div key={i} className="flex items-center gap-3">
+                <div className="flex-1 grid grid-cols-4 gap-3">
+                  <div className="relative">
+                    {i === 0 ? (
+                      <>
+                        <input
+                          type="number"
+                          value={24}
+                          readOnly
+                          className="w-full border border-[#C99A36]/50 rounded-xl py-3 pl-4 pr-8 text-base font-semibold bg-amber-50 cursor-not-allowed text-[#6F5333]"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[#C99A36] text-sm font-bold select-none">K</span>
+                      </>
+                    ) : (
+                      <>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={1}
+                          value={row.karat || ""}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            if (val === 24) return;
+                            updateRow(i, "karat", val);
+                          }}
+                          placeholder="mis. 6"
+                          className="w-full border border-gray-300 rounded-xl py-3 pl-4 pr-8 text-base font-semibold focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold select-none">K</span>
+                      </>
+                    )}
+                  </div>
+                  {i === 0 ? (
+                    <input
+                      type="text"
+                      value=""
+                      readOnly
+                      placeholder="—"
+                      className="w-full border border-gray-200 rounded-xl py-3 px-3 text-base bg-gray-50 cursor-not-allowed text-gray-400"
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={row.label ?? ""}
+                      onChange={(e) => updateRow(i, "label", e.target.value)}
+                      placeholder="mis. Harga A"
+                      className="w-full border border-gray-300 rounded-xl py-3 px-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
+                    />
+                  )}
+                  <RupiahInput
+                    value={row.harga_beli}
+                    onChange={(n) => updateRow(i, "harga_beli", n)}
+                    placeholder="1.050.000"
                   />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-bold select-none">K</span>
+                  <RupiahInput
+                    value={row.harga_jual}
+                    onChange={(n) => updateRow(i, "harga_jual", n)}
+                    placeholder="1.100.000"
+                  />
                 </div>
-                <input
-                  type="text"
-                  value={row.label ?? ""}
-                  onChange={(e) => updateRow(i, "label", e.target.value)}
-                  placeholder="mis. Harga A"
-                  className="w-full border border-gray-300 rounded-xl py-3 px-3 text-base focus:outline-none focus:border-[#C99A36] focus:ring-1 focus:ring-[#C99A36]/30 transition-colors"
-                />
-                <RupiahInput
-                  value={row.harga_beli}
-                  onChange={(n) => updateRow(i, "harga_beli", n)}
-                  placeholder="1.050.000"
-                />
-                <RupiahInput
-                  value={row.harga_jual}
-                  onChange={(n) => updateRow(i, "harga_jual", n)}
-                  placeholder="1.100.000"
-                />
+                {i !== 0 ? (
+                  <button
+                    onClick={() => deleteRow(i)}
+                    className="shrink-0 w-9 h-9 flex items-center justify-center rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    title="Hapus baris"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                ) : (
+                  <div className="shrink-0 w-9" />
+                )}
               </div>
             ))}
           </div>
@@ -421,7 +472,12 @@ export default function DashboardPage() {
       const inventoriData = invRes.data ?? [];
       setAllInventori(inventoriData);
       setInventori(inventoriData.slice(0, 10));
-      setHargaEmas(hargaRes.data ?? []);
+      const rawHarga = hargaRes.data ?? [];
+      let seen24K = false;
+      setHargaEmas(rawHarga.filter((r) => {
+        if (r.karat === 24) { if (seen24K) return false; seen24K = true; }
+        return true;
+      }));
     } catch (e) {
       console.error("Load error:", e);
     }
@@ -429,6 +485,12 @@ export default function DashboardPage() {
   }, [dateFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  const deleteHargaRow = async (row: HargaEmas) => {
+    if (!row.id || row.karat === 24) return;
+    const { error } = await supabase.from("harga_emas").delete().eq("id", row.id);
+    if (!error) load();
+  };
 
   // Search filter on inventori
   const filteredInventori = search.trim()
@@ -620,10 +682,11 @@ export default function DashboardPage() {
             <div className="bg-white">
               {/* Column headers */}
               <div className="mx-6 mt-5 mb-2">
-                <div className="grid grid-cols-3 gap-4 px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide" style={{ backgroundColor: "#FDF6E3", color: "#6F5333" }}>
+                <div className="grid grid-cols-4 gap-4 px-4 py-2.5 rounded-lg text-sm font-bold uppercase tracking-wide" style={{ backgroundColor: "#FDF6E3", color: "#6F5333" }}>
                   <span>Karat</span>
                   <span>Harga Beli / gram</span>
                   <span>Harga Jual / gram</span>
+                  <span></span>
                 </div>
               </div>
 
@@ -631,13 +694,13 @@ export default function DashboardPage() {
               <div className="mx-6 pb-5 space-y-2.5">
                 {loading ? (
                   [1,2,3].map((i) => (
-                    <div key={i} className="grid grid-cols-3 gap-4">
-                      {[1,2,3].map((j) => <div key={j} className="h-14 bg-gray-100 animate-pulse rounded-lg"/>)}
+                    <div key={i} className="grid grid-cols-4 gap-4">
+                      {[1,2,3,4].map((j) => <div key={j} className="h-14 bg-gray-100 animate-pulse rounded-lg"/>)}
                     </div>
                   ))
                 ) : hargaEmas.length > 0 ? (
                   hargaEmas.map((row) => (
-                    <div key={row.id ?? `${row.karat}-${row.label}`} className="grid grid-cols-3 gap-4">
+                    <div key={row.id ?? `${row.karat}-${row.label}`} className="grid grid-cols-4 gap-4 items-center">
                       <div className="relative border-2 rounded-lg px-4 py-3 flex items-center gap-2" style={{ borderColor: "#F0DDA8", backgroundColor: "#FDF6E3" }}>
                         <span className="text-lg font-extrabold" style={{ color: "#6F5333" }}>{row.karat}K</span>
                         {row.label && (
@@ -651,6 +714,19 @@ export default function DashboardPage() {
                       </div>
                       <div className="border border-gray-200 rounded-lg px-4 py-3 bg-white text-gray-900 text-base font-bold">
                         Rp {fmt(row.harga_jual)}
+                      </div>
+                      <div className="flex justify-end">
+                        {row.karat !== 24 && (
+                          <button
+                            onClick={() => deleteHargaRow(row)}
+                            className="w-9 h-9 flex items-center justify-center rounded-lg text-red-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Hapus harga"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))
