@@ -150,15 +150,15 @@ function BarcodePreviewModal({
   jumlah: number;
 }) {
   const [checked, setChecked] = useState<boolean[]>([]);
-  const [columns, setColumns] = useState<1 | 3>(3);
+  const [columns, setColumns] = useState<1 | 2 | 3>(3);
   const [qrSvg, setQrSvg] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("barcodePrintColumns");
-    if (saved === "1" || saved === "3") setColumns(Number(saved) as 1 | 3);
+    if (saved === "1" || saved === "2" || saved === "3") setColumns(Number(saved) as 1 | 2 | 3);
   }, []);
 
-  const changeColumns = (n: 1 | 3) => {
+  const changeColumns = (n: 1 | 2 | 3) => {
     setColumns(n);
     localStorage.setItem("barcodePrintColumns", String(n));
   };
@@ -198,13 +198,13 @@ function BarcodePreviewModal({
   const doPrint = () => {
     if (!qrSvg || selectedCount === 0) return;
 
-    const LABEL_W = 32; // mm — sedikit lebih sempit dari fisik (33mm) supaya ada gap 2.5mm antar kolom
     const LABEL_H = 15; // mm
-    const GAP = 2.5; // mm — jarak antar label (3×32 + 2×2.5 = 101mm = lebar kertas)
+    const GAP = 3; // mm — jarak antar label
     // Halaman cetak HARUS selalu selebar kertas fisik (101mm = 3 kolom).
     // Kolom yang tidak dipakai diisi <div> kosong agar driver tidak scale.
     const PAPER_COLS = 3;
-    const pageWidth = PAPER_COLS * LABEL_W + (PAPER_COLS - 1) * GAP;
+    const pageWidth = 101; // mm — fixed, sesuai lebar fisik kertas
+    const LABEL_W = (pageWidth - (PAPER_COLS - 1) * GAP) / PAPER_COLS; // ≈31.67mm
 
     // Format berat: hilangkan trailing zeros (misal "2.5000" → "2.5g")
     const beratDisplay = `${Number(beratGram)}g`;
@@ -224,16 +224,9 @@ function BarcodePreviewModal({
     const blank = `<div class="label label-empty"></div>`;
     const rowsHtml: string[] = [];
     for (let r = 0; r < selectedCount; r += columns) {
-      let rowHtml: string;
-      if (columns === 1) {
-        // 1 label ditengah: blank | label | blank
-        rowHtml = `<div class="row">${blank}${labelHtml}${blank}</div>`;
-      } else {
-        // 3 kolom: isi penuh, baris terakhir mungkin tidak penuh (rata kiri)
-        const rowCount = Math.min(columns, selectedCount - r);
-        rowHtml = `<div class="row">${labelHtml.repeat(rowCount)}${blank.repeat(PAPER_COLS - rowCount)}</div>`;
-      }
-      rowsHtml.push(rowHtml);
+      // rata kiri: label dulu, blank pengisi di kanan
+      const rowCount = Math.min(columns, selectedCount - r);
+      rowsHtml.push(`<div class="row">${labelHtml.repeat(rowCount)}${blank.repeat(PAPER_COLS - rowCount)}</div>`);
     }
 
     const w = window.open("", "_blank", "width=400,height=300");
@@ -259,11 +252,10 @@ function BarcodePreviewModal({
           padding: 0.4mm 0.6mm; gap: 0.8mm;
         }
         .label-empty { visibility: hidden; }
-        /* Ruang kiri ~19mm — diisi kadar & berat */
         .info-left {
           flex: 1; min-width: 0;
-          display: flex; flex-direction: column; align-items: center; justify-content: center;
-          text-align: center; gap: 0.5mm;
+          display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+          text-align: left; gap: 0.5mm;
         }
         .kadar { font-size: 7pt; font-weight: 900; line-height: 1.1; }
         .berat { font-size: 6pt;  font-weight: bold; line-height: 1.1; }
@@ -329,7 +321,7 @@ function BarcodePreviewModal({
         <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm text-gray-600 font-medium">Tata letak kertas</p>
           <div className="flex gap-1.5">
-            {([1, 3] as const).map((n) => (
+            {([1, 2, 3] as const).map((n) => (
               <button
                 key={n}
                 onClick={() => changeColumns(n)}
