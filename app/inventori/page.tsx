@@ -150,15 +150,15 @@ function BarcodePreviewModal({
   jumlah: number;
 }) {
   const [checked, setChecked] = useState<boolean[]>([]);
-  const [columns, setColumns] = useState<1 | 2 | 3>(3);
+  const [columns, setColumns] = useState<1 | 3>(3);
   const [qrSvg, setQrSvg] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem("barcodePrintColumns");
-    if (saved === "1" || saved === "2" || saved === "3") setColumns(Number(saved) as 1 | 2 | 3);
+    if (saved === "1" || saved === "3") setColumns(Number(saved) as 1 | 3);
   }, []);
 
-  const changeColumns = (n: 1 | 2 | 3) => {
+  const changeColumns = (n: 1 | 3) => {
     setColumns(n);
     localStorage.setItem("barcodePrintColumns", String(n));
   };
@@ -198,15 +198,11 @@ function BarcodePreviewModal({
   const doPrint = () => {
     if (!qrSvg || selectedCount === 0) return;
 
-    const LABEL_W = 33; // mm — fisik 1 label di kertas roll (label thermal 33x15mm, 3 line)
+    const LABEL_W = 32; // mm — sedikit lebih sempit dari fisik (33mm) supaya ada gap 2.5mm antar kolom
     const LABEL_H = 15; // mm
-    const GAP = 1; // mm — jarak antar label di kertas roll
-    // Kertas rollnya fisik SELALU 3 kolom lebar (3x33mm + 2x1mm jarak) — lihat foto kertas label.
-    // Halaman cetak (@page) HARUS selalu dibuat selebar itu juga, walau cuma sebagian
-    // kolom yang diisi QR. Kalau halaman dibuat lebih sempit (mis. 33mm utk "1
-    // Kolom"), printer/driver bakal men-scale isinya supaya pas dgn lebar kertas fisik
-    // -- hasilnya 1 label malah jadi besar & buram, bukan tetap 1 label kecil.
-    // Makanya kolom yang TIDAK dipakai diisi <div> kosong (bukan dihilangkan dari grid).
+    const GAP = 2.5; // mm — jarak antar label (3×32 + 2×2.5 = 101mm = lebar kertas)
+    // Halaman cetak HARUS selalu selebar kertas fisik (101mm = 3 kolom).
+    // Kolom yang tidak dipakai diisi <div> kosong agar driver tidak scale.
     const PAPER_COLS = 3;
     const pageWidth = PAPER_COLS * LABEL_W + (PAPER_COLS - 1) * GAP;
 
@@ -225,12 +221,19 @@ function BarcodePreviewModal({
           </div>
         </div>`;
 
+    const blank = `<div class="label label-empty"></div>`;
     const rowsHtml: string[] = [];
     for (let r = 0; r < selectedCount; r += columns) {
-      const rowCount = Math.min(columns, selectedCount - r);
-      const labelsHtml = labelHtml.repeat(rowCount);
-      const blankHtml = `<div class="label label-empty"></div>`.repeat(PAPER_COLS - rowCount);
-      rowsHtml.push(`<div class="row">${labelsHtml}${blankHtml}</div>`);
+      let rowHtml: string;
+      if (columns === 1) {
+        // 1 label ditengah: blank | label | blank
+        rowHtml = `<div class="row">${blank}${labelHtml}${blank}</div>`;
+      } else {
+        // 3 kolom: isi penuh, baris terakhir mungkin tidak penuh (rata kiri)
+        const rowCount = Math.min(columns, selectedCount - r);
+        rowHtml = `<div class="row">${labelHtml.repeat(rowCount)}${blank.repeat(PAPER_COLS - rowCount)}</div>`;
+      }
+      rowsHtml.push(rowHtml);
     }
 
     const w = window.open("", "_blank", "width=400,height=300");
@@ -326,7 +329,7 @@ function BarcodePreviewModal({
         <div className="px-6 py-3 border-b border-gray-100 flex items-center justify-between">
           <p className="text-sm text-gray-600 font-medium">Tata letak kertas</p>
           <div className="flex gap-1.5">
-            {([1, 2, 3] as const).map((n) => (
+            {([1, 3] as const).map((n) => (
               <button
                 key={n}
                 onClick={() => changeColumns(n)}
