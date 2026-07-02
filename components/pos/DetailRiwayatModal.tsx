@@ -1,3 +1,4 @@
+import StorageImage from "@/components/StorageImage";
 import { fmtGram, fmtRp, fmtWaktuLengkap, fmtWaktuRiwayat, type RiwayatTransaksi } from "@/lib/riwayatTransaksi";
 
 /* ═══════════════════════════════════════════════════════
@@ -71,7 +72,9 @@ export function DetailRiwayatModal({ r, onClose, onPrint }: { r: RiwayatTransaks
 
           {/* Item yang sudah di-checkout */}
           <div>
-            <h3 className="text-sm font-bold text-gray-700 mb-2">Barang yang Dibeli ({r.items.length})</h3>
+            <h3 className="text-sm font-bold text-gray-700 mb-2">
+              Barang yang Dibeli ({r.items.length} jenis · {r.totalQty} pcs)
+            </h3>
             <div className="border border-gray-100 rounded-xl overflow-hidden">
               <table className="w-full text-sm">
                 <thead>
@@ -87,12 +90,25 @@ export function DetailRiwayatModal({ r, onClose, onPrint }: { r: RiwayatTransaks
                   {r.items.map((it, idx) => (
                     <tr key={idx} className="border-t border-gray-50">
                       <td className="px-3 py-2.5">
-                        <p className="font-semibold text-gray-800">{it.namaProduk}</p>
-                        <p className="text-xs text-gray-400">
-                          {it.idItem}
-                          {it.kadar ? ` · ${it.kadar}` : ""}
-                          {it.beratGram ? ` · ${fmtGram(it.beratGram)}` : ""}
-                        </p>
+                        <div className="flex items-center gap-2.5">
+                          {it.gambarUrl ? (
+                            <StorageImage
+                              src={it.gambarUrl}
+                              alt={it.namaProduk}
+                              className="w-10 h-10 rounded-lg object-cover border border-gray-100 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-gray-50 border border-gray-100 shrink-0" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-800">{it.namaProduk}</p>
+                            <p className="text-xs text-gray-400">
+                              {it.idItem}
+                              {it.kadar ? ` · ${it.kadar}` : ""}
+                              {it.beratGram ? ` · ${fmtGram(it.beratGram)}` : ""}
+                            </p>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-2 py-2.5 text-center">{it.qty}</td>
                       <td className="px-3 py-2.5 text-right">{it.hargaSatuan ? fmtRp(it.hargaSatuan) : "—"}</td>
@@ -105,6 +121,11 @@ export function DetailRiwayatModal({ r, onClose, onPrint }: { r: RiwayatTransaks
                 </tbody>
               </table>
             </div>
+            {r.items.some((it) => it.beratGram > 0) && (
+              <p className="text-xs text-gray-500 mt-2 text-right">
+                Total berat: <span className="font-semibold">{fmtGram(r.items.reduce((s, it) => s + it.beratGram * it.qty, 0))}</span>
+              </p>
+            )}
             {r.items.every((it) => !it.hargaSatuan) && (
               <p className="text-xs text-gray-400 mt-2">
                 Harga per item tidak tersedia — transaksi ini dicatat sebelum riwayat detail diaktifkan.
@@ -127,7 +148,7 @@ export function DetailRiwayatModal({ r, onClose, onPrint }: { r: RiwayatTransaks
               )}
               {r.ppnAmount > 0 && (
                 <div className="flex justify-between px-4 py-2 border-b border-gray-50">
-                  <span className="text-gray-500">PPN</span>
+                  <span className="text-gray-500">PPN{r.ppnPercent ? ` (${r.ppnPercent}%)` : ""}</span>
                   <span className="font-semibold text-gray-800">{fmtRp(r.ppnAmount)}</span>
                 </div>
               )}

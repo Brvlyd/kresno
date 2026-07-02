@@ -4,8 +4,8 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /*
   Dimensi A5 landscape: 210mm × 148mm
-  Margin print: 10mm atas/bawah, 5mm kiri/kanan  →  @page { size: A5 landscape; margin: 10mm 5mm; }
-  Konten:  (210 - 5 - 5) × (148 - 10 - 10)  =  200mm × 128mm
+  Margin print: 10mm atas/bawah, 10mm kiri/kanan  →  @page { size: A5 landscape; margin: 10mm 10mm; }
+  Konten:  (210 - 10 - 10) × (148 - 10 - 10)  =  190mm × 128mm
 
   Scale dihitung dari TOTAL lebar halaman (210mm), bukan lebar konten,
   supaya padding margin ikut masuk dalam kalkulasi dan div tidak overflow.
@@ -15,7 +15,7 @@ const mm = (v: number) => (v / 25.4) * DPI;
 
 const PAGE_W_MM   = 210;   // A5 landscape width
 const PAGE_H_MM   = 148;   // A5 landscape height
-const MARGIN_LR   = 5;     // mm kiri & kanan
+const MARGIN_LR   = 10;    // mm kiri & kanan
 const MARGIN_TB   = 10;    // mm atas & bawah
 
 const PAGE_TOTAL_W_PX   = mm(PAGE_W_MM);              // 210mm ≈ 794px  — untuk kalkulasi scale
