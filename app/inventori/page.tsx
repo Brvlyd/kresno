@@ -249,7 +249,7 @@ function BarcodePreviewModal({
         .label {
           width: ${LABEL_W}mm; height: ${LABEL_H}mm; overflow: hidden;
           display: flex; flex-direction: row; align-items: center;
-          padding: 1.8mm 0.6mm 0.4mm 0.2mm; gap: 0.1mm;
+          padding: 1.8mm 0.6mm 0.4mm 0.6mm; gap: 0.1mm;
         }
         .label-empty { visibility: hidden; }
         .info-left {
