@@ -2,11 +2,25 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-/* Lebar area cetak nota: kertas A5 landscape (210mm) dikurangi margin
-   cetak 5mm kiri-kanan — harus sama persis dengan `@page { size: A5
-   landscape; margin: 10mm 5mm; }` di tiap halaman cetak, supaya preview di
-   layar terlihat seperti ukuran kertas asli. */
-const PAGE_WIDTH_PX = (200 / 25.4) * 96; // 200mm → px @96dpi ≈ 756px
+/*
+  Dimensi A5 landscape: 210mm × 148mm
+  Margin print: 10mm atas/bawah, 5mm kiri/kanan  →  @page { size: A5 landscape; margin: 10mm 5mm; }
+  Konten:  (210 - 5 - 5) × (148 - 10 - 10)  =  200mm × 128mm
+
+  Scale dihitung dari TOTAL lebar halaman (210mm), bukan lebar konten,
+  supaya padding margin ikut masuk dalam kalkulasi dan div tidak overflow.
+*/
+const DPI = 96;
+const mm = (v: number) => (v / 25.4) * DPI;
+
+const PAGE_W_MM   = 210;   // A5 landscape width
+const PAGE_H_MM   = 148;   // A5 landscape height
+const MARGIN_LR   = 5;     // mm kiri & kanan
+const MARGIN_TB   = 10;    // mm atas & bawah
+
+const PAGE_TOTAL_W_PX   = mm(PAGE_W_MM);              // 210mm ≈ 794px  — untuk kalkulasi scale
+const PAGE_CONTENT_W_PX = mm(PAGE_W_MM - 2 * MARGIN_LR); // 200mm ≈ 756px  — lebar konten
+const PAGE_CONTENT_H_PX = mm(PAGE_H_MM - 2 * MARGIN_TB); // 128mm ≈ 484px  — tinggi konten
 
 export function InvoicePagePreview({ children }: { children: ReactNode }) {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -20,7 +34,8 @@ export function InvoicePagePreview({ children }: { children: ReactNode }) {
     if (!wrap || !page) return;
 
     const update = () => {
-      const s = Math.min(1, wrap.clientWidth / PAGE_WIDTH_PX);
+      // Scale berdasarkan TOTAL lebar A5 (termasuk padding kiri-kanan)
+      const s = Math.min(1, wrap.clientWidth / PAGE_TOTAL_W_PX);
       setScale(s);
       setHeight(page.scrollHeight * s);
     };
@@ -32,16 +47,19 @@ export function InvoicePagePreview({ children }: { children: ReactNode }) {
     return () => ro.disconnect();
   }, []);
 
+  const overflows = height > PAGE_CONTENT_H_PX * scale;
+
   return (
-    <div ref={wrapRef} className="mx-auto w-full" style={{ height }}>
+    <div ref={wrapRef} className="mx-auto w-full overflow-hidden" style={{ height }}>
       <div
         ref={pageRef}
         className="mx-auto bg-white shadow-lg ring-1 ring-black/10"
         style={{
-          width: PAGE_WIDTH_PX,
-          padding: "10mm 5mm",
+          width: PAGE_CONTENT_W_PX,
+          padding: `${MARGIN_TB}mm ${MARGIN_LR}mm`,
           transform: `scale(${scale})`,
           transformOrigin: "top center",
+          outline: overflows ? "2px solid #ef4444" : undefined,
         }}
       >
         {children}

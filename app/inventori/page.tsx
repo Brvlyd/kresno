@@ -1217,6 +1217,8 @@ function InventoriContent({ onLock, onOpenChangePin }: {
   const [hapusItem, setHapusItem] = useState<BarangRow | null>(null);
   const [search, setSearch] = useState("");
   const [searchAllTabs, setSearchAllTabs] = useState(false);
+  const [filterGramMin, setFilterGramMin] = useState("");
+  const [filterGramMax, setFilterGramMax] = useState("");
   const [showAddJenisFilter, setShowAddJenisFilter] = useState(false);
   const [hargaEmasByKarat, setHargaEmasByKarat] = useState<Record<number, HargaEmasKarat>>({});
   const [jenisKodeMap, setJenisKodeMap] = useState<Record<string, string>>(KODE_JENIS_SEED);
@@ -1234,6 +1236,8 @@ function InventoriContent({ onLock, onOpenChangePin }: {
     setFilterStatus("Semua");
     setSearch("");
     setSearchAllTabs(false);
+    setFilterGramMin("");
+    setFilterGramMax("");
   }, []);
 
   const load = useCallback(async () => {
@@ -1348,8 +1352,17 @@ function InventoriContent({ onLock, onOpenChangePin }: {
         r.id_item.toLowerCase().includes(q) ||
         (r.id_item_lama ?? "").toLowerCase().includes(q) ||
         r.nama_produk.toLowerCase().includes(q) ||
-        r.kadar.toLowerCase().includes(q)
+        r.kadar.toLowerCase().includes(q) ||
+        String(r.berat_gram).includes(q)
       );
+    }
+    if (filterGramMin.trim()) {
+      const min = parseFloat(filterGramMin.replace(",", "."));
+      if (!isNaN(min)) result = result.filter((r) => r.berat_gram >= min);
+    }
+    if (filterGramMax.trim()) {
+      const max = parseFloat(filterGramMax.replace(",", "."));
+      if (!isNaN(max)) result = result.filter((r) => r.berat_gram <= max);
     }
     if (searchParams.get("filter") === "menipis") {
       result = result.filter((r) => r.jumlah <= 5);
@@ -1373,7 +1386,7 @@ function InventoriContent({ onLock, onOpenChangePin }: {
       if (!updated) setSelected(result[0] ?? null);
       else if (updated !== selected) setSelected(updated);
     }
-  }, [items, activeTab, filterSubJenis, filterJenis, filterStatus, sortBy, search, searchParams, searchAllTabs]);
+  }, [items, activeTab, filterSubJenis, filterJenis, filterStatus, sortBy, search, searchParams, searchAllTabs, filterGramMin, filterGramMax]);
 
   const hapus = async () => {
     if (!hapusItem) return;
@@ -1524,7 +1537,7 @@ function InventoriContent({ onLock, onOpenChangePin }: {
                     type="search"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    placeholder="Ketik kode, nama, atau karat..."
+                    placeholder="Ketik kode, nama, karat, atau gram..."
                     className="w-full border border-gray-300 rounded-xl pl-4 pr-10 py-3 text-base focus:outline-none focus:border-[#C99A36]"
                   />
                   <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1545,6 +1558,43 @@ function InventoriContent({ onLock, onOpenChangePin }: {
                     Menampilkan hasil dari Stock Dalam, Stock Display & Aset.
                   </p>
                 )}
+              </div>
+
+              {/* Filter Berat Gram */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-600 mb-1.5">Filter Berat (gram)</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={filterGramMin}
+                    onChange={(e) => setFilterGramMin(e.target.value)}
+                    placeholder="Min"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                  />
+                  <span className="text-gray-400 shrink-0 text-sm">–</span>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={filterGramMax}
+                    onChange={(e) => setFilterGramMax(e.target.value)}
+                    placeholder="Max"
+                    className="w-full border border-gray-300 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-[#C99A36]"
+                  />
+                  {(filterGramMin || filterGramMax) && (
+                    <button
+                      onClick={() => { setFilterGramMin(""); setFilterGramMax(""); }}
+                      className="shrink-0 text-gray-400 hover:text-red-500 transition-colors text-lg leading-none"
+                      title="Hapus filter gram"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Sub-filter Aset (Cukim / Emas Rosok) */}
@@ -1685,28 +1735,48 @@ function InventoriContent({ onLock, onOpenChangePin }: {
                 </select>
               </div>
 
-              {/* Result count */}
-              {!loading && (
-                <div className="flex items-center justify-between">
-                  <p className="text-sm text-gray-500">
-                    <span className="font-bold text-gray-800">{filtered.length}</span> barang ditemukan
-                    {!searchAllTabs && items.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === activeTab).length !== filtered.length && (
-                      <span className="text-gray-400"> dari {items.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === activeTab).length}</span>
+              {/* Active filter chips */}
+              {!loading && (() => {
+                const chips: { label: string; onRemove: () => void }[] = [];
+                if (search.trim()) chips.push({ label: `"${search.trim()}"`, onRemove: () => setSearch("") });
+                if (filterJenis !== "Pilih Jenis Inventori") chips.push({ label: filterJenis, onRemove: () => setFilterJenis("Pilih Jenis Inventori") });
+                if (filterStatus !== "Semua") chips.push({ label: filterStatus, onRemove: () => setFilterStatus("Semua") });
+                if (filterGramMin && filterGramMax) chips.push({ label: `${filterGramMin}–${filterGramMax} gr`, onRemove: () => { setFilterGramMin(""); setFilterGramMax(""); } });
+                else if (filterGramMin) chips.push({ label: `≥${filterGramMin} gr`, onRemove: () => setFilterGramMin("") });
+                else if (filterGramMax) chips.push({ label: `≤${filterGramMax} gr`, onRemove: () => setFilterGramMax("") });
+                if (searchAllTabs) chips.push({ label: "Semua Tab", onRemove: () => setSearchAllTabs(false) });
+                return (
+                  <div className="space-y-2">
+                    {chips.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {chips.map((c) => (
+                          <span key={c.label} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                            {c.label}
+                            <button onClick={c.onRemove} className="text-amber-500 hover:text-red-600 leading-none font-bold">×</button>
+                          </span>
+                        ))}
+                        <button
+                          onClick={() => { setFilterStatus("Semua"); setFilterJenis("Pilih Jenis Inventori"); setSearch(""); setSearchAllTabs(false); setFilterGramMin(""); setFilterGramMax(""); }}
+                          className="px-2.5 py-1 rounded-full text-xs font-semibold text-red-500 border border-red-200 hover:bg-red-50 transition-colors"
+                        >
+                          Reset semua
+                        </button>
+                      </div>
                     )}
-                    {searchAllTabs && items.length !== filtered.length && (
-                      <span className="text-gray-400"> dari {items.length} total</span>
-                    )}
-                  </p>
-                  {(filterStatus !== "Semua" || filterJenis !== "Pilih Jenis Inventori" || search.trim() || searchAllTabs) && (
-                    <button
-                      onClick={() => { setFilterStatus("Semua"); setFilterJenis("Pilih Jenis Inventori"); setSearch(""); setSearchAllTabs(false); }}
-                      className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors"
-                    >
-                      Reset filter
-                    </button>
-                  )}
-                </div>
-              )}
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-gray-500">
+                        <span className="font-bold text-gray-800">{filtered.length}</span> barang ditemukan
+                        {!searchAllTabs && items.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === activeTab).length !== filtered.length && (
+                          <span className="text-gray-400"> dari {items.filter((r) => (r.jenis_inventori ?? "Stock Dalam") === activeTab).length}</span>
+                        )}
+                        {searchAllTabs && items.length !== filtered.length && (
+                          <span className="text-gray-400"> dari {items.length} total</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* List of items */}
               <div className="flex-1 min-h-64 lg:min-h-0 border border-gray-200 rounded-xl overflow-hidden">
