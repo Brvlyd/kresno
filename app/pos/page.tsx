@@ -163,6 +163,118 @@ function RpField({
 }
 
 /* ═══════════════════════════════════════════════════════
+   VISUALISASI RUMUS PERHITUNGAN HARGA — ditulis selayaknya rumus matematika
+   (nilai di atas, keterangan kecil di bawah tiap suku, rata tengah), yang
+   ikut berubah real-time mengikuti barang, qty & ongkos yang dipilih.
+   Rumus: Berat × Persen Jual% = Hasil (gr setara 24K)
+          Hasil × Harga Emas 24K hari ini = Harga Satuan
+          Harga Satuan × Jumlah + Ongkos = Total Baris
+═══════════════════════════════════════════════════════ */
+function FormulaTerm({
+  label, value, result = false,
+}: { label: string; value: string; result?: boolean }) {
+  return (
+    <div className="flex flex-col items-center">
+      <p
+        className="text-base sm:text-lg font-bold tabular-nums leading-tight"
+        style={{ color: result ? "#6F5333" : "#1f2937" }}
+      >
+        {value}
+      </p>
+      <p className="text-[10px] text-gray-400 mt-0.5 whitespace-nowrap">{label}</p>
+    </div>
+  );
+}
+
+type Term = { label: string; value: string; result?: boolean; op?: "×" | "+" | "=" };
+
+function FormulaEquation({ terms }: { terms: Term[] }) {
+  return (
+    <div className="flex flex-wrap items-start justify-center gap-x-3 gap-y-2">
+      {terms.map((t, i) => (
+        <div key={i} className="flex items-start gap-3">
+          {i > 0 && (
+            <span className="text-lg sm:text-xl font-bold pt-0.5" style={{ color: "#C99A36" }}>
+              {t.op ?? (i === terms.length - 1 ? "=" : "×")}
+            </span>
+          )}
+          <FormulaTerm {...t} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Kartu rumus per barang dibuat accordion (collapsed by default, satu yang boleh
+   terbuka) — supaya keranjang dengan banyak barang tidak bikin halaman jadi panjang.
+   Barang yang baru dipilih otomatis kebuka duluan (lihat selectItemForRow). */
+function FormulaRowCard({
+  row, hargaEmas24Jual, expanded, onToggle,
+}: { row: DraftRow; hargaEmas24Jual: number | null; expanded: boolean; onToggle: () => void }) {
+  if (!row.item) return null;
+  const item = row.item;
+  const hasilGram = hitungHasil(item.berat_gram, item.persen_jual);
+  const hasilGramStr = `${hasilGram.toLocaleString("id-ID", { maximumFractionDigits: 3 })} gr`;
+  const rowTotal = row.hargaJual * row.qty + row.ongkos;
+
+  return (
+    <div className="rounded-xl border border-amber-100 bg-amber-50/40 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-amber-100/40 transition-colors"
+      >
+        <p className="text-xs font-semibold text-gray-700 truncate min-w-0">
+          {item.nama_produk} <span className="text-gray-400 font-normal font-mono">· {item.id_item}</span>
+        </p>
+        <span className="flex items-center gap-2 shrink-0">
+          <span className="text-xs font-bold tabular-nums" style={{ color: "#6F5333" }}>{fmtRp(rowTotal)}</span>
+          <span
+            className="text-gray-400 text-[10px] transition-transform duration-200"
+            style={{ transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}
+          >
+            ▾
+          </span>
+        </span>
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 pt-2 text-center space-y-4 border-t border-amber-100">
+          <FormulaEquation
+            terms={[
+              { label: "Berat", value: fmtGram(item.berat_gram) },
+              { label: "Persen Jual", value: `${item.persen_jual}%` },
+              { label: "Hasil (24K)", value: hasilGramStr, result: true },
+            ]}
+          />
+          <FormulaEquation
+            terms={[
+              { label: "Hasil (24K)", value: hasilGramStr },
+              { label: "Harga Emas 24K", value: hargaEmas24Jual != null ? fmtRp(hargaEmas24Jual) : "—" },
+              { label: "Harga Satuan", value: fmtRp(row.hargaJual), result: true },
+            ]}
+          />
+          <FormulaEquation
+            terms={[
+              { label: "Harga Satuan", value: fmtRp(row.hargaJual) },
+              { label: "Jumlah", value: `${row.qty}` },
+              { label: "Ongkos", value: fmtRp(row.ongkos), op: "+" },
+              { label: "Total Baris", value: fmtRp(rowTotal), op: "=", result: true },
+            ]}
+          />
+
+          {hargaEmas24Jual == null && (
+            <p className="text-[11px] text-red-500">
+              Harga Emas 24K hari ini belum diisi di Dashboard — Harga Satuan di atas memakai harga jual tersimpan terakhir, bukan hasil rumus.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════
    KOMPONEN: HASIL SCAN BARCODE — konfirmasi ditemukan / tidak ditemukan
 ═══════════════════════════════════════════════════════ */
 type ScanResult =
@@ -299,6 +411,10 @@ function POSContent() {
   const [items, setItems] = useState<InvItem[]>([]);
   const [pelangganList, setPelangganList] = useState<Pelanggan[]>([]);
   const [rows, setRows] = useState<DraftRow[]>([makeRow()]);
+  // Kartu rumus di panel "Visualisasi Rumus Perhitungan" dibuat accordion —
+  // cuma satu baris yang kebuka sekaligus, biar keranjang isi banyak barang
+  // tidak bikin halaman jadi panjang.
+  const [openFormulaRowId, setOpenFormulaRowId] = useState<string | null>(null);
   const [pelangganNama, setPelangganNama] = useState("");
   const [pelangganHP, setPelangganHP] = useState("");
   const [simpanDataPelanggan, setSimpanDataPelanggan] = useState(true);
@@ -422,6 +538,7 @@ function POSContent() {
       ongkos: 0,
       qty: 1,
     });
+    setOpenFormulaRowId(id);
   }
 
   function setCodeText(id: string, val: string) {
@@ -446,6 +563,7 @@ function POSContent() {
 
   function removeRow(id: string) {
     setRows((prev) => (prev.length === 1 ? [makeRow()] : prev.filter((r) => r.id !== id)));
+    setOpenFormulaRowId((prev) => (prev === id ? null : prev));
   }
 
   function maxQtyFor(rowId: string, item: InvItem): number {
@@ -606,6 +724,7 @@ function POSContent() {
   /* ── Reset form (belum transaksi) ── */
   function resetForm() {
     setRows([makeRow()]);
+    setOpenFormulaRowId(null);
     setPelangganNama("");
     setPelangganHP("");
     setTanggalPembelian(todayStr());
@@ -619,6 +738,7 @@ function POSContent() {
   /* ── Mulai transaksi baru setelah selesai ── */
   function transaksiBerikutnya() {
     setRows([makeRow()]);
+    setOpenFormulaRowId(null);
     setPelangganNama("");
     setPelangganHP("");
     setTanggalPembelian(todayStr());
@@ -849,6 +969,39 @@ function POSContent() {
                 >
                   + Tambah Barang
                 </button>
+
+                {/* Visualisasi Rumus Perhitungan — alur rumus per barang, ikut berubah real-time
+                    mengikuti barang, jumlah & ongkos yang dipilih. Dibuat accordion + list yang
+                    bisa di-scroll supaya keranjang isi banyak barang tidak bikin halaman panjang. */}
+                <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/60">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <div className="flex items-center gap-2">
+                      <span className="w-1 h-5 rounded-full" style={{ backgroundColor: "#C99A36" }} />
+                      <h4 className="font-bold text-gray-800 text-sm">Visualisasi Rumus Perhitungan</h4>
+                    </div>
+                    {validRows.length > 1 && (
+                      <span className="text-[11px] text-gray-400">{validRows.length} barang · klik untuk buka rumusnya</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mb-3 ml-3">
+                    Gambaran alur hitung harga tiap barang — otomatis mengikuti barang, jumlah, dan ongkos yang dipilih di atas.
+                  </p>
+                  {validRows.length === 0 ? (
+                    <p className="text-xs text-gray-400 ml-3">Pilih barang dulu untuk melihat rincian rumusnya di sini.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                      {validRows.map((row) => (
+                        <FormulaRowCard
+                          key={row.id}
+                          row={row}
+                          hargaEmas24Jual={hargaEmas24Jual}
+                          expanded={openFormulaRowId === row.id}
+                          onToggle={() => setOpenFormulaRowId((prev) => (prev === row.id ? null : row.id))}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 {/* Summary */}
                 <div className="px-5 py-4 border-t border-gray-100 space-y-2 bg-amber-50/50 rounded-b-2xl">
