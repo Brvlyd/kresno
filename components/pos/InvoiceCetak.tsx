@@ -1,5 +1,8 @@
 import StorageImage from "@/components/StorageImage";
-import { fmtGram, fmtRp, terbilang, type InvoiceProps } from "@/lib/riwayatTransaksi";
+import {
+  fmtGram, fmtRp, terbilang, paginateInvoiceCart,
+  type InvoiceProps, type InvoiceLineItem,
+} from "@/lib/riwayatTransaksi";
 
 /* ═══════════════════════════════════════════════════════
    KOMPONEN: INVOICE (dipakai utk cetak & preview)
@@ -17,6 +20,9 @@ export default function InvoiceCetak(p: InvoiceProps) {
       id={isPrint ? "invoice-print" : undefined}
       style={{
         display: isPrint ? "none" : "block",
+        width: "138mm",
+        maxWidth: "138mm",
+        margin: "0 auto",
         fontFamily: "Arial, Helvetica, sans-serif",
         fontSize: "7pt",
         color: "#111",
@@ -85,6 +91,11 @@ export default function InvoiceCetak(p: InvoiceProps) {
           <div style={{ fontSize: "6.5pt", color: "#000", marginTop: "2pt", fontWeight: 700 }}>
             Tanggal : {p.tanggal}
           </div>
+          {p.pageCount && p.pageCount > 1 && (
+            <div style={{ fontSize: "6.5pt", color: "#000", marginTop: "1pt", fontWeight: 700 }}>
+              Halaman {p.pageIndex} dari {p.pageCount}
+            </div>
+          )}
           <div style={{ fontSize: "6.5pt", color: "#555", marginTop: "1pt", fontWeight: 700 }}>
             {p.paymentMethod}
           </div>
@@ -164,7 +175,7 @@ export default function InvoiceCetak(p: InvoiceProps) {
               const totalItem = ci.hargaJual * ci.qty + ci.ongkos;
               return (
                 <tr key={idx} style={{ backgroundColor: idx % 2 === 0 ? "#fff" : "#F2F2F2" }}>
-                  <td style={{ padding: "1.5pt 3.5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{idx + 1}</td>
+                  <td style={{ padding: "1.5pt 3.5pt", border: `0.5pt solid ${GOLD_LT}`, textAlign: "center" }}>{(p.rowStartIndex ?? 0) + idx + 1}</td>
                   <td style={{ padding: "1.5pt 3.5pt", border: `0.5pt solid ${GOLD_LT}` }}>
                     {ci.namaProduk}{ci.qty > 1 ? ` (×${ci.qty})` : ""}
                   </td>
@@ -266,6 +277,94 @@ export default function InvoiceCetak(p: InvoiceProps) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+export interface InvoiceCetakBundleProps {
+  mode: "print" | "preview";
+  noInvoice: string;
+  tanggal: string;
+  pelangganNama: string;
+  pelangganHP: string;
+  cart: InvoiceLineItem[];
+  diskon: number;
+  paymentMethod: string;
+  ppnEnabled: boolean;
+  ppnPercent: number;
+}
+
+/** Bungkus InvoiceCetak: kelompokkan barang identik & — kalau jumlah barisnya
+ * melebihi satu halaman — pecah otomatis jadi beberapa nota A5 berurutan
+ * (page-break saat print) alih-alih melebarkan satu tabel sampai berantakan.
+ * Dipakai di semua tempat yang mencetak/preview nota POS supaya perilakunya
+ * konsisten (transaksi baru maupun cetak ulang dari riwayat). */
+export function InvoiceCetakBundle(p: InvoiceCetakBundleProps) {
+  const isPrint = p.mode === "print";
+  const pages = paginateInvoiceCart(p.cart, p.diskon, p.ppnEnabled, p.ppnPercent);
+
+  if (pages.length <= 1) {
+    const pg = pages[0];
+    return (
+      <InvoiceCetak
+        mode={p.mode}
+        noInvoice={p.noInvoice}
+        tanggal={p.tanggal}
+        pelangganNama={p.pelangganNama}
+        pelangganHP={p.pelangganHP}
+        cart={pg.cart}
+        diskon={pg.diskon}
+        subtotal={pg.subtotal}
+        total={pg.total}
+        totalBerat={pg.totalBerat}
+        paymentMethod={p.paymentMethod}
+        ppnEnabled={p.ppnEnabled}
+        ppnPercent={p.ppnPercent}
+        ppnAmount={pg.ppnAmount}
+      />
+    );
+  }
+
+  const rowStarts = pages.reduce<number[]>((acc, pg, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + pages[i - 1].cart.length);
+    return acc;
+  }, []);
+  const pageDivs = pages.map((pg, i) => {
+    const startIdx = rowStarts[i];
+    return (
+      <div
+        key={i}
+        style={{
+          pageBreakAfter: isPrint && i < pages.length - 1 ? "always" : undefined,
+          marginBottom: !isPrint && i < pages.length - 1 ? "24pt" : undefined,
+        }}
+      >
+        <InvoiceCetak
+          mode="preview"
+          noInvoice={p.noInvoice}
+          tanggal={p.tanggal}
+          pelangganNama={p.pelangganNama}
+          pelangganHP={p.pelangganHP}
+          cart={pg.cart}
+          diskon={pg.diskon}
+          subtotal={pg.subtotal}
+          total={pg.total}
+          totalBerat={pg.totalBerat}
+          paymentMethod={p.paymentMethod}
+          ppnEnabled={p.ppnEnabled}
+          ppnPercent={p.ppnPercent}
+          ppnAmount={pg.ppnAmount}
+          pageIndex={i + 1}
+          pageCount={pages.length}
+          rowStartIndex={startIdx}
+        />
+      </div>
+    );
+  });
+
+  return (
+    <div id={isPrint ? "invoice-print" : undefined} style={{ display: isPrint ? "none" : "block" }}>
+      {pageDivs}
     </div>
   );
 }

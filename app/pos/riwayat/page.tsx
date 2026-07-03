@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AppLayout from "@/components/AppLayout";
 import DateField from "@/components/DateField";
-import InvoiceCetak from "@/components/pos/InvoiceCetak";
+import { InvoiceCetakBundle } from "@/components/pos/InvoiceCetak";
 import { DetailRiwayatModal, RiwayatRowItem } from "@/components/pos/DetailRiwayatModal";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
@@ -93,13 +93,13 @@ export default function RiwayatTransaksiPage() {
           aside, nav, #riwayat-screen, #riwayat-print-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A6 landscape; margin: 10mm 5mm; }
+          @page { size: A5 landscape; margin: 10mm 10mm; }
         }
       `}</style>
 
       {/* Invoice — hidden on screen, visible on print */}
       {printRiwayat && (
-        <InvoiceCetak mode="print" {...riwayatToInvoiceProps(printRiwayat)} />
+        <InvoiceCetakBundle mode="print" {...riwayatToInvoiceProps(printRiwayat)} />
       )}
 
       <AppLayout title="Riwayat Transaksi" subtitle="Daftar lengkap transaksi penjualan">
@@ -255,7 +255,7 @@ export default function RiwayatTransaksiPage() {
             </div>
             <div className="p-6">
               <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
-                <InvoiceCetak mode="preview" {...riwayatToInvoiceProps(printRiwayat)} />
+                <InvoiceCetakBundle mode="preview" {...riwayatToInvoiceProps(printRiwayat)} />
               </div>
             </div>
             <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">

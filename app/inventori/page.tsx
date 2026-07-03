@@ -431,6 +431,7 @@ function DetailBarangPopup({
   const [catatHutang, setCatatHutang] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const jenisTouchedRef = useRef(false);
+  const msgRef = useRef<HTMLParagraphElement>(null);
 
   const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
   const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
@@ -483,6 +484,14 @@ function DetailBarangPopup({
     })();
     return () => { cancelled = true; };
   }, [open, editData, form.jenis_barang, form.kadar, form.berat_gram, existingIds, ensureKode]);
+
+  // Kalau ada info penting yang belum diisi, langsung scroll ke pesan
+  // peringatan (merah) supaya user tidak bingung kenapa simpan tidak jalan.
+  useEffect(() => {
+    if (msg && !msg.startsWith("✓")) {
+      msgRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [msg]);
 
   const set = (key: keyof FormData, val: string) =>
     setForm((f) => ({ ...f, [key]: val }));
@@ -978,7 +987,7 @@ function DetailBarangPopup({
 
           {/* Feedback */}
           {msg && (
-            <p className={`text-sm font-semibold py-2.5 px-4 rounded-xl ${
+            <p ref={msgRef} className={`text-sm font-semibold py-2.5 px-4 rounded-xl ${
               msg.startsWith("✓") ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"
             }`}>
               {msg}

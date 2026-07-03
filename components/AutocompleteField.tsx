@@ -13,12 +13,15 @@ export interface AutocompleteFieldProps<T> {
   inputClassName?: string;
   disabled?: boolean;
   noResultsText?: string;
+  /** Dipanggil saat field mendapat fokus — dipakai pemanggil untuk menampilkan
+   * semua opsi saat baru dibuka, sebelum user mengetik apa pun. */
+  onFocus?: () => void;
 }
 
 /** Field ketik-atau-pilih: chevron menandakan ada daftar pilihan, dan daftar
  * tetap muncul saat field masih kosong (browse) — bukan cuma setelah mengetik. */
 export function AutocompleteField<T>({
-  value, onChange, onSelect, suggestions, renderLabel, renderSub, placeholder, inputClassName, disabled, noResultsText,
+  value, onChange, onSelect, suggestions, renderLabel, renderSub, placeholder, inputClassName, disabled, noResultsText, onFocus,
 }: AutocompleteFieldProps<T>) {
   const [open, setOpen] = useState(false);
   const showNoResults = open && !disabled && suggestions.length === 0 && value.trim().length > 0;
@@ -29,7 +32,7 @@ export function AutocompleteField<T>({
         value={value}
         disabled={disabled}
         onChange={(e) => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => { onFocus?.(); setOpen(true); }}
         onBlur={() => setTimeout(() => setOpen(false), 120)}
         placeholder={placeholder}
         className={inputClassName || "w-full border border-gray-200 rounded-lg pl-3 pr-7 py-2 text-sm focus:outline-none focus:border-[#C99A36] disabled:bg-gray-50"}

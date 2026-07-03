@@ -33,9 +33,14 @@ export function MasterDataPicker({
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [addFailedError, setAddFailedError] = useState<string | undefined>(undefined);
+  // Nilai field saat terakhir difokuskan — selama belum diketik ulang sejak
+  // fokus, dropdown menampilkan semua opsi (bukan cuma yang cocok dengan nilai
+  // yang sudah terisi, mis. jenis barang default saat form dibuka).
+  const [focusValue, setFocusValue] = useState<string | null>(null);
 
+  const browsing = focusValue === null || focusValue === value;
   const q = value.trim().toLowerCase();
-  const suggestions = (q ? options.filter((o) => o.toLowerCase().includes(q)) : options).slice(0, 8);
+  const suggestions = browsing || !q ? options : options.filter((o) => o.toLowerCase().includes(q));
 
   return (
     <div>
@@ -43,6 +48,7 @@ export function MasterDataPicker({
         value={value}
         onChange={onChange}
         onSelect={(s) => onChange(s)}
+        onFocus={() => setFocusValue(value)}
         suggestions={suggestions}
         renderLabel={(s) => s}
         placeholder={placeholder}

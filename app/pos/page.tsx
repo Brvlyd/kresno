@@ -11,7 +11,7 @@ import { hitungHasil } from "@/lib/hutangPiutang";
 import { matchesBarcodeScan } from "@/lib/csv";
 import { AutocompleteField } from "@/components/AutocompleteField";
 import DateField from "@/components/DateField";
-import InvoiceCetak from "@/components/pos/InvoiceCetak";
+import { InvoiceCetakBundle } from "@/components/pos/InvoiceCetak";
 import { DetailRiwayatModal, RiwayatRowItem } from "@/components/pos/DetailRiwayatModal";
 import {
   RIWAYAT_SELECT,
@@ -614,7 +614,6 @@ function POSContent() {
   const ppnPercentNum = Math.max(0, parseFloat(ppnPercent.replace(",", ".")) || 0);
   const ppnAmount = ppnEnabled ? Math.round(afterDiskon * ppnPercentNum / 100) : 0;
   const total = afterDiskon + ppnAmount;
-  const totalBerat = validRows.reduce((s, r) => s + r.item.berat_gram * r.qty, 0);
   const canPreview = validRows.length > 0 && pelangganNama.trim().length > 0 && paymentMethod !== "";
   const cartForInvoice: InvoiceLineItem[] = validRows.map((r) => ({
     namaProduk: r.item.nama_produk,
@@ -763,7 +762,7 @@ function POSContent() {
           aside, nav, #pos-screen, #preview-modal-overlay, #history-print-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A6 landscape; margin: 10mm 5mm; }
+          @page { size: A5 landscape; margin: 10mm 10mm; }
         }
       `}</style>
 
@@ -771,9 +770,9 @@ function POSContent() {
           sekaligus: nota riwayat lama (printRiwayat) didahulukan drpd transaksi baru saja
           selesai (invoiceReady), supaya tidak ada dua #invoice-print bertabrakan. */}
       {printRiwayat ? (
-        <InvoiceCetak mode="print" {...riwayatToInvoiceProps(printRiwayat)} />
+        <InvoiceCetakBundle mode="print" {...riwayatToInvoiceProps(printRiwayat)} />
       ) : invoiceReady ? (
-        <InvoiceCetak
+        <InvoiceCetakBundle
           mode="print"
           noInvoice={invoiceReady.noInvoice}
           tanggal={invoiceReady.tanggal}
@@ -781,13 +780,9 @@ function POSContent() {
           pelangganHP={toFullPhone(pelangganHP)}
           cart={cartForInvoice}
           diskon={diskonNum}
-          subtotal={subtotal}
-          total={total}
-          totalBerat={totalBerat}
           paymentMethod={paymentMethod}
           ppnEnabled={ppnEnabled}
           ppnPercent={ppnPercentNum}
-          ppnAmount={ppnAmount}
         />
       ) : null}
 
@@ -1167,7 +1162,7 @@ function POSContent() {
             </div>
             <div className="p-6">
               <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
-                <InvoiceCetak
+                <InvoiceCetakBundle
                   mode="preview"
                   noInvoice={invoiceReady?.noInvoice ?? pendingInvoiceNo ?? ""}
                   tanggal={invoiceReady?.tanggal ?? fmtTanggalInv(tanggalPembelian ? new Date(tanggalPembelian) : new Date())}
@@ -1175,13 +1170,9 @@ function POSContent() {
                   pelangganHP={toFullPhone(pelangganHP)}
                   cart={cartForInvoice}
                   diskon={diskonNum}
-                  subtotal={subtotal}
-                  total={total}
-                  totalBerat={totalBerat}
                   paymentMethod={paymentMethod}
                   ppnEnabled={ppnEnabled}
                   ppnPercent={ppnPercentNum}
-                  ppnAmount={ppnAmount}
                 />
               </div>
             </div>
@@ -1252,7 +1243,7 @@ function POSContent() {
             </div>
             <div className="p-6">
               <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
-                <InvoiceCetak mode="preview" {...riwayatToInvoiceProps(printRiwayat)} />
+                <InvoiceCetakBundle mode="preview" {...riwayatToInvoiceProps(printRiwayat)} />
               </div>
             </div>
             <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
