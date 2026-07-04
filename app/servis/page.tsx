@@ -8,6 +8,8 @@ import { fmtRupiah } from "@/lib/servis";
 import type { InvoiceServisData } from "@/lib/servis";
 import { InvoiceServis } from "@/components/InvoiceServis";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
+import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
 
 /* ─── Types ─── */
@@ -70,6 +72,7 @@ function DetailServisPopup({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
+  const [invoiceSize, setInvoiceSize] = useInvoiceSize("servis");
 
   useEffect(() => {
     if (open) setMsg("");
@@ -123,7 +126,7 @@ function DetailServisPopup({
           aside, nav, #servis-screen, #servis-detail-overlay, #servis-invoice-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm 10mm; }
+          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
       {/* Invoice — hidden on screen, visible on print */}
@@ -296,8 +299,11 @@ function DetailServisPopup({
                 ×
               </button>
             </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
+            </div>
             <div className="p-6">
-              <InvoicePagePreview>
+              <InvoicePagePreview widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
                 <InvoiceServis mode="preview" data={invoiceData} />
               </InvoicePagePreview>
             </div>

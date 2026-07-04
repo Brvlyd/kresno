@@ -11,6 +11,8 @@ import {
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
+import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
 import { useJenisBarang } from "@/lib/useJenisBarang";
 import { useCustomList } from "@/lib/useCustomList";
@@ -66,6 +68,7 @@ export default function TambahPengajuanGadaiPage() {
   const supabase = createClient();
   const router = useRouter();
 
+  const [invoiceSize, setInvoiceSize] = useInvoiceSize("pegadaian");
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [uploadingKtp, setUploadingKtp] = useState(false);
@@ -274,7 +277,7 @@ export default function TambahPengajuanGadaiPage() {
           aside, nav, #gadai-form-screen, #gadai-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm 10mm; }
+          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
@@ -726,8 +729,11 @@ export default function TambahPengajuanGadaiPage() {
                 ×
               </button>
             </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
+            </div>
             <div className="p-6">
-              <InvoicePagePreview>
+              <InvoicePagePreview widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
                 <InvoiceGadai mode="preview" data={invoiceData} />
               </InvoicePagePreview>
             </div>

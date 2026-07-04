@@ -12,6 +12,8 @@ import {
 import type { InvoiceServisData } from "@/lib/servis";
 import { InvoiceServis } from "@/components/InvoiceServis";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
+import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
 import { useJenisBarang } from "@/lib/useJenisBarang";
 import { useCustomList } from "@/lib/useCustomList";
@@ -75,6 +77,7 @@ function TambahServisContent() {
   const [savedNoServis, setSavedNoServis] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [invoiceSize, setInvoiceSize] = useInvoiceSize("servis");
   const estimasiTouchedRef = useRef(false);
 
   const { allJenis: jenisOptions, addCustomJenis } = useJenisBarang(JENIS_PERHIASAN_OPTIONS);
@@ -219,7 +222,7 @@ function TambahServisContent() {
           aside, nav, #servis-form-screen, #servis-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm 10mm; }
+          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
@@ -714,8 +717,11 @@ function TambahServisContent() {
                 ×
               </button>
             </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
+            </div>
             <div className="p-6">
-              <InvoicePagePreview>
+              <InvoicePagePreview widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
                 <InvoiceServis mode="preview" data={invoiceData} />
               </InvoicePagePreview>
             </div>

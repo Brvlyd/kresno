@@ -6,6 +6,8 @@ import AppLayout from "@/components/AppLayout";
 import DateField from "@/components/DateField";
 import { InvoiceCetakBundle } from "@/components/pos/InvoiceCetak";
 import { DetailRiwayatModal, RiwayatRowItem } from "@/components/pos/DetailRiwayatModal";
+import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
+import { useInvoiceSize } from "@/lib/invoiceSize";
 import { createClient } from "@/lib/supabase/client";
 import { printClean } from "@/lib/print";
 import {
@@ -23,6 +25,7 @@ export default function RiwayatTransaksiPage() {
   const supabase = createClient();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [invoiceSize, setInvoiceSize] = useInvoiceSize("pos");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -93,7 +96,7 @@ export default function RiwayatTransaksiPage() {
           aside, nav, #riwayat-screen, #riwayat-print-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm 10mm; }
+          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
@@ -252,6 +255,9 @@ export default function RiwayatTransaksiPage() {
               >
                 ×
               </button>
+            </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
             </div>
             <div className="p-6">
               <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>

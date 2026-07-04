@@ -8,6 +8,8 @@ import { generateNoBuyback } from "@/lib/buyback";
 import type { InvoiceBuybackData } from "@/lib/buyback";
 import { InvoiceBuyback } from "@/components/InvoiceBuyback";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
+import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
 import { fmtRupiah, fmtGram, tglIndo, KADAR_OPTIONS } from "@/lib/gadai";
 import { useCustomList } from "@/lib/useCustomList";
@@ -89,6 +91,7 @@ export default function PembelianPage() {
   const supabase = createClient();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [invoiceSize, setInvoiceSize] = useInvoiceSize("pembelian");
   const [form, setForm] = useState<FormData>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
@@ -350,7 +353,7 @@ export default function PembelianPage() {
           aside, nav, #pembelian-screen, #buyback-preview-overlay, #riwayat-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm 10mm; }
+          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
@@ -669,8 +672,11 @@ export default function PembelianPage() {
                 ×
               </button>
             </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
+            </div>
             <div className="p-6">
-              <InvoicePagePreview>
+              <InvoicePagePreview widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
                 <InvoiceBuyback mode="preview" data={buybackReady} />
               </InvoicePagePreview>
             </div>
@@ -879,8 +885,11 @@ export default function PembelianPage() {
                 ×
               </button>
             </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
+            </div>
             <div className="p-6">
-              <InvoicePagePreview>
+              <InvoicePagePreview widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
                 <InvoiceBuyback mode="preview" data={rowToInvoiceData(previewRow)} />
               </InvoicePagePreview>
             </div>

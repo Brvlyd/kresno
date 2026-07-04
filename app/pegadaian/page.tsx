@@ -8,6 +8,8 @@ import { fmtRupiah, type CicilanItem, type GadaiBarangItem } from "@/lib/gadai";
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
+import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
 
 /* ─── Types ─── */
@@ -73,6 +75,7 @@ function DetailGadaiPopup({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
+  const [invoiceSize, setInvoiceSize] = useInvoiceSize("pegadaian");
 
   useEffect(() => {
     if (!open || !item) return;
@@ -164,7 +167,7 @@ function DetailGadaiPopup({
           aside, nav, #pegadaian-screen, #gadai-detail-overlay, #gadai-invoice-preview-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm 10mm; }
+          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
       {/* Invoice — hidden on screen, visible on print */}
@@ -361,8 +364,11 @@ function DetailGadaiPopup({
                 ×
               </button>
             </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
+            </div>
             <div className="p-6">
-              <InvoicePagePreview>
+              <InvoicePagePreview widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
                 <InvoiceGadai mode="preview" data={invoiceData} />
               </InvoicePagePreview>
             </div>

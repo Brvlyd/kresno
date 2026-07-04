@@ -13,6 +13,8 @@ import { AutocompleteField } from "@/components/AutocompleteField";
 import DateField from "@/components/DateField";
 import { InvoiceCetakBundle } from "@/components/pos/InvoiceCetak";
 import { DetailRiwayatModal, RiwayatRowItem } from "@/components/pos/DetailRiwayatModal";
+import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
+import { useInvoiceSize } from "@/lib/invoiceSize";
 import {
   RIWAYAT_SELECT,
   fmtRp,
@@ -427,6 +429,7 @@ function POSContent() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [invoiceSize, setInvoiceSize] = useInvoiceSize("pos");
   const [pendingInvoiceNo, setPendingInvoiceNo] = useState<string | null>(null);
   const [invoiceReady, setInvoiceReady] = useState<{ noInvoice: string; tanggal: string } | null>(null);
   const [riwayat, setRiwayat] = useState<RiwayatTransaksi[]>([]);
@@ -762,7 +765,7 @@ function POSContent() {
           aside, nav, #pos-screen, #preview-modal-overlay, #history-print-overlay { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { background: white !important; margin: 0; }
-          @page { size: A5 landscape; margin: 10mm 10mm; }
+          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
@@ -1160,6 +1163,9 @@ function POSContent() {
                 ×
               </button>
             </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
+            </div>
             <div className="p-6">
               <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
                 <InvoiceCetakBundle
@@ -1240,6 +1246,9 @@ function POSContent() {
               >
                 ×
               </button>
+            </div>
+            <div className="px-6 pt-4">
+              <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
             </div>
             <div className="p-6">
               <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
