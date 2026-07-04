@@ -65,7 +65,15 @@ export default function Sidebar() {
           <Link
             key={item.href}
             href={item.href}
-            onClick={() => setMobileOpen(false)}
+            onClick={() => {
+              setMobileOpen(false);
+              // Buang Router Cache Next.js supaya halaman tujuan diambil ulang dari server/
+              // di-mount ulang — tanpa ini, data yang baru saja diubah di halaman lain (mis.
+              // tambah barang di Inventori) bisa belum kelihatan saat pindah ke Dashboard/
+              // Keuangan lewat sidebar, karena komponennya tidak remount & fetch di useEffect
+              // mount-nya tidak jalan lagi. Pola yang sama dipakai di handleLogout di atas.
+              router.refresh();
+            }}
             className="flex items-center gap-3 px-5 py-3.5 text-base font-semibold transition-colors duration-150"
             style={isActive
               ? { backgroundColor: "#C99A36", color: "#fff" }

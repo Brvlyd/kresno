@@ -585,29 +585,28 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   // "Sisa Stok" sebenarnya direkonstruksi per akhir periode yang dipilih (dateTo), bukan
   // status_inventori saat ini — supaya filter periode lampau (mis. "Tahun Lalu", sebelum
   // sistem ini dipakai) tidak ikut menampilkan stok yang baru masuk/keluar setelahnya.
-  // Item dihitung "tersedia per dateTo" kalau sudah masuk sebelum/pada dateTo DAN belum
-  // pernah ada riwayat keluar (inventori_keluar) sebelum/pada dateTo.
+  // Jumlah per dateTo = jumlah saat ini + jumlah_keluar dari riwayat SETELAH dateTo (exit
+  // yang sudah terjadi sebelum/pada dateTo sudah tercermin di kolom jumlah saat ini, jadi
+  // tidak boleh ditambahkan lagi — beda dengan versi lama yang menghapus SELURUH baris begitu
+  // ada satu riwayat keluar, walau itu cuma penjualan sebagian (jumlah sisa masih > 0, lihat
+  // app/pos/page.tsx yang sengaja mempertahankan status "Tersedia" untuk sisa stok parsial).
   const dateToTime = dateTo.getTime();
   const periodeSudahLewat = isPeriodeLewat(dateTo);
-  const keluarPerItem = new Map<string, { keluarPertama: number; totalKeluar: number }>();
+  const tambahanSetelahCutoff = new Map<string, number>();
   for (const k of keluarRiwayat) {
     if (!k.inventori_id) continue;
     const t = new Date(k.created_at).getTime();
-    const acc = keluarPerItem.get(k.inventori_id) ?? { keluarPertama: Infinity, totalKeluar: 0 };
-    acc.keluarPertama = Math.min(acc.keluarPertama, t);
-    acc.totalKeluar += k.jumlah_keluar;
-    keluarPerItem.set(k.inventori_id, acc);
+    if (t > dateToTime) {
+      tambahanSetelahCutoff.set(k.inventori_id, (tambahanSetelahCutoff.get(k.inventori_id) ?? 0) + k.jumlah_keluar);
+    }
   }
   const sisaStok = stokAll
     .filter((r) => new Date(r.tanggal_masuk).getTime() <= dateToTime)
-    .filter((r) => {
-      const keluar = keluarPerItem.get(r.id);
-      return !keluar || keluar.keluarPertama > dateToTime;
-    })
     .map((r) => {
-      const keluar = keluarPerItem.get(r.id);
-      return keluar ? { ...r, jumlah: r.jumlah + keluar.totalKeluar } : r;
-    });
+      const tambahan = tambahanSetelahCutoff.get(r.id) ?? 0;
+      return tambahan ? { ...r, jumlah: r.jumlah + tambahan } : r;
+    })
+    .filter((r) => r.jumlah > 0);
   const stokMasuk = stokAll.filter((r) => {
     const d = new Date(r.tanggal_masuk);
     return d >= dateFrom && d <= dateTo;
@@ -1416,24 +1415,47 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                       );
                     })}
 
-                    {/* Grand total */}
+                    {/* Grand total — dipecah per karat dulu supaya berat/nilai antar karat
+                     * (beda kemurnian, beda harga per gram) tidak kecampur jadi satu angka. */}
                     <div
-                      className="rounded-2xl p-5 text-white flex flex-wrap justify-between gap-4"
+                      className="rounded-2xl p-5 text-white flex flex-col gap-4"
                       style={{ background: "linear-gradient(135deg, #6F5333 0%, #9A7248 100%)" }}
                     >
-                      <div>
-                        <p className="text-xs uppercase font-bold opacity-70 tracking-wider">Total Keseluruhan Stok</p>
-                        <p className="text-3xl font-black mt-1">{fmtGram(totalGramSisa)}</p>
-                        <p className="text-xs opacity-60 mt-0.5">{sisaStok.reduce((s, r) => s + r.jumlah, 0)} unit dari {sisaStok.length} item</p>
-                      </div>
-                      <div className="flex gap-6 sm:gap-8 text-right">
-                        <div>
-                          <p className="text-xs opacity-70">Total Modal</p>
-                          <p className="text-lg font-bold">{fmtRp(totalNilaiModal)}</p>
+                      <p className="text-xs uppercase font-bold opacity-70 tracking-wider">Total Keseluruhan Stok — per Karat</p>
+
+                      {kadarKeysSisa.length > 0 && (
+                        <div className="space-y-1.5">
+                          {kadarKeysSisa.map((k) => (
+                            <div key={k} className="flex flex-wrap items-center justify-between gap-3 bg-white/10 rounded-xl px-4 py-2">
+                              <div className="flex items-center gap-2.5">
+                                <span className="px-2.5 py-0.5 rounded-full bg-white/20 font-bold text-sm">{k}</span>
+                                <span className="text-xs opacity-70">{itemSisaPerKadar[k]} item</span>
+                              </div>
+                              <div className="flex gap-4 sm:gap-6 text-xs sm:text-sm">
+                                <span className="font-bold">{fmtGram(gramSisaPerKadar[k])}</span>
+                                <span className="opacity-80">Modal: {fmtRp(modalPerKadar[k])}</span>
+                                <span className="opacity-80">Jual: {fmtRp(jualPerKadar[k])}</span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
+                      )}
+
+                      <div className="flex flex-wrap justify-between gap-4 pt-4 border-t border-white/20">
                         <div>
-                          <p className="text-xs opacity-70">Estimasi Nilai Jual</p>
-                          <p className="text-lg font-bold">{fmtRp(totalNilaiJual)}</p>
+                          <p className="text-xs uppercase font-bold opacity-70 tracking-wider">Total Keseluruhan (Semua Karat)</p>
+                          <p className="text-3xl font-black mt-1">{fmtGram(totalGramSisa)}</p>
+                          <p className="text-xs opacity-60 mt-0.5">{sisaStok.reduce((s, r) => s + r.jumlah, 0)} unit dari {sisaStok.length} item</p>
+                        </div>
+                        <div className="flex gap-6 sm:gap-8 text-right">
+                          <div>
+                            <p className="text-xs opacity-70">Total Modal</p>
+                            <p className="text-lg font-bold">{fmtRp(totalNilaiModal)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs opacity-70">Estimasi Nilai Jual</p>
+                            <p className="text-lg font-bold">{fmtRp(totalNilaiJual)}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
