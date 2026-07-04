@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 /** Jenis transaksi yang punya invoice sendiri — ukuran kertas diatur per jenis. */
 export type InvoiceKind = "pos" | "servis" | "pegadaian" | "pembelian";
 
-export type InvoiceSizePresetId = "a5-landscape" | "a4-portrait" | "b6-portrait" | "thermal-58" | "thermal-80" | "custom";
+export type InvoiceSizePresetId = "toko-standar" | "a5-landscape" | "a4-portrait" | "b6-portrait" | "thermal-58" | "thermal-80" | "custom";
 
 export interface InvoiceSize {
   preset: InvoiceSizePresetId;
@@ -18,6 +18,7 @@ export const INVOICE_SIZE_PRESETS: Record<
   Exclude<InvoiceSizePresetId, "custom">,
   { label: string; widthMm: number; heightMm: number; marginMm: number }
 > = {
+  "toko-standar": { label: "Standar Toko (184 × 122 mm)", widthMm: 184, heightMm: 122, marginMm: 10 },
   "a5-landscape": { label: "A5 Landscape (210 × 148 mm)", widthMm: 210, heightMm: 148, marginMm: 10 },
   "a4-portrait": { label: "A4 Potrait (210 × 297 mm)", widthMm: 210, heightMm: 297, marginMm: 15 },
   "b6-portrait": { label: "B6 Portrait (125 × 176 mm)", widthMm: 125, heightMm: 176, marginMm: 8 },
@@ -26,8 +27,8 @@ export const INVOICE_SIZE_PRESETS: Record<
 };
 
 export const DEFAULT_INVOICE_SIZE: InvoiceSize = {
-  preset: "a5-landscape",
-  ...INVOICE_SIZE_PRESETS["a5-landscape"],
+  preset: "toko-standar",
+  ...INVOICE_SIZE_PRESETS["toko-standar"],
 };
 
 const STORAGE_PREFIX = "invoice-size:";

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 /*
   Ukuran halaman preview mengikuti ukuran kertas cetak (widthMm × heightMm),
-  default A5 landscape 210mm × 148mm bila tidak diisi.
+  default ukuran standar toko 184mm × 120mm bila tidak diisi.
   Margin print default 10mm tiap sisi → @page { size: <widthMm>mm <heightMm>mm; margin: <marginMm>mm; }
   Konten:  (widthMm - 2*marginMm) × (heightMm - 2*marginMm)
 
@@ -16,8 +16,8 @@ const mm = (v: number) => (v / 25.4) * DPI;
 
 export function InvoicePagePreview({
   children,
-  widthMm = 210,
-  heightMm = 148,
+  widthMm = 184,
+  heightMm = 120,
   marginMm = 10,
 }: {
   children: ReactNode;
