@@ -20,9 +20,6 @@ export default function InvoiceCetak(p: InvoiceProps) {
       id={isPrint ? "invoice-print" : undefined}
       style={{
         display: isPrint ? "none" : "block",
-        width: "138mm",
-        maxWidth: "138mm",
-        margin: "0 auto",
         fontFamily: "Arial, Helvetica, sans-serif",
         fontSize: "7pt",
         color: "#111",
