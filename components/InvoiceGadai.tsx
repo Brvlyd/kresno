@@ -9,8 +9,7 @@ interface InvoiceGadaiProps {
 
 const MIN_ROWS = 5;
 
-export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
-  const isPrint = mode === "print";
+export function InvoiceGadai({ data }: InvoiceGadaiProps) {
   const items = data.items;
   const showTotal = items.length > 1;
   const emptyRows = Math.max(0, MIN_ROWS - items.length - (showTotal ? 1 : 0));
@@ -20,9 +19,7 @@ export function InvoiceGadai({ mode, data }: InvoiceGadaiProps) {
 
   return (
     <div
-      id={isPrint ? "invoice-print" : undefined}
       style={{
-        display: isPrint ? "none" : "block",
         fontFamily: "Arial, Helvetica, sans-serif",
         fontSize: "7pt",
         color: "#111",

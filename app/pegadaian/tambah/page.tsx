@@ -11,6 +11,7 @@ import {
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
 import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
 import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
@@ -274,15 +275,21 @@ export default function TambahPengajuanGadaiPage() {
       {/* Print CSS */}
       <style>{`
         @media print {
-          aside, nav, #gadai-form-screen, #gadai-preview-overlay { display: none !important; }
+          body * { display: none !important; }
+          .flex.min-h-screen { display: none !important; }
+          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
-          html, body { background: white !important; margin: 0; }
+          html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
       {/* Invoice — hidden on screen, visible on print */}
-      {savedNoGadai && <InvoiceGadai mode="print" data={invoiceData} />}
+      {savedNoGadai && (
+        <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+          <InvoiceGadai mode="print" data={invoiceData} />
+        </InvoicePrintFrame>
+      )}
 
       <AppLayout>
       <div id="gadai-form-screen" className="flex-1 flex flex-col bg-white min-h-screen">

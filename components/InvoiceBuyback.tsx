@@ -9,16 +9,13 @@ interface InvoiceBuybackProps {
 
 const MIN_ROWS = 6;
 
-export function InvoiceBuyback({ mode, data }: InvoiceBuybackProps) {
-  const isPrint = mode === "print";
+export function InvoiceBuyback({ data }: InvoiceBuybackProps) {
   const emptyRows = Math.max(0, MIN_ROWS - 1);
   const totalBerat = data.berat_gram * data.jumlah;
 
   return (
     <div
-      id={isPrint ? "invoice-print" : undefined}
       style={{
-        display: isPrint ? "none" : "block",
         fontFamily: "Arial, Helvetica, sans-serif",
         fontSize: "7pt",
         color: "#111",

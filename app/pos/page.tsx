@@ -761,22 +761,47 @@ function POSContent() {
     <>
       {/* Print CSS */}
       <style>{`
-        @media print {
-          aside, nav, #pos-screen, #preview-modal-overlay, #history-print-overlay { display: none !important; }
-          #invoice-print { display: block !important; }
-          html, body { background: white !important; margin: 0; }
-          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
-        }
+@media print {
+  body *:not(#invoice-print):not(#invoice-print *) {
+    display: none !important;
+  }
+  .flex.min-h-screen {
+    display: none !important;
+  }
+  #invoice-print {
+    display: block !important;
+  }
+  html, body {
+    height: auto !important;
+    margin: 0;
+    background: white !important;
+  }
+  @page {
+    size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm;
+    margin: ${invoiceSize.marginMm}mm;
+  }
+}
       `}</style>
 
       {/* Invoice — hidden on screen, visible on print. Hanya satu sumber data yang aktif
           sekaligus: nota riwayat lama (printRiwayat) didahulukan drpd transaksi baru saja
           selesai (invoiceReady), supaya tidak ada dua #invoice-print bertabrakan. */}
       {printRiwayat ? (
-        <InvoiceCetakBundle mode="print" {...riwayatToInvoiceProps(printRiwayat)} />
+        <InvoiceCetakBundle
+          mode="print"
+          widthMm={invoiceSize.widthMm}
+          heightMm={invoiceSize.heightMm}
+          marginMm={invoiceSize.marginMm}
+          copies={2}
+          {...riwayatToInvoiceProps(printRiwayat)}
+        />
       ) : invoiceReady ? (
         <InvoiceCetakBundle
           mode="print"
+          widthMm={invoiceSize.widthMm}
+          heightMm={invoiceSize.heightMm}
+          marginMm={invoiceSize.marginMm}
+          copies={2}
           noInvoice={invoiceReady.noInvoice}
           tanggal={invoiceReady.tanggal}
           pelangganNama={pelangganNama}

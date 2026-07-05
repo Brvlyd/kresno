@@ -8,6 +8,7 @@ import { fmtRupiah, type CicilanItem, type GadaiBarangItem } from "@/lib/gadai";
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
 import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
 import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
@@ -164,14 +165,18 @@ function DetailGadaiPopup({
       {/* Print CSS */}
       <style>{`
         @media print {
-          aside, nav, #pegadaian-screen, #gadai-detail-overlay, #gadai-invoice-preview-overlay { display: none !important; }
+          body * { display: none !important; }
+          .flex.min-h-screen { display: none !important; }
+          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
-          html, body { background: white !important; margin: 0; }
+          html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
       {/* Invoice — hidden on screen, visible on print */}
-      <InvoiceGadai mode="print" data={invoiceData} />
+      <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+        <InvoiceGadai mode="print" data={invoiceData} />
+      </InvoicePrintFrame>
 
     <div id="gadai-detail-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />

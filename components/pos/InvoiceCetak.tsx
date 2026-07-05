@@ -1,4 +1,5 @@
 import StorageImage from "@/components/StorageImage";
+import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
 import {
   fmtGram, fmtRp, terbilang, paginateInvoiceCart,
   type InvoiceProps, type InvoiceLineItem,
@@ -13,13 +14,10 @@ export default function InvoiceCetak(p: InvoiceProps) {
   const terbilangText = terbilang(p.total) + " rupiah";
   const MIN_ROWS = 4;
   const emptyRows = Math.max(0, MIN_ROWS - p.cart.length);
-  const isPrint = p.mode === "print";
 
   return (
     <div
-      id={isPrint ? "invoice-print" : undefined}
       style={{
-        display: isPrint ? "none" : "block",
         fontFamily: "Arial, Helvetica, sans-serif",
         fontSize: "7pt",
         color: "#111",
@@ -289,6 +287,12 @@ export interface InvoiceCetakBundleProps {
   paymentMethod: string;
   ppnEnabled: boolean;
   ppnPercent: number;
+  /** Wajib diisi kalau mode="print" — dipakai InvoicePrintFrame utk scale ke ukuran kertas terpilih. */
+  widthMm?: number;
+  heightMm?: number;
+  marginMm?: number;
+  /** Jumlah rangkap cetak per nota (misal 2 = untuk toko & pelanggan). Default 1. */
+  copies?: number;
 }
 
 /** Bungkus InvoiceCetak: kelompokkan barang identik & — kalau jumlah barisnya
@@ -302,7 +306,7 @@ export function InvoiceCetakBundle(p: InvoiceCetakBundleProps) {
 
   if (pages.length <= 1) {
     const pg = pages[0];
-    return (
+    const invoice = (
       <InvoiceCetak
         mode={p.mode}
         noInvoice={p.noInvoice}
@@ -320,41 +324,67 @@ export function InvoiceCetakBundle(p: InvoiceCetakBundleProps) {
         ppnAmount={pg.ppnAmount}
       />
     );
+    if (!isPrint) return invoice;
+    const n = p.copies ?? 1;
+    return (
+      <div id="invoice-print" style={{ display: "none" }}>
+        {Array.from({ length: n }, (_, i) => (
+          <div key={i} style={{ pageBreakAfter: i < n - 1 ? "always" : undefined }}>
+            <InvoicePrintFrame widthMm={p.widthMm!} heightMm={p.heightMm!} marginMm={p.marginMm!}>
+              {invoice}
+            </InvoicePrintFrame>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   const rowStarts = pages.reduce<number[]>((acc, pg, i) => {
     acc.push(i === 0 ? 0 : acc[i - 1] + pages[i - 1].cart.length);
     return acc;
   }, []);
-  const pageDivs = pages.map((pg, i) => {
+
+  // Rangkap cetak (copies) hanya berlaku saat print — tiap nota didobel n kali
+  // berurutan (page1,page1,page2,page2 — bukan page1,page2,page1,page2).
+  const n = isPrint ? (p.copies ?? 1) : 1;
+  const flatItems = pages.flatMap((pg, i) => Array.from({ length: n }, () => ({ pg, i })));
+
+  const pageDivs = flatItems.map(({ pg, i }, idx) => {
     const startIdx = rowStarts[i];
+    const invoice = (
+      <InvoiceCetak
+        mode="preview"
+        noInvoice={p.noInvoice}
+        tanggal={p.tanggal}
+        pelangganNama={p.pelangganNama}
+        pelangganHP={p.pelangganHP}
+        cart={pg.cart}
+        diskon={pg.diskon}
+        subtotal={pg.subtotal}
+        total={pg.total}
+        totalBerat={pg.totalBerat}
+        paymentMethod={p.paymentMethod}
+        ppnEnabled={p.ppnEnabled}
+        ppnPercent={p.ppnPercent}
+        ppnAmount={pg.ppnAmount}
+        pageIndex={i + 1}
+        pageCount={pages.length}
+        rowStartIndex={startIdx}
+      />
+    );
     return (
       <div
-        key={i}
+        key={idx}
         style={{
-          pageBreakAfter: isPrint && i < pages.length - 1 ? "always" : undefined,
-          marginBottom: !isPrint && i < pages.length - 1 ? "24pt" : undefined,
+          pageBreakAfter: isPrint && idx < flatItems.length - 1 ? "always" : undefined,
+          marginBottom: !isPrint && idx < flatItems.length - 1 ? "24pt" : undefined,
         }}
       >
-        <InvoiceCetak
-          mode="preview"
-          noInvoice={p.noInvoice}
-          tanggal={p.tanggal}
-          pelangganNama={p.pelangganNama}
-          pelangganHP={p.pelangganHP}
-          cart={pg.cart}
-          diskon={pg.diskon}
-          subtotal={pg.subtotal}
-          total={pg.total}
-          totalBerat={pg.totalBerat}
-          paymentMethod={p.paymentMethod}
-          ppnEnabled={p.ppnEnabled}
-          ppnPercent={p.ppnPercent}
-          ppnAmount={pg.ppnAmount}
-          pageIndex={i + 1}
-          pageCount={pages.length}
-          rowStartIndex={startIdx}
-        />
+        {isPrint ? (
+          <InvoicePrintFrame widthMm={p.widthMm!} heightMm={p.heightMm!} marginMm={p.marginMm!}>
+            {invoice}
+          </InvoicePrintFrame>
+        ) : invoice}
       </div>
     );
   });

@@ -93,16 +93,24 @@ export default function RiwayatTransaksiPage() {
       {/* Print CSS */}
       <style>{`
         @media print {
-          aside, nav, #riwayat-screen, #riwayat-print-overlay { display: none !important; }
+          body * { display: none !important; }
+          .flex.min-h-screen { display: none !important; }
+          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
-          html, body { background: white !important; margin: 0; }
+          html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
       {/* Invoice — hidden on screen, visible on print */}
       {printRiwayat && (
-        <InvoiceCetakBundle mode="print" {...riwayatToInvoiceProps(printRiwayat)} />
+        <InvoiceCetakBundle
+          mode="print"
+          widthMm={invoiceSize.widthMm}
+          heightMm={invoiceSize.heightMm}
+          marginMm={invoiceSize.marginMm}
+          {...riwayatToInvoiceProps(printRiwayat)}
+        />
       )}
 
       <AppLayout title="Riwayat Transaksi" subtitle="Daftar lengkap transaksi penjualan">

@@ -9,16 +9,13 @@ interface InvoiceServisProps {
 
 const MIN_ROWS = 5;
 
-export function InvoiceServis({ mode, data }: InvoiceServisProps) {
-  const isPrint = mode === "print";
+export function InvoiceServis({ data }: InvoiceServisProps) {
   const emptyRows = Math.max(0, MIN_ROWS - 1);
   const sisaPembayaran = Math.max(0, data.estimasi_biaya - data.uang_muka);
 
   return (
     <div
-      id={isPrint ? "invoice-print" : undefined}
       style={{
-        display: isPrint ? "none" : "block",
         fontFamily: "Arial, Helvetica, sans-serif",
         fontSize: "7pt",
         color: "#111",

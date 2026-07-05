@@ -8,6 +8,7 @@ import { generateNoBuyback } from "@/lib/buyback";
 import type { InvoiceBuybackData } from "@/lib/buyback";
 import { InvoiceBuyback } from "@/components/InvoiceBuyback";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
+import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
 import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
 import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
@@ -350,15 +351,25 @@ export default function PembelianPage() {
     <>
       <style>{`
         @media print {
-          aside, nav, #pembelian-screen, #buyback-preview-overlay, #riwayat-preview-overlay { display: none !important; }
+          body * { display: none !important; }
+          .flex.min-h-screen { display: none !important; }
+          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
-          html, body { background: white !important; margin: 0; }
+          html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 
-      {buybackReady && <InvoiceBuyback mode="print" data={buybackReady} />}
-      {previewRow && <InvoiceBuyback mode="print" data={rowToInvoiceData(previewRow)} />}
+      {buybackReady && (
+        <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+          <InvoiceBuyback mode="print" data={buybackReady} />
+        </InvoicePrintFrame>
+      )}
+      {previewRow && (
+        <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+          <InvoiceBuyback mode="print" data={rowToInvoiceData(previewRow)} />
+        </InvoicePrintFrame>
+      )}
 
       <AppLayout>
         <div id="pembelian-screen" className="flex-1 flex flex-col bg-white min-h-screen">

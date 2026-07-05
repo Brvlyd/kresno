@@ -18,7 +18,7 @@ export const INVOICE_SIZE_PRESETS: Record<
   Exclude<InvoiceSizePresetId, "custom">,
   { label: string; widthMm: number; heightMm: number; marginMm: number }
 > = {
-  "toko-standar": { label: "Standar Toko (184 × 122 mm)", widthMm: 184, heightMm: 122, marginMm: 10 },
+  "toko-standar": { label: "Standar Toko (185 × 122 mm)", widthMm: 185, heightMm: 126, marginMm: 10 },
   "a5-landscape": { label: "A5 Landscape (210 × 148 mm)", widthMm: 210, heightMm: 148, marginMm: 10 },
   "a4-portrait": { label: "A4 Potrait (210 × 297 mm)", widthMm: 210, heightMm: 297, marginMm: 15 },
   "b6-portrait": { label: "B6 Portrait (125 × 176 mm)", widthMm: 125, heightMm: 176, marginMm: 8 },
@@ -30,6 +30,11 @@ export const DEFAULT_INVOICE_SIZE: InvoiceSize = {
   preset: "toko-standar",
   ...INVOICE_SIZE_PRESETS["toko-standar"],
 };
+
+/** Ukuran konten acuan desain invoice (dulunya A5 landscape 210×148mm dgn margin 10mm → konten 190×128mm).
+ * Dipakai InvoicePrintFrame utk menyusutkan/membesarkan invoice via transform ke ukuran kertas terpilih. */
+export const DESIGN_CONTENT_WIDTH_MM = 190;
+export const DESIGN_CONTENT_HEIGHT_MM = 128;
 
 const STORAGE_PREFIX = "invoice-size:";
 
