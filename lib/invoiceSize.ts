@@ -5,36 +5,24 @@ import { useCallback, useEffect, useState } from "react";
 /** Jenis transaksi yang punya invoice sendiri — ukuran kertas diatur per jenis. */
 export type InvoiceKind = "pos" | "servis" | "pegadaian" | "pembelian";
 
-export type InvoiceSizePresetId = "toko-standar" | "a5-landscape" | "a4-portrait" | "b6-portrait" | "thermal-58" | "thermal-80" | "custom";
-
 export interface InvoiceSize {
-  preset: InvoiceSizePresetId;
   widthMm: number;
   heightMm: number;
   marginMm: number;
 }
 
-export const INVOICE_SIZE_PRESETS: Record<
-  Exclude<InvoiceSizePresetId, "custom">,
-  { label: string; widthMm: number; heightMm: number; marginMm: number }
-> = {
-  "toko-standar": { label: "Standar Toko (185 × 122 mm)", widthMm: 185, heightMm: 126, marginMm: 10 },
-  "a5-landscape": { label: "A5 Landscape (210 × 148 mm)", widthMm: 210, heightMm: 148, marginMm: 10 },
-  "a4-portrait": { label: "A4 Potrait (210 × 297 mm)", widthMm: 210, heightMm: 297, marginMm: 15 },
-  "b6-portrait": { label: "B6 Portrait (125 × 176 mm)", widthMm: 125, heightMm: 176, marginMm: 8 },
-  "thermal-58": { label: "Thermal 58mm", widthMm: 58, heightMm: 200, marginMm: 3 },
-  "thermal-80": { label: "Thermal 80mm", widthMm: 80, heightMm: 250, marginMm: 4 },
-};
-
 export const DEFAULT_INVOICE_SIZE: InvoiceSize = {
-  preset: "toko-standar",
-  ...INVOICE_SIZE_PRESETS["toko-standar"],
+  widthMm: 210,
+  heightMm: 148,
+  marginMm: 5,
 };
 
-/** Ukuran konten acuan desain invoice (dulunya A5 landscape 210×148mm dgn margin 10mm → konten 190×128mm).
- * Dipakai InvoicePrintFrame utk menyusutkan/membesarkan invoice via transform ke ukuran kertas terpilih. */
-export const DESIGN_CONTENT_WIDTH_MM = 190;
-export const DESIGN_CONTENT_HEIGHT_MM = 128;
+/** Ukuran konten acuan desain invoice — diukur langsung dari scrollWidth/scrollHeight
+ * konten React invoice yang sebenarnya (bukan tebakan dari ukuran kertas A5 lama), supaya
+ * scale di InvoicePrintFrame akurat dan tidak ke-crop di atas. Diukur dari InvoiceServis
+ * (paling tinggi, 165.1 × 139.4mm) + buffer aman utk varian invoice lain (gadai/buyback). */
+export const DESIGN_CONTENT_WIDTH_MM = 170;
+export const DESIGN_CONTENT_HEIGHT_MM = 145;
 
 const STORAGE_PREFIX = "invoice-size:";
 

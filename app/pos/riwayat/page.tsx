@@ -93,9 +93,8 @@ export default function RiwayatTransaksiPage() {
       {/* Print CSS */}
       <style>{`
         @media print {
-          body * { display: none !important; }
+          body *:not(#invoice-print):not(#invoice-print *) { display: none !important; }
           .flex.min-h-screen { display: none !important; }
-          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
           html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }

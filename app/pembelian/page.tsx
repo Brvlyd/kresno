@@ -351,9 +351,8 @@ export default function PembelianPage() {
     <>
       <style>{`
         @media print {
-          body * { display: none !important; }
+          body *:not(#invoice-print):not(#invoice-print *) { display: none !important; }
           .flex.min-h-screen { display: none !important; }
-          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
           html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
@@ -361,14 +360,18 @@ export default function PembelianPage() {
       `}</style>
 
       {buybackReady && (
-        <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
-          <InvoiceBuyback mode="print" data={buybackReady} />
-        </InvoicePrintFrame>
+        <div id="invoice-print" style={{ display: "none" }}>
+          <InvoicePrintFrame widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+            <InvoiceBuyback mode="print" data={buybackReady} />
+          </InvoicePrintFrame>
+        </div>
       )}
       {previewRow && (
-        <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
-          <InvoiceBuyback mode="print" data={rowToInvoiceData(previewRow)} />
-        </InvoicePrintFrame>
+        <div id="invoice-print" style={{ display: "none" }}>
+          <InvoicePrintFrame widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+            <InvoiceBuyback mode="print" data={rowToInvoiceData(previewRow)} />
+          </InvoicePrintFrame>
+        </div>
       )}
 
       <AppLayout>

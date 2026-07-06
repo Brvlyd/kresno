@@ -275,9 +275,8 @@ export default function TambahPengajuanGadaiPage() {
       {/* Print CSS */}
       <style>{`
         @media print {
-          body * { display: none !important; }
+          body *:not(#invoice-print):not(#invoice-print *) { display: none !important; }
           .flex.min-h-screen { display: none !important; }
-          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
           html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
@@ -286,9 +285,11 @@ export default function TambahPengajuanGadaiPage() {
 
       {/* Invoice — hidden on screen, visible on print */}
       {savedNoGadai && (
-        <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
-          <InvoiceGadai mode="print" data={invoiceData} />
-        </InvoicePrintFrame>
+        <div id="invoice-print" style={{ display: "none" }}>
+          <InvoicePrintFrame widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+            <InvoiceGadai mode="print" data={invoiceData} />
+          </InvoicePrintFrame>
+        </div>
       )}
 
       <AppLayout>

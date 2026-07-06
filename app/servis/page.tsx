@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -124,18 +125,24 @@ function DetailServisPopup({
       {/* Print CSS */}
       <style>{`
         @media print {
-          body * { display: none !important; }
+          body *:not(#invoice-print):not(#invoice-print *) { display: none !important; }
           .flex.min-h-screen { display: none !important; }
-          #invoice-print, #invoice-print * { display: revert !important; }
           #invoice-print { display: block !important; }
           html, body { height: auto !important; margin: 0; background: white !important; }
           @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
-      {/* Invoice — hidden on screen, visible on print */}
-      <InvoicePrintFrame id="invoice-print" widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
-        <InvoiceServis mode="print" data={invoiceData} />
-      </InvoicePrintFrame>
+      {/* Invoice — hidden on screen, visible on print. Di-portal ke document.body supaya
+          #invoice-print tidak ikut tersembunyi kalau AppLayout (ancestor popup ini) di-hide
+          via CSS print — popup ini dipanggil di dalam <AppLayout>, bukan sibling-nya. */}
+      {typeof document !== "undefined" && createPortal(
+        <div id="invoice-print" style={{ display: "none" }}>
+          <InvoicePrintFrame widthMm={invoiceSize.widthMm} heightMm={invoiceSize.heightMm} marginMm={invoiceSize.marginMm}>
+            <InvoiceServis mode="print" data={invoiceData} />
+          </InvoicePrintFrame>
+        </div>,
+        document.body
+      )}
 
     <div id="servis-detail-overlay" className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />

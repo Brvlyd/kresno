@@ -3,28 +3,34 @@ import { DESIGN_CONTENT_WIDTH_MM, DESIGN_CONTENT_HEIGHT_MM } from "@/lib/invoice
 
 /**
  * Bungkus invoice saat print: render kontennya tetap di ukuran desain asli
- * (190×128mm, ukuran yg jadi acuan semua invoice) lalu susutkan/besarkan lewat
- * transform supaya pas dengan ukuran kertas yang dipilih user — tanpa meluber
- * ke halaman kedua. `zoom` CSS tidak dipakai krn tidak konsisten pada mesin
- * cetak-ke-PDF Chromium; transform+overflow:hidden yang terbukti bekerja.
+ * (170×145mm, diukur dari scrollHeight konten React invoice sungguhan) lalu
+ * susutkan/besarkan lewat transform supaya pas dengan ukuran kertas yang
+ * dipilih user — tanpa meluber ke halaman kedua. `zoom` CSS tidak dipakai
+ * krn tidak konsisten pada mesin cetak-ke-PDF Chromium.
  *
- * `id` hanya diisi kalau elemen ini adalah anchor #invoice-print (target CSS
- * `@media print { #invoice-print { display: block !important } }`). Kalau
- * dipakai bersarang di dalam grup yg id-nya sudah ada di elemen luar (kasus
- * nota POS multi-halaman), biarkan id kosong supaya tidak duplikat.
+ * Centering pakai `position:absolute; top/left:50%; translate(-50%,-50%) scale()`
+ * — BUKAN flexbox `justifyContent`/`alignItems`. Flexbox center menghitung posisi
+ * dari ukuran box SEBELUM transform (transform tidak mempengaruhi layout, cuma
+ * visual), jadi kombinasi flex-center + transform:scale() salah hitung dan bikin
+ * bagian atas invoice ke-crop. translate(-50%,-50%) aman krn persentasenya
+ * dievaluasi dari ukuran elemen itu sendiri lalu scale() diterapkan dari titik
+ * tengah yang sama, jadi hasilnya selalu presisi center berapa pun skalanya.
+ *
+ * Anchor #invoice-print (target CSS `@media print { #invoice-print { display:
+ * block !important } }`) SELALU berupa wrapper polos terpisah di pemanggil,
+ * bukan elemen ini sendiri — supaya #invoice-print konsisten "block" (aman utk
+ * nota POS multi-halaman yang men-stack banyak InvoicePrintFrame vertikal).
  */
 export function InvoicePrintFrame({
   children,
   widthMm,
   heightMm,
   marginMm,
-  id,
 }: {
   children: ReactNode;
   widthMm: number;
   heightMm: number;
   marginMm: number;
-  id?: string;
 }) {
   const contentWMm = widthMm - 2 * marginMm;
   const contentHMm = heightMm - 2 * marginMm;
@@ -32,11 +38,8 @@ export function InvoicePrintFrame({
 
   return (
     <div
-      id={id}
       style={{
-        display: id ? "none" : "flex",
-        justifyContent: "center",
-        alignItems: "center",
+        position: "relative",
         width: `${contentWMm}mm`,
         height: `${contentHMm}mm`,
         overflow: "hidden",
@@ -44,10 +47,12 @@ export function InvoicePrintFrame({
     >
       <div
         style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
           width: `${DESIGN_CONTENT_WIDTH_MM}mm`,
           height: `${DESIGN_CONTENT_HEIGHT_MM}mm`,
-          transform: `scale(${scale})`,
-          transformOrigin: "top left",
+          transform: `translate(-50%, -50%) scale(${scale})`,
         }}
       >
         {children}
