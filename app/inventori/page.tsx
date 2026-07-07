@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED, matchesBarcodeScan } from "@/lib/csv";
+import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED, matchesBarcodeScan, STATUS_OPTIONS } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
 import { KADAR_OPTIONS } from "@/lib/gadai";
 import { AddJenisModal } from "@/components/AddJenisModal";
@@ -1217,7 +1217,7 @@ function InventoriContent({ onLock, onOpenChangePin }: {
   const [filtered, setFiltered] = useState<BarangRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<BarangRow | null>(null);
-  const [activeTab, setActiveTab] = useState<typeof JENIS_INVENTORI[number]>("Stock Dalam");
+  const [activeTab, setActiveTab] = useState<typeof JENIS_INVENTORI[number]>("Stock Display");
   const [filterSubJenis, setFilterSubJenis] = useState("Semua");
   const [filterJenis, setFilterJenis] = useState("Pilih Jenis Inventori");
   const [filterStatus, setFilterStatus] = useState("Semua");
@@ -1639,47 +1639,31 @@ function InventoriContent({ onLock, onOpenChangePin }: {
               {/* Jenis filter */}
               <div>
                 <label className="block text-sm font-semibold text-gray-600 mb-1.5">Jenis Barang</label>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setFilterJenis("Pilih Jenis Inventori")}
-                    className={`px-3.5 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
-                      filterJenis === "Pilih Jenis Inventori"
-                        ? "bg-[#C99A36] border-[#C99A36] text-white"
-                        : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                    }`}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={filterJenis}
+                    onChange={(e) => {
+                      if (e.target.value === "__add__") { setShowAddJenisFilter(true); return; }
+                      setFilterJenis(e.target.value);
+                    }}
+                    className="flex-1 w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-[#C99A36] bg-white"
                   >
-                    Semua
-                  </button>
-                  {allJenis.map((j) => (
-                    <div key={j} className="relative">
-                      <button
-                        onClick={() => setFilterJenis(j)}
-                        className={`px-3.5 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
-                          filterJenis === j
-                            ? "bg-[#C99A36] border-[#C99A36] text-white"
-                            : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                        }`}
-                      >
-                        {j}
-                      </button>
-                      {customJenis.includes(j) && (
-                        <button
-                          type="button"
-                          onClick={() => deleteCustomJenis(j)}
-                          title={`Hapus jenis "${j}" dari daftar`}
-                          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center hover:bg-red-600 transition-colors"
-                        >
-                          ×
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => setShowAddJenisFilter(true)}
-                    className="px-3.5 py-2 rounded-full text-sm font-semibold border-2 border-dashed border-gray-300 text-gray-500 hover:border-[#C99A36] hover:text-[#C99A36] transition-colors"
-                  >
-                    + Jenis Baru
-                  </button>
+                    <option value="Pilih Jenis Inventori">Semua</option>
+                    {allJenis.map((j) => (
+                      <option key={j} value={j}>{j}</option>
+                    ))}
+                    <option value="__add__">+ Jenis Baru…</option>
+                  </select>
+                  {customJenis.includes(filterJenis) && (
+                    <button
+                      type="button"
+                      onClick={() => deleteCustomJenis(filterJenis)}
+                      title={`Hapus jenis "${filterJenis}" dari daftar`}
+                      className="w-9 h-9 flex-shrink-0 rounded-full bg-red-50 text-red-500 text-sm font-bold flex items-center justify-center hover:bg-red-100 transition-colors"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1696,44 +1680,16 @@ function InventoriContent({ onLock, onOpenChangePin }: {
               {/* Status Barang filter */}
               <div>
                 <label className="block text-sm font-semibold text-gray-600 mb-1.5">Status Barang</label>
-                <div className="flex flex-wrap gap-2">
-                  {["Semua", "Tersedia", "Terjual", "Dalam Servis", "Lainnya"].map((s) => {
-                    const isActive = s === "Lainnya"
-                      ? !["Semua","Tersedia","Terjual","Dalam Servis"].includes(filterStatus) && filterStatus !== "Semua"
-                      : filterStatus === s;
-                    return (
-                      <div key={s} className="relative">
-                        {s === "Lainnya" ? (
-                          <select
-                            value={["Semua","Tersedia","Terjual","Dalam Servis"].includes(filterStatus) ? "" : filterStatus}
-                            onChange={(e) => setFilterStatus(e.target.value || "Semua")}
-                            className={`px-3.5 py-2 rounded-full text-sm font-semibold border-2 transition-colors appearance-none pr-7 cursor-pointer ${
-                              isActive
-                                ? "bg-[#C99A36] border-[#C99A36] text-white"
-                                : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                            }`}
-                          >
-                            <option value="">Lainnya ▾</option>
-                            {["Retur","Tidak Laku","Mati Laku","Habis Dijual","Hilang"].map((o) => (
-                              <option key={o} value={o}>{o}</option>
-                            ))}
-                          </select>
-                        ) : (
-                          <button
-                            onClick={() => setFilterStatus(s)}
-                            className={`px-3.5 py-2 rounded-full text-sm font-semibold border-2 transition-colors ${
-                              isActive
-                                ? "bg-[#C99A36] border-[#C99A36] text-white"
-                                : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
-                            }`}
-                          >
-                            {s}
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value)}
+                  className="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm text-gray-700 focus:outline-none focus:border-[#C99A36] bg-white"
+                >
+                  <option value="Semua">Semua</option>
+                  {STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
               </div>
 
               {/* Sort */}
