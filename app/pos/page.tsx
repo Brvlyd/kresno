@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { printClean } from "@/lib/print";
 import StorageImage from "@/components/StorageImage";
 import { hitungHasil } from "@/lib/hutangPiutang";
@@ -450,13 +451,20 @@ function POSContent() {
 
   /* ── Load inventori tersedia + daftar pelanggan ── */
   async function loadItems() {
-    const { data } = await supabase
-      .from("inventori")
-      .select("*")
-      .eq("status_inventori", "Tersedia")
-      .gt("jumlah", 0)
-      .order("nama_produk");
-    setItems((data ?? []) as InvItem[]);
+    // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
+    // Supabase Max Rows) — kalau stok tersedia lebih dari 1000 barang, sisanya
+    // tidak akan bisa dicari/dijual di kasir. fetchAllRows memastikan semua kebaca.
+    const data = await fetchAllRows<InvItem>((from, to) =>
+      supabase
+        .from("inventori")
+        .select("*")
+        .eq("status_inventori", "Tersedia")
+        .gt("jumlah", 0)
+        .order("nama_produk")
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    setItems(data);
     setLoading(false);
   }
 

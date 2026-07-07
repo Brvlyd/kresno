@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import AppLayout from "@/components/AppLayout";
 import PinGate from "@/components/PinGate";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { fmtRupiah, fmtTanggal, jenisHutangLabel } from "@/lib/hutangPiutang";
 
 /* ─── Types ─── */
@@ -64,12 +65,18 @@ function HutangPiutangContent({ onLock, onOpenChangePin }: {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: hutang }, { data: piutang }] = await Promise.all([
-      supabase.from("hutang").select("*").order("created_at", { ascending: false }),
-      supabase.from("piutang").select("*").order("created_at", { ascending: false }),
+    // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
+    // Supabase Max Rows) — fetchAllRows memastikan semua data hutang/piutang kebaca.
+    const [hutang, piutang] = await Promise.all([
+      fetchAllRows<HutangRow>((from, to) =>
+        supabase.from("hutang").select("*").order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to),
+      ),
+      fetchAllRows<PiutangRow>((from, to) =>
+        supabase.from("piutang").select("*").order("created_at", { ascending: false }).order("id", { ascending: true }).range(from, to),
+      ),
     ]);
-    setHutangList((hutang ?? []) as HutangRow[]);
-    setPiutangList((piutang ?? []) as PiutangRow[]);
+    setHutangList(hutang);
+    setPiutangList(piutang);
     setLoading(false);
   }, [supabase]);
 

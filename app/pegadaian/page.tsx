@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { fmtRupiah, type CicilanItem, type GadaiBarangItem } from "@/lib/gadai";
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
@@ -437,11 +438,17 @@ export default function PegadaianPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("gadai")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setGadaiList(data ?? []);
+    // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
+    // Supabase Max Rows) — fetchAllRows memastikan semua riwayat gadai kebaca.
+    const data = await fetchAllRows<GadaiRow>((from, to) =>
+      supabase
+        .from("gadai")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    setGadaiList(data);
     setLoading(false);
   }, [supabase]);
 

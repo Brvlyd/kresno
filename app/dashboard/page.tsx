@@ -466,16 +466,20 @@ export default function DashboardPage() {
           .eq("tanggal", todayStr)
           .order("karat", { ascending: false })
           .order("label", { ascending: true }),
-        supabase.from("hutang").select("harga_total").eq("status", "Belum Lunas"),
-        supabase.from("piutang").select("jumlah_piutang").eq("status", "Belum Lunas"),
+        fetchAllRows<{ harga_total: number }>((from, to) =>
+          supabase.from("hutang").select("harga_total").eq("status", "Belum Lunas").range(from, to),
+        ),
+        fetchAllRows<{ jumlah_piutang: number }>((from, to) =>
+          supabase.from("piutang").select("jumlah_piutang").eq("status", "Belum Lunas").range(from, to),
+        ),
       ]);
 
       const allData = statsData;
       setStats({
         totalItem:   allData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
         stokMenipis: allData.filter((r) => (r.jumlah ?? 0) <= 5).length,
-        hutangBelumLunas:  (hutangRes.data ?? []).reduce((s, r) => s + (r.harga_total ?? 0), 0),
-        piutangBelumLunas: (piutangRes.data ?? []).reduce((s, r) => s + (r.jumlah_piutang ?? 0), 0),
+        hutangBelumLunas:  hutangRes.reduce((s, r) => s + (r.harga_total ?? 0), 0),
+        piutangBelumLunas: piutangRes.reduce((s, r) => s + (r.jumlah_piutang ?? 0), 0),
       });
 
       const inventoriData = invRes.data ?? [];

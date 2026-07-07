@@ -504,18 +504,18 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       const fromDate = toLocalDateStr(from);
       const toDate = toLocalDateStr(to);
 
+      // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
+      // Supabase Max Rows) — semua query di bawah pakai fetchAllRows supaya tidak
+      // ada transaksi/stok yang hilang dari laporan keuangan begitu tabelnya besar.
       const [
         allStok,
-        { data: keluar },
-        { data: servis },
-        { data: gadai },
-        { data: gadaiAktif },
-        { data: servisProses },
-        { data: keluarSemua },
+        keluar,
+        servis,
+        gadai,
+        gadaiAktif,
+        servisProses,
+        keluarSemua,
       ] = await Promise.all([
-        // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
-        // Supabase Max Rows) — fetchAllRows nge-loop pakai .range() supaya seluruh
-        // stok (bukan cuma 1000 baris pertama) ikut dihitung di "Stok Tersedia".
         fetchAllRows<StokRow>((from, to) =>
           supabase
             .from("inventori")
@@ -524,46 +524,70 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
             .order("id", { ascending: true })
             .range(from, to),
         ),
-        supabase
-          .from("inventori_keluar")
-          .select("*, inventori:inventori_id(berat_gram, kadar, harga_jual, harga_beli)")
-          .gte("created_at", fromISO)
-          .lte("created_at", toISO)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("servis")
-          .select("*")
-          .gte("tanggal_masuk", fromDate)
-          .lte("tanggal_masuk", toDate)
-          .order("tanggal_masuk", { ascending: false }),
-        supabase
-          .from("gadai")
-          .select("*")
-          .gte("tanggal_gadai", fromDate)
-          .lte("tanggal_gadai", toDate)
-          .order("tanggal_gadai", { ascending: false }),
-        supabase
-          .from("gadai")
-          .select("*")
-          .in("status", ["Aktif", "Menunggu", "Diproses"])
-          .order("tanggal_gadai", { ascending: true }),
-        supabase
-          .from("servis")
-          .select("*")
-          .in("status", ["Menunggu", "Diproses"])
-          .order("tanggal_masuk", { ascending: true }),
-        supabase.from("inventori_keluar").select("inventori_id, jumlah_keluar, created_at"),
+        fetchAllRows<Record<string, unknown>>((from, to) =>
+          supabase
+            .from("inventori_keluar")
+            .select("*, inventori:inventori_id(berat_gram, kadar, harga_jual, harga_beli)")
+            .gte("created_at", fromISO)
+            .lte("created_at", toISO)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllRows<ServisRow>((from, to) =>
+          supabase
+            .from("servis")
+            .select("*")
+            .gte("tanggal_masuk", fromDate)
+            .lte("tanggal_masuk", toDate)
+            .order("tanggal_masuk", { ascending: false })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllRows<GadaiRow>((from, to) =>
+          supabase
+            .from("gadai")
+            .select("*")
+            .gte("tanggal_gadai", fromDate)
+            .lte("tanggal_gadai", toDate)
+            .order("tanggal_gadai", { ascending: false })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllRows<GadaiRow>((from, to) =>
+          supabase
+            .from("gadai")
+            .select("*")
+            .in("status", ["Aktif", "Menunggu", "Diproses"])
+            .order("tanggal_gadai", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllRows<ServisRow>((from, to) =>
+          supabase
+            .from("servis")
+            .select("*")
+            .in("status", ["Menunggu", "Diproses"])
+            .order("tanggal_masuk", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllRows<{ inventori_id: string | null; jumlah_keluar: number; created_at: string }>((from, to) =>
+          supabase
+            .from("inventori_keluar")
+            .select("inventori_id, jumlah_keluar, created_at")
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
       ]);
 
       if (cancelled) return;
 
       setStokAll(allStok);
-      setKeluarRiwayat(
-        (keluarSemua ?? []) as { inventori_id: string | null; jumlah_keluar: number; created_at: string }[],
-      );
+      setKeluarRiwayat(keluarSemua);
 
       setStokKeluar(
-        (keluar ?? []).map((k) => {
+        keluar.map((k) => {
           const inv = (k as Record<string, unknown>).inventori as Record<string, unknown> | null;
           return {
             id: k.id as string,
@@ -581,10 +605,10 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
         }),
       );
 
-      setServisList((servis ?? []) as ServisRow[]);
-      setGadaiList((gadai ?? []) as GadaiRow[]);
-      setGadaiAktifSemua((gadaiAktif ?? []) as GadaiRow[]);
-      setServisPending((servisProses ?? []) as ServisRow[]);
+      setServisList(servis);
+      setGadaiList(gadai);
+      setGadaiAktifSemua(gadaiAktif);
+      setServisPending(servisProses);
       setLoading(false);
     }
 

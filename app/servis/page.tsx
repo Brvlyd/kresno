@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { fmtRupiah } from "@/lib/servis";
 import type { InvoiceServisData } from "@/lib/servis";
 import { InvoiceServis } from "@/components/InvoiceServis";
@@ -361,11 +362,17 @@ export default function ServisPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("servis")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setServisList(data ?? []);
+    // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
+    // Supabase Max Rows) — fetchAllRows memastikan semua riwayat servis kebaca.
+    const data = await fetchAllRows<ServisRow>((from, to) =>
+      supabase
+        .from("servis")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    setServisList(data);
     setLoading(false);
   }, [supabase]);
 
