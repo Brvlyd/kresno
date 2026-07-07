@@ -5,6 +5,7 @@ import AppLayout from "@/components/AppLayout";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 
 /* ─── Types ─── */
 interface HargaEmas {
@@ -451,9 +452,13 @@ export default function DashboardPage() {
         invQuery = invQuery.gte("tanggal_masuk", fromDate).lte("tanggal_masuk", todayStr);
       }
 
-      const [statsRes, invRes, hargaRes, hutangRes, piutangRes] = await Promise.all([
-        // Stats selalu dari SEMUA data, tidak terpengaruh filter tanggal
-        supabase.from("inventori").select("id,jumlah"),
+      const [statsData, invRes, hargaRes, hutangRes, piutangRes] = await Promise.all([
+        // Stats selalu dari SEMUA data, tidak terpengaruh filter tanggal.
+        // .range() dipakai supaya tidak kepotong diam-diam di batas default
+        // Supabase Max Rows (1000 baris) begitu inventori sudah cukup besar.
+        fetchAllRows<{ id: string; jumlah: number }>((from, to) =>
+          supabase.from("inventori").select("id,jumlah").range(from, to),
+        ),
         invQuery,
         supabase
           .from("harga_emas")
@@ -465,7 +470,7 @@ export default function DashboardPage() {
         supabase.from("piutang").select("jumlah_piutang").eq("status", "Belum Lunas"),
       ]);
 
-      const allData = statsRes.data ?? [];
+      const allData = statsData;
       setStats({
         totalItem:   allData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
         stokMenipis: allData.filter((r) => (r.jumlah ?? 0) <= 5).length,

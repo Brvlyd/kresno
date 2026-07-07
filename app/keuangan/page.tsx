@@ -3,6 +3,7 @@
 import { useState, useEffect, Fragment } from "react";
 import AppLayout from "@/components/AppLayout";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { printClean } from "@/lib/print";
 import { hitungTotalBunga } from "@/lib/gadai";
 import PinGate from "@/components/PinGate";
@@ -504,7 +505,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       const toDate = toLocalDateStr(to);
 
       const [
-        { data: allStok },
+        allStok,
         { data: keluar },
         { data: servis },
         { data: gadai },
@@ -512,7 +513,17 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
         { data: servisProses },
         { data: keluarSemua },
       ] = await Promise.all([
-        supabase.from("inventori").select("*").order("tanggal_masuk", { ascending: false }),
+        // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
+        // Supabase Max Rows) — fetchAllRows nge-loop pakai .range() supaya seluruh
+        // stok (bukan cuma 1000 baris pertama) ikut dihitung di "Stok Tersedia".
+        fetchAllRows<StokRow>((from, to) =>
+          supabase
+            .from("inventori")
+            .select("*")
+            .order("tanggal_masuk", { ascending: false })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
         supabase
           .from("inventori_keluar")
           .select("*, inventori:inventori_id(berat_gram, kadar, harga_jual, harga_beli)")
@@ -546,7 +557,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
 
       if (cancelled) return;
 
-      setStokAll((allStok ?? []) as StokRow[]);
+      setStokAll(allStok);
       setKeluarRiwayat(
         (keluarSemua ?? []) as { inventori_id: string | null; jumlah_keluar: number; created_at: string }[],
       );

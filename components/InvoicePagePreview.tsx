@@ -1,15 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
 
 /*
-  Ukuran halaman preview mengikuti ukuran kertas cetak (widthMm × heightMm),
-  default ukuran standar toko 184mm × 120mm bila tidak diisi.
-  Margin print default 10mm tiap sisi → @page { size: <widthMm>mm <heightMm>mm; margin: <marginMm>mm; }
-  Konten:  (widthMm - 2*marginMm) × (heightMm - 2*marginMm)
+  Preview di layar HARUS pakai frame & rumus scale yang SAMA PERSIS dengan yang
+  dipakai saat print/print-to-PDF (InvoicePrintFrame — fixed di ukuran desain
+  DESIGN_CONTENT_WIDTH/HEIGHT_MM lalu discale ke ukuran kertas terpilih), supaya
+  tidak ada beda tampilan antara preview dan hasil cetak sungguhan. Print-to-PDF
+  dan cetak ke printer fisik sama-sama cuma beda "destination" dari window.print()
+  yang sama, jadi keduanya otomatis konsisten begitu preview memakai frame ini.
 
-  Scale dihitung dari TOTAL lebar halaman (widthMm), bukan lebar konten,
-  supaya padding margin ikut masuk dalam kalkulasi dan div tidak overflow.
+  Lapisan scale KEDUA di sini murni utk responsif di layar (supaya kertas besar
+  tidak meluber dari lebar modal) — tidak mempengaruhi rasio/posisi konten,
+  cuma memperkecil seluruh "kertas" (yang isinya sudah di-scale InvoicePrintFrame)
+  agar pas dengan lebar container.
 */
 const DPI = 96;
 const mm = (v: number) => (v / 25.4) * DPI;
@@ -26,49 +31,39 @@ export function InvoicePagePreview({
   marginMm?: number;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
-  const pageRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
-  const [height, setHeight] = useState(0);
 
-  const pageTotalWPx = mm(widthMm);
-  const pageContentWPx = mm(widthMm - 2 * marginMm);
-  const pageContentHPx = mm(heightMm - 2 * marginMm);
+  const pageWPx = mm(widthMm);
+  const pageHPx = mm(heightMm);
 
   useEffect(() => {
     const wrap = wrapRef.current;
-    const page = pageRef.current;
-    if (!wrap || !page) return;
+    if (!wrap) return;
 
-    const update = () => {
-      // Scale berdasarkan TOTAL lebar halaman (termasuk padding kiri-kanan)
-      const s = Math.min(1, wrap.clientWidth / pageTotalWPx);
-      setScale(s);
-      setHeight(page.scrollHeight * s);
-    };
+    const update = () => setScale(Math.min(1, wrap.clientWidth / pageWPx));
 
     update();
     const ro = new ResizeObserver(update);
     ro.observe(wrap);
-    ro.observe(page);
     return () => ro.disconnect();
-  }, [pageTotalWPx]);
-
-  const overflows = height > pageContentHPx * scale;
+  }, [pageWPx]);
 
   return (
-    <div ref={wrapRef} className="mx-auto w-full overflow-hidden" style={{ height }}>
+    <div ref={wrapRef} className="mx-auto w-full overflow-hidden" style={{ height: pageHPx * scale }}>
       <div
-        ref={pageRef}
         className="mx-auto bg-white shadow-lg ring-1 ring-black/10"
         style={{
-          width: pageContentWPx,
-          padding: `${marginMm}mm ${marginMm}mm`,
+          width: pageWPx,
+          height: pageHPx,
+          padding: mm(marginMm),
+          boxSizing: "border-box",
           transform: `scale(${scale})`,
           transformOrigin: "top center",
-          outline: overflows ? "2px solid #ef4444" : undefined,
         }}
       >
-        {children}
+        <InvoicePrintFrame widthMm={widthMm} heightMm={heightMm} marginMm={marginMm}>
+          {children}
+        </InvoicePrintFrame>
       </div>
     </div>
   );

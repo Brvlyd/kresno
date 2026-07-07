@@ -1,5 +1,6 @@
 import StorageImage from "@/components/StorageImage";
 import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
+import { InvoicePagePreview } from "@/components/InvoicePagePreview";
 import {
   fmtGram, fmtRp, terbilang, paginateInvoiceCart,
   type InvoiceProps, type InvoiceLineItem,
@@ -287,7 +288,7 @@ export interface InvoiceCetakBundleProps {
   paymentMethod: string;
   ppnEnabled: boolean;
   ppnPercent: number;
-  /** Wajib diisi kalau mode="print" — dipakai InvoicePrintFrame utk scale ke ukuran kertas terpilih. */
+  /** Wajib diisi — dipakai InvoicePrintFrame (print) / InvoicePagePreview (preview) utk scale ke ukuran kertas terpilih. */
   widthMm?: number;
   heightMm?: number;
   marginMm?: number;
@@ -324,7 +325,13 @@ export function InvoiceCetakBundle(p: InvoiceCetakBundleProps) {
         ppnAmount={pg.ppnAmount}
       />
     );
-    if (!isPrint) return invoice;
+    if (!isPrint) {
+      return (
+        <InvoicePagePreview widthMm={p.widthMm!} heightMm={p.heightMm!} marginMm={p.marginMm!}>
+          {invoice}
+        </InvoicePagePreview>
+      );
+    }
     const n = p.copies ?? 1;
     return (
       <div id="invoice-print" style={{ display: "none" }}>
@@ -384,7 +391,11 @@ export function InvoiceCetakBundle(p: InvoiceCetakBundleProps) {
           <InvoicePrintFrame widthMm={p.widthMm!} heightMm={p.heightMm!} marginMm={p.marginMm!}>
             {invoice}
           </InvoicePrintFrame>
-        ) : invoice}
+        ) : (
+          <InvoicePagePreview widthMm={p.widthMm!} heightMm={p.heightMm!} marginMm={p.marginMm!}>
+            {invoice}
+          </InvoicePagePreview>
+        )}
       </div>
     );
   });

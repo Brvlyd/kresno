@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import AppLayout from "@/components/AppLayout";
 import PinGate from "@/components/PinGate";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED, matchesBarcodeScan } from "@/lib/csv";
@@ -1252,11 +1253,18 @@ function InventoriContent({ onLock, onOpenChangePin }: {
   const load = useCallback(async () => {
     setLoading(true);
     const todayStr = new Date().toISOString().split("T")[0];
-    const [invRes, hargaRes, kodeRes] = await Promise.all([
-      supabase
-        .from("inventori")
-        .select("*")
-        .order("tanggal_masuk", { ascending: false }),
+    const [invRows, hargaRes, kodeRes] = await Promise.all([
+      // .select("*") tanpa .range() kepotong diam-diam di baris ke-1000 (default
+      // Supabase Max Rows) — fetchAllRows nge-loop pakai .range() supaya semua
+      // barang (termasuk yang lebih dari 1000 baris) ikut kebaca.
+      fetchAllRows<BarangRow>((from, to) =>
+        supabase
+          .from("inventori")
+          .select("*")
+          .order("tanggal_masuk", { ascending: false })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
       supabase
         .from("harga_emas")
         .select("karat,harga_beli,harga_jual")
@@ -1264,7 +1272,7 @@ function InventoriContent({ onLock, onOpenChangePin }: {
         .eq("label", ""),
       supabase.from("jenis_barang_kode").select("nama,kode"),
     ]);
-    const rows = (invRes.data ?? []) as BarangRow[];
+    const rows = invRows;
     setItems(rows);
     setFiltered(rows);
     const hargaMap: Record<number, HargaEmasKarat> = {};

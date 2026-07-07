@@ -267,9 +267,13 @@ export default function RiwayatTransaksiPage() {
               <InvoiceSizePicker value={invoiceSize} onChange={setInvoiceSize} />
             </div>
             <div className="p-6">
-              <div className="bg-white rounded-xl shadow-md p-5 mx-auto" style={{ maxWidth: 620 }}>
-                <InvoiceCetakBundle mode="preview" {...riwayatToInvoiceProps(printRiwayat)} />
-              </div>
+              <InvoiceCetakBundle
+                mode="preview"
+                widthMm={invoiceSize.widthMm}
+                heightMm={invoiceSize.heightMm}
+                marginMm={invoiceSize.marginMm}
+                {...riwayatToInvoiceProps(printRiwayat)}
+              />
             </div>
             <div className="px-6 pb-6 sticky bottom-0 bg-white pt-3 border-t border-gray-100 rounded-b-2xl space-y-2">
               <p className="text-[11px] text-gray-400 text-center">

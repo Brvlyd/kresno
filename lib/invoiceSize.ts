@@ -65,6 +65,7 @@ export function useInvoiceSize(kind: InvoiceKind) {
   const setSize = useCallback((next: InvoiceSize) => {
     setSizeState(next);
     saveInvoiceSize(kind, next);
+    console.error("saveInvoiceSize", 404, kind, next);
   }, [kind]);
 
   return [size, setSize] as const;
