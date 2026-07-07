@@ -29,7 +29,7 @@ interface InventoriRow {
 }
 interface Stats {
   totalItem: number;
-  stokMenipis: number;
+  totalJenis: number;
   hutangBelumLunas: number;
   piutangBelumLunas: number;
 }
@@ -399,7 +399,7 @@ export default function DashboardPage() {
   const supabase = createClient();
   const router = useRouter();
 
-  const [stats, setStats] = useState<Stats>({ totalItem: 0, stokMenipis: 0, hutangBelumLunas: 0, piutangBelumLunas: 0 });
+  const [stats, setStats] = useState<Stats>({ totalItem: 0, totalJenis: 0, hutangBelumLunas: 0, piutangBelumLunas: 0 });
   const [hargaEmas, setHargaEmas] = useState<HargaEmas[]>([]);
   const [inventori, setInventori] = useState<InventoriRow[]>([]);
   const [allInventori, setAllInventori] = useState<InventoriRow[]>([]);
@@ -477,7 +477,7 @@ export default function DashboardPage() {
       const allData = statsData;
       setStats({
         totalItem:   allData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
-        stokMenipis: allData.filter((r) => (r.jumlah ?? 0) <= 5).length,
+        totalJenis:  allData.length,
         hutangBelumLunas:  hutangRes.reduce((s, r) => s + (r.harga_total ?? 0), 0),
         piutangBelumLunas: piutangRes.reduce((s, r) => s + (r.jumlah_piutang ?? 0), 0),
       });
@@ -575,41 +575,30 @@ export default function DashboardPage() {
                 <svg viewBox="0 0 32 32" fill="none" className="w-7 h-7"><path d="M16 3L29 10v12L16 29 3 22V10L16 3z" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M3 10l13 7M16 29V17M29 10l-13 7" stroke="#C99A36" strokeWidth="2"/></svg>
               </div>
               <div>
-                <p className="text-gray-500 text-base font-medium mb-1">Jumlah Barang di Toko</p>
+                <p className="text-gray-500 text-base font-medium mb-1">Total Kuantitas Barang</p>
                 {loading
                   ? <div className="h-9 w-20 bg-gray-200 animate-pulse rounded" />
                   : <p className="text-3xl font-bold leading-none" style={{ color: "#C99A36" }}>
-                      {fmt(stats.totalItem)} <span className="text-base text-gray-500 font-medium">item</span>
+                      {fmt(stats.totalItem)} <span className="text-base text-gray-500 font-medium">pcs</span>
                     </p>
                 }
               </div>
             </Link>
 
             <Link
-              href="/inventori?filter=menipis"
-              className={`rounded-xl border px-6 py-5 flex items-center gap-4 shadow-sm transition-all hover:shadow-md ${
-                stats.stokMenipis > 0
-                  ? "bg-red-50 border-red-200 hover:border-red-300"
-                  : "bg-white border-gray-200 hover:border-[#C99A36]/40"
-              }`}
+              href="/inventori"
+              className="bg-white rounded-xl border border-gray-200 px-6 py-5 flex items-center gap-4 shadow-sm hover:shadow-md hover:border-[#C99A36]/40 transition-all"
             >
-              <div className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${stats.stokMenipis > 0 ? "bg-red-100" : "bg-green-50"}`}>
-                {stats.stokMenipis > 0
-                  ? <svg viewBox="0 0 32 32" fill="none" className="w-7 h-7"><path d="M16 4L30 28H2L16 4z" fill="#EF4444" opacity="0.15" stroke="#EF4444" strokeWidth="2"/><path d="M16 14v6M16 23v1" stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round"/></svg>
-                  : <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7"><path d="M5 13l4 4L19 7" stroke="#16A34A" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                }
+              <div className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: "#FDF6E3" }}>
+                <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7"><rect x="4" y="4" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="13" y="4" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="4" y="13" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="13" y="13" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/></svg>
               </div>
               <div>
-                <p className="text-gray-500 text-base font-medium mb-1">Barang yang Perlu Ditambah Stok</p>
+                <p className="text-gray-500 text-base font-medium mb-1">Total Jenis Barang</p>
                 {loading
-                  ? <div className="h-9 w-24 bg-gray-200 animate-pulse rounded" />
-                  : stats.stokMenipis > 0
-                    ? <p className="text-3xl font-bold leading-none text-red-500">
-                        {stats.stokMenipis} <span className="text-base text-gray-500 font-medium">item — perlu restock</span>
-                      </p>
-                    : <p className="text-3xl font-bold leading-none text-green-600">
-                        Aman <span className="text-base text-gray-500 font-medium">— stok cukup</span>
-                      </p>
+                  ? <div className="h-9 w-20 bg-gray-200 animate-pulse rounded" />
+                  : <p className="text-3xl font-bold leading-none" style={{ color: "#C99A36" }}>
+                      {fmt(stats.totalJenis)} <span className="text-base text-gray-500 font-medium">entri</span>
+                    </p>
                 }
               </div>
             </Link>
