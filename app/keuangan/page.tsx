@@ -198,6 +198,35 @@ interface KeluarRow {
   kadar: string;
   harga_jual: number;
   harga_beli: number;
+  // Kolom transaksi POS asli (di-snapshot saat checkout) — dipakai supaya nilai
+  // penjualan di laporan cocok 100% dengan Riwayat Kasir, bukan harga katalog.
+  no_invoice: string | null;
+  harga_satuan: number;   // harga jual per unit yang benar-benar ditransaksikan
+  ongkos: number;
+  diskon: number;         // level invoice (sama di semua baris invoice yang sama)
+  ppn_amount: number;     // level invoice
+  total_transaksi: number; // level invoice — total akhir yang dibayar pelanggan
+  pelanggan_nama: string | null;
+  payment_method: string | null;
+}
+
+/** Satu invoice POS = kelompok baris inventori_keluar dengan no_invoice sama.
+ * Dipakai untuk menyamakan jumlah & nilai transaksi dengan Riwayat Kasir. */
+interface InvoiceGroup {
+  no_invoice: string;
+  created_at: string;
+  pelanggan_nama: string | null;
+  payment_method: string | null;
+  rows: KeluarRow[];
+  totalQty: number;
+  totalGram: number;
+  subtotal: number;   // Σ harga_satuan × qty
+  ongkos: number;     // Σ ongkos
+  diskon: number;     // level invoice
+  ppn: number;        // level invoice
+  total: number;      // total_transaksi (yang dibayar pelanggan)
+  modal: number;      // Σ harga_beli × qty (HPP)
+  labaKotor: number;  // (subtotal + ongkos − diskon) − modal
 }
 
 interface ServisRow {
@@ -223,6 +252,17 @@ interface GadaiRow {
   jangka_waktu_bulan: number;
   status: string;
   tanggal_gadai: string;
+}
+
+interface HutangRow {
+  id: string;
+  no_hutang: string;
+  jenis_hutang: string;
+  nama: string;
+  kategori: string;
+  harga_total: number;
+  status: string;
+  created_at: string;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -472,6 +512,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   const [gadaiList, setGadaiList] = useState<GadaiRow[]>([]);
   const [gadaiAktifSemua, setGadaiAktifSemua] = useState<GadaiRow[]>([]);
   const [servisPending, setServisPending] = useState<ServisRow[]>([]);
+  const [hutangList, setHutangList] = useState<HutangRow[]>([]);
   const [keluarRiwayat, setKeluarRiwayat] = useState<{ inventori_id: string | null; jumlah_keluar: number; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -515,6 +556,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
         gadaiAktif,
         servisProses,
         keluarSemua,
+        hutang,
       ] = await Promise.all([
         fetchAllRows<StokRow>((from, to) =>
           supabase
@@ -579,6 +621,20 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
             .order("id", { ascending: true })
             .range(from, to),
         ),
+        // Pengeluaran usaha yang sebenarnya (hutang toko: supplier, operasional,
+        // pihak ke-3) — inilah satu-satunya "pengeluaran" yang dikurangi dari
+        // keuntungan. Pembelian stok TIDAK dihitung sebagai pengeluaran karena
+        // barang toko sudah lunas (dibeli tunai, tanpa hutang).
+        fetchAllRows<HutangRow>((from, to) =>
+          supabase
+            .from("hutang")
+            .select("id, no_hutang, jenis_hutang, nama, kategori, harga_total, status, created_at")
+            .gte("created_at", fromISO)
+            .lte("created_at", toISO)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: true })
+            .range(from, to),
+        ),
       ]);
 
       if (cancelled) return;
@@ -589,6 +645,10 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       setStokKeluar(
         keluar.map((k) => {
           const inv = (k as Record<string, unknown>).inventori as Record<string, unknown> | null;
+          // Kadar & berat: pakai snapshot di baris keluar (kolom kadar/berat_gram
+          // milik inventori_keluar) kalau ada; fallback ke data inventori terkait.
+          const kadarSnap = (k as Record<string, unknown>).kadar;
+          const beratSnap = (k as Record<string, unknown>).berat_gram;
           return {
             id: k.id as string,
             id_item: k.id_item as string,
@@ -597,10 +657,18 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
             status_baru: k.status_baru as string,
             catatan: k.catatan as string | null,
             created_at: k.created_at as string,
-            berat_gram: (inv?.berat_gram as number) ?? 0,
-            kadar: inv?.kadar ? String(inv.kadar) : "—",
+            berat_gram: (beratSnap as number) ?? (inv?.berat_gram as number) ?? 0,
+            kadar: kadarSnap ? String(kadarSnap) : (inv?.kadar ? String(inv.kadar) : "—"),
             harga_jual: (inv?.harga_jual as number) ?? 0,
             harga_beli: (inv?.harga_beli as number) ?? 0,
+            no_invoice: ((k as Record<string, unknown>).no_invoice as string) ?? null,
+            harga_satuan: ((k as Record<string, unknown>).harga_satuan as number) ?? 0,
+            ongkos: ((k as Record<string, unknown>).ongkos as number) ?? 0,
+            diskon: ((k as Record<string, unknown>).diskon as number) ?? 0,
+            ppn_amount: ((k as Record<string, unknown>).ppn_amount as number) ?? 0,
+            total_transaksi: ((k as Record<string, unknown>).total_transaksi as number) ?? 0,
+            pelanggan_nama: ((k as Record<string, unknown>).pelanggan_nama as string) ?? null,
+            payment_method: ((k as Record<string, unknown>).payment_method as string) ?? null,
           };
         }),
       );
@@ -609,6 +677,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       setGadaiList(gadai);
       setGadaiAktifSemua(gadaiAktif);
       setServisPending(servisProses);
+      setHutangList(hutang);
       setLoading(false);
     }
 
@@ -665,37 +734,98 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   const gramMasukReguler = stokMasukReguler.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
   const nilaiMasukReguler = stokMasukReguler.reduce((s, r) => s + (r.harga_beli || 0) * r.jumlah, 0);
 
-  const gramKeluar = stokKeluar.reduce((s, k) => s + k.berat_gram * k.jumlah_keluar, 0);
-  const keluarTerjual = stokKeluar.filter((k) => k.status_baru === "Terjual");
-  const nilaiPenjualan = keluarTerjual.reduce((s, k) => s + k.harga_jual * k.jumlah_keluar, 0);
-  const hppPenjualan = keluarTerjual.reduce((s, k) => s + k.harga_beli * k.jumlah_keluar, 0);
+  // ── Barang keluar dipisah jadi 2: PENJUALAN POS (ber-invoice) vs PENYESUAIAN STOK ──
+  // Riwayat Kasir hanya menampilkan baris ber-invoice yang dikelompokkan per invoice.
+  // Barang keluar dari "Konfirmasi Barang Keluar" (retur/hilang/servis, tanpa invoice)
+  // BUKAN penjualan — dulu ikut terhitung sehingga jumlah transaksi & rupiah di laporan
+  // membengkak dan tidak cocok dengan Riwayat Kasir. Sekarang dipisah tegas.
+  const keluarTerjual = stokKeluar.filter((k) => !!k.no_invoice && k.status_baru === "Terjual");
+  const penyesuaianStok = stokKeluar.filter((k) => !(k.no_invoice && k.status_baru === "Terjual"));
+  const gramKeluar = keluarTerjual.reduce((s, k) => s + k.berat_gram * k.jumlah_keluar, 0);
+
+  // Kelompokkan baris penjualan per no. invoice supaya jumlah transaksi & total rupiah
+  // sama persis dengan Riwayat Kasir (pakai harga_satuan/total_transaksi ASLI, bukan
+  // harga katalog inventori yang bisa sudah berubah setelah transaksi).
+  const invoiceGroups: InvoiceGroup[] = (() => {
+    const map = new Map<string, InvoiceGroup>();
+    for (const k of keluarTerjual) {
+      const key = k.no_invoice as string;
+      let g = map.get(key);
+      if (!g) {
+        g = {
+          no_invoice: key, created_at: k.created_at,
+          pelanggan_nama: k.pelanggan_nama, payment_method: k.payment_method,
+          rows: [], totalQty: 0, totalGram: 0, subtotal: 0, ongkos: 0,
+          diskon: k.diskon || 0, ppn: k.ppn_amount || 0, total: k.total_transaksi || 0,
+          modal: 0, labaKotor: 0,
+        };
+        map.set(key, g);
+      }
+      g.rows.push(k);
+      g.totalQty += k.jumlah_keluar;
+      g.totalGram += k.berat_gram * k.jumlah_keluar;
+      g.subtotal += (k.harga_satuan || 0) * k.jumlah_keluar;
+      g.ongkos += k.ongkos || 0;
+      g.modal += (k.harga_beli || 0) * k.jumlah_keluar;
+    }
+    for (const g of map.values()) {
+      // Laba kotor = (barang + ongkos − diskon) − modal. PPN tidak dihitung untung
+      // (titipan pajak). Kalau total_transaksi kosong (data lama), rekonstruksi dari baris.
+      const nettoJual = g.subtotal + g.ongkos - g.diskon;
+      if (!g.total) g.total = nettoJual + g.ppn;
+      g.labaKotor = nettoJual - g.modal;
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    );
+  })();
+
+  const jumlahTransaksiPenjualan = invoiceGroups.length;          // = jumlah transaksi Riwayat Kasir
+  const nilaiPenjualan = invoiceGroups.reduce((s, g) => s + g.total, 0); // = total rupiah Riwayat Kasir
+  const hppPenjualan = invoiceGroups.reduce((s, g) => s + g.modal, 0);
+  const labaKotorPenjualan = invoiceGroups.reduce((s, g) => s + g.labaKotor, 0);
 
   const servisSelesai = servisList.filter((s) => s.status === "Diambil" || s.status === "Selesai");
   const pendapatanServis = servisSelesai.reduce((s, r) => s + r.estimasi_biaya, 0);
 
   const gadaiLunas = gadaiList.filter((g) => g.status === "Lunas");
+  // Bunga gadai = keuntungan bersih dari gadai (kas pinjaman toko sendiri, bukan biaya).
   const pendapatanGadai = gadaiLunas.reduce(
     (s, g) => s + hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan), 0,
   );
 
-  const totalPemasukan = nilaiPenjualan + pendapatanServis + pendapatanGadai;
-  const totalPengeluaran = nilaiMasuk;
-  const labaBersih = totalPemasukan - totalPengeluaran;
+  // ── Pengeluaran usaha = hutang toko yang tercatat pada periode (fitur Hutang-Piutang).
+  // Barang masuk / buyback TIDAK termasuk (kas toko sendiri, barang sudah lunas). ──
+  const pengeluaranHutang = hutangList.reduce((s, h) => s + (h.harga_total || 0), 0);
+
+  // ── Keuntungan Bersih (basis margin) — tidak akan pernah "rugi" gara-gara stok. ──
+  // = laba kotor penjualan + jasa servis + bunga gadai − pengeluaran hutang usaha.
+  const keuntunganKotor = labaKotorPenjualan + pendapatanServis + pendapatanGadai;
+  const keuntunganBersih = keuntunganKotor - pengeluaranHutang;
+
+  // Arus kas keluar untuk pembelian stok & buyback — ditampilkan sebagai catatan/arus kas
+  // (kas toko sendiri), BUKAN sebagai kerugian yang mengurangi keuntungan.
+  const arusKasPembelian = nilaiMasuk;
 
   /* ── Hasil pencarian per bagian/tab — hanya menyaring baris yang ditampilkan,
    * kartu ringkasan & total global di atas tab tetap mencerminkan data periode utuh. ── */
   const sisaStokFiltered = sisaStok.filter((r) => matchSearch([r.nama_produk, r.id_item, r.kadar, r.kategori], searchStok));
 
   const stokMasukFiltered = stokMasuk.filter((r) => matchSearch([r.nama_produk, r.id_item, r.kadar], searchTransaksi));
-  const stokKeluarFiltered = stokKeluar.filter((k) => matchSearch([k.nama_produk, k.id_item, k.kadar], searchTransaksi));
+  // Penjualan disaring per invoice (cocokkan ke no. invoice, pelanggan, atau salah satu barangnya).
+  const invoiceGroupsFiltered = invoiceGroups.filter((g) =>
+    matchSearch([g.no_invoice, g.pelanggan_nama], searchTransaksi) ||
+    g.rows.some((k) => matchSearch([k.nama_produk, k.id_item, k.kadar], searchTransaksi)),
+  );
+  const penyesuaianFiltered = penyesuaianStok.filter((k) => matchSearch([k.nama_produk, k.id_item, k.kadar, k.status_baru], searchTransaksi));
   const servisListFiltered = servisList.filter((s) => matchSearch([s.no_servis, s.pelanggan_nama, s.nama_barang, s.jenis_servis], searchTransaksi));
   const gadaiListFiltered = gadaiList.filter((g) => matchSearch([g.no_gadai, g.pelanggan_nama, g.nama_barang], searchTransaksi));
 
   const gramMasukF = stokMasukFiltered.reduce((s, r) => s + r.berat_gram * r.jumlah, 0);
   const nilaiMasukF = stokMasukFiltered.reduce((s, r) => s + (r.harga_beli || 0) * r.jumlah, 0);
-  const gramKeluarF = stokKeluarFiltered.reduce((s, k) => s + k.berat_gram * k.jumlah_keluar, 0);
-  const keluarTerjualF = stokKeluarFiltered.filter((k) => k.status_baru === "Terjual");
-  const nilaiPenjualanF = keluarTerjualF.reduce((s, k) => s + k.harga_jual * k.jumlah_keluar, 0);
+  const gramKeluarF = invoiceGroupsFiltered.reduce((s, g) => s + g.totalGram, 0);
+  const nilaiPenjualanF = invoiceGroupsFiltered.reduce((s, g) => s + g.total, 0);
+  const itemKeluarF = invoiceGroupsFiltered.reduce((s, g) => s + g.totalQty, 0);
   const servisSelesaiF = servisListFiltered.filter((s) => s.status === "Diambil" || s.status === "Selesai");
   const pendapatanServisF = servisSelesaiF.reduce((s, r) => s + r.estimasi_biaya, 0);
   const gadaiLunasF = gadaiListFiltered.filter((g) => g.status === "Lunas");
@@ -703,7 +833,8 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
 
   /* ── Paginasi tabel "Masuk & Keluar" di layar — pratinjau/cetak tetap menampilkan semua baris. ── */
   const stokMasukPg = paginateFlat(stokMasukFiltered, pageByKey["masuk"] ?? 0, LIST_PAGE_SIZE);
-  const stokKeluarPg = paginateFlat(stokKeluarFiltered, pageByKey["keluar"] ?? 0, LIST_PAGE_SIZE);
+  const stokKeluarPg = paginateFlat(invoiceGroupsFiltered, pageByKey["keluar"] ?? 0, LIST_PAGE_SIZE);
+  const penyesuaianPg = paginateFlat(penyesuaianFiltered, pageByKey["penyesuaian"] ?? 0, LIST_PAGE_SIZE);
   const servisTransaksiPg = paginateFlat(servisListFiltered, pageByKey["servisTransaksi"] ?? 0, LIST_PAGE_SIZE);
   const gadaiTransaksiPg = paginateFlat(gadaiListFiltered, pageByKey["gadaiTransaksi"] ?? 0, LIST_PAGE_SIZE);
 
@@ -727,49 +858,50 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   const jualPerKadar = sumByKadar(sisaStok, (r) => r.kadar, (r) => (r.harga_jual || 0) * r.jumlah);
   const kadarKeysSisa = sortKadarDesc(Object.keys(gramSisaPerKadar));
 
-  // Dummy sementara untuk kartu-kartu ringkasan stok (Sorotan Total Gram, Stok Tersedia,
-  // Total Keseluruhan per Karat) — menimpa data asli di atas sampai data sungguhannya
-  // sesuai kebutuhan. Modal/Jual per gram dibuat masuk akal (mendekati harga pasar emas).
-  const dummyKadarBreakdown = [
-    { kadar: "8K", item: 144, gram: 398.43, modal: 290_854_000, jual: 354_603_000 },
-    { kadar: "6K", item: 1363, gram: 1377.243, modal: 874_549_000, jual: 1_232_632_000 },
-  ];
-  const dummyTotalGram = 1775.673;
-  const dummyTotalItem = dummyKadarBreakdown.reduce((s, k) => s + k.item, 0);
-  const dummyTotalUnit = dummyTotalItem;
-  const dummyTotalModal = dummyKadarBreakdown.reduce((s, k) => s + k.modal, 0);
-  const dummyTotalJual = dummyKadarBreakdown.reduce((s, k) => s + k.jual, 0);
+  // Rincian stok tersedia per karat (perhitungan REAL dari sisaStok) — dipakai kartu
+  // "Stok Tersedia", banner "Sorotan Total Gram", dan "Total Keseluruhan per Karat".
+  const kadarBreakdownSisa = kadarKeysSisa.map((k) => ({
+    kadar: k,
+    item: itemSisaPerKadar[k] || 0,
+    gram: gramSisaPerKadar[k] || 0,
+    modal: modalPerKadar[k] || 0,
+    jual: jualPerKadar[k] || 0,
+  }));
+  const totalItemSisa = sisaStok.length;
+  const totalUnitSisa = sisaStok.reduce((s, r) => s + r.jumlah, 0);
 
   const itemMasukPerKadar = sumByKadar(stokMasuk, (r) => r.kadar, () => 1);
   const gramMasukPerKadar = sumByKadar(stokMasuk, (r) => r.kadar, (r) => r.berat_gram * r.jumlah);
-  const nilaiMasukPerKadar = sumByKadar(stokMasuk, (r) => r.kadar, (r) => (r.harga_beli || 0) * r.jumlah);
   const kadarKeysMasuk = sortKadarDesc(Object.keys(gramMasukPerKadar));
 
-  const itemKeluarPerKadar = sumByKadar(stokKeluar, (k) => k.kadar, () => 1);
-  const gramKeluarPerKadar = sumByKadar(stokKeluar, (k) => k.kadar, (k) => k.berat_gram * k.jumlah_keluar);
-  const nilaiPenjualanPerKadar = sumByKadar(keluarTerjual, (k) => k.kadar, (k) => k.harga_jual * k.jumlah_keluar);
+  // Per-karat penjualan pakai HANYA baris terjual ber-invoice.
+  const itemKeluarPerKadar = sumByKadar(keluarTerjual, (k) => k.kadar, () => 1);
+  const gramKeluarPerKadar = sumByKadar(keluarTerjual, (k) => k.kadar, (k) => k.berat_gram * k.jumlah_keluar);
   const kadarKeysKeluar = sortKadarDesc(Object.keys(gramKeluarPerKadar));
 
+  // Laba kotor penjualan per karat = (harga jual − modal) × qty (basis margin).
+  const labaKotorPerKadar = sumByKadar(keluarTerjual, (k) => k.kadar, (k) => ((k.harga_satuan || 0) - (k.harga_beli || 0)) * k.jumlah_keluar);
   const pendapatanServisPerKadar = sumByKadar(servisSelesai, (s) => s.kadar, (s) => s.estimasi_biaya);
   const pendapatanGadaiPerKadar = sumByKadar(gadaiLunas, (g) => g.kadar, (g) => hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan));
 
+  // Keuntungan per karat = laba kotor jual + jasa + bunga (barang masuk BUKAN pengurang).
   const kadarKeysLaba = sortKadarDesc(Array.from(new Set([
-    ...Object.keys(nilaiPenjualanPerKadar),
+    ...Object.keys(labaKotorPerKadar),
     ...Object.keys(pendapatanServisPerKadar),
     ...Object.keys(pendapatanGadaiPerKadar),
-    ...Object.keys(nilaiMasukPerKadar),
   ])));
   const labaBersihPerKadar: Record<string, number> = {};
   for (const k of kadarKeysLaba) {
     labaBersihPerKadar[k] =
-      (nilaiPenjualanPerKadar[k] || 0) +
+      (labaKotorPerKadar[k] || 0) +
       (pendapatanServisPerKadar[k] || 0) +
-      (pendapatanGadaiPerKadar[k] || 0) -
-      (nilaiMasukPerKadar[k] || 0);
+      (pendapatanGadaiPerKadar[k] || 0);
   }
 
-  /* ── Tren Laba Rugi per Periode — kelompokkan transaksi periode aktif
-   * berdasarkan pilihan harian/mingguan/bulanan/kuartal/tahunan. ── */
+  /* ── Tren Keuntungan per Periode — kelompokkan keuntungan periode aktif
+   * berdasarkan pilihan harian/mingguan/bulanan/kuartal/tahunan. ──
+   * Pemasukan = keuntungan (margin jual + jasa + bunga), Pengeluaran = hutang usaha.
+   * Barang masuk / buyback TIDAK dihitung sebagai pengeluaran di sini. */
   const trendBuckets: Record<string, { pemasukan: number; pengeluaran: number }> = {};
   function addTrend(date: Date, field: "pemasukan" | "pengeluaran", value: number) {
     if (!value) return;
@@ -777,10 +909,10 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
     if (!trendBuckets[key]) trendBuckets[key] = { pemasukan: 0, pengeluaran: 0 };
     trendBuckets[key][field] += value;
   }
-  keluarTerjual.forEach((k) => addTrend(new Date(k.created_at), "pemasukan", k.harga_jual * k.jumlah_keluar));
+  invoiceGroups.forEach((g) => addTrend(new Date(g.created_at), "pemasukan", g.labaKotor));
   servisSelesai.forEach((s) => addTrend(new Date(s.tanggal_masuk), "pemasukan", s.estimasi_biaya));
   gadaiLunas.forEach((g) => addTrend(new Date(g.tanggal_gadai), "pemasukan", hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan)));
-  stokMasuk.forEach((r) => addTrend(new Date(r.tanggal_masuk), "pengeluaran", (r.harga_beli || 0) * r.jumlah));
+  hutangList.forEach((h) => addTrend(new Date(h.created_at), "pengeluaran", h.harga_total || 0));
 
   const trendRows = Object.keys(trendBuckets)
     .sort()
@@ -795,8 +927,11 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       };
     });
 
-  /* ── Log Transaksi Terpadu ── */
-  type TxKind = "stok_masuk" | "stok_keluar" | "servis" | "gadai";
+  /* ── Log Transaksi Terpadu ──
+   * Penjualan dicatat PER INVOICE (bukan per baris) supaya jumlah aktivitas & nilainya
+   * cocok dengan Riwayat Kasir. Barang keluar non-jual (retur/hilang/servis) masuk
+   * kategori "Penyesuaian" yang terpisah, tidak dihitung sebagai penjualan. */
+  type TxKind = "stok_masuk" | "stok_keluar" | "penyesuaian" | "servis" | "gadai";
   const allTx: {
     id: string; kind: TxKind; date: Date;
     title: string; sub: string; note: string;
@@ -808,19 +943,30 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       date: new Date(r.tanggal_masuk),
       title: r.nama_produk,
       sub: r.id_item + " · " + r.kadar + " · " + fmtGram(r.berat_gram) + "/unit × " + r.jumlah,
-      note: r.jenis_inventori ?? "Stock Dalam",
+      note: (r.sub_jenis_aset === "Emas Rosok" ? "Buyback · " : "") + (r.jenis_inventori ?? "Stock Dalam"),
       nilai: (r.harga_beli || 0) * r.jumlah,
-      nilaiLabel: "Harga Beli", isDebit: true,
+      nilaiLabel: "Kas Beli", isDebit: true,
       status: "Masuk",
     })),
-    ...stokKeluar.map((k) => ({
-      id: "sk-" + k.id, kind: "stok_keluar" as TxKind,
+    ...invoiceGroups.map((g) => ({
+      id: "inv-" + g.no_invoice, kind: "stok_keluar" as TxKind,
+      date: new Date(g.created_at),
+      title: (g.pelanggan_nama || "Umum") + " — " + g.no_invoice,
+      sub: g.rows.length + " barang · " + g.totalQty + " unit · " + fmtGram(g.totalGram) + (g.payment_method ? " · " + g.payment_method : ""),
+      note: "Laba kotor: " + fmtRp(g.labaKotor),
+      nilai: g.total,
+      nilaiLabel: "Nilai Jual",
+      isDebit: false,
+      status: "Terjual",
+    })),
+    ...penyesuaianStok.map((k) => ({
+      id: "sk-" + k.id, kind: "penyesuaian" as TxKind,
       date: new Date(k.created_at),
       title: k.nama_produk,
       sub: k.id_item + " · " + (k.kadar !== "—" ? k.kadar + " · " : "") + fmtGram(k.berat_gram) + "/unit × " + k.jumlah_keluar,
       note: k.catatan ?? "",
-      nilai: k.status_baru === "Terjual" ? k.harga_jual * k.jumlah_keluar : 0,
-      nilaiLabel: k.status_baru === "Terjual" ? "Nilai Jual" : k.status_baru,
+      nilai: 0,
+      nilaiLabel: k.status_baru,
       isDebit: false,
       status: k.status_baru,
     })),
@@ -849,8 +995,9 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const TX_META: Record<TxKind, { label: string; bg: string; text: string; dot: string }> = {
-    stok_masuk:  { label: "Stok Masuk",  bg: "bg-blue-100",   text: "text-blue-700",   dot: "bg-blue-500" },
-    stok_keluar: { label: "Stok Keluar", bg: "bg-red-100",    text: "text-red-700",    dot: "bg-red-400" },
+    stok_masuk:  { label: "Pembelian",   bg: "bg-blue-100",   text: "text-blue-700",   dot: "bg-blue-500" },
+    stok_keluar: { label: "Penjualan",   bg: "bg-green-100",  text: "text-green-700",  dot: "bg-green-500" },
+    penyesuaian: { label: "Penyesuaian", bg: "bg-gray-100",   text: "text-gray-600",   dot: "bg-gray-400" },
     servis:      { label: "Servis",      bg: "bg-purple-100", text: "text-purple-700", dot: "bg-purple-500" },
     gadai:       { label: "Gadai",       bg: "bg-teal-100",   text: "text-teal-700",   dot: "bg-teal-500" },
   };
@@ -859,7 +1006,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   const TABS = [
     { id: "stok" as const, label: "Sisa Stok", icon: "📦" },
     { id: "transaksi" as const, label: "Masuk & Keluar", icon: "🔄" },
-    { id: "laba_rugi" as const, label: "Laba Rugi", icon: "💰" },
+    { id: "laba_rugi" as const, label: "Keuntungan", icon: "💰" },
     { id: "aset" as const, label: "Nilai Aset", icon: "📊" },
     { id: "log" as const, label: "Log Transaksi", icon: "📋" },
   ];
@@ -971,10 +1118,10 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
           <div className={showPreview ? "block print-section" : "hidden print:block print-section"}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8pt", marginBottom: "8pt" }}>
               {[
-                { l: "Stok Tersedia", v: sisaStok.length + " item", s: fmtGram(totalGramSisa), c: "#6F5333" },
-                { l: "Total Penjualan Emas", v: fmtRp(nilaiPenjualan), s: keluarTerjual.length + " item terjual", c: "#16A34A" },
-                { l: "Total Pemasukan", v: fmtRp(totalPemasukan), s: "Penjualan + Servis + Bunga", c: "#2563EB" },
-                { l: "Laba Bersih", v: fmtRp(Math.abs(labaBersih)), s: labaBersih >= 0 ? "UNTUNG" : "RUGI", c: labaBersih >= 0 ? "#16A34A" : "#DC2626" },
+                { l: "Stok Tersedia", v: totalItemSisa + " item", s: fmtGram(totalGramSisa), c: "#6F5333" },
+                { l: "Total Penjualan", v: fmtRp(nilaiPenjualan), s: jumlahTransaksiPenjualan + " transaksi", c: "#16A34A" },
+                { l: "Keuntungan Kotor", v: fmtRp(keuntunganKotor), s: "Margin + Servis + Bunga", c: "#2563EB" },
+                { l: "Keuntungan Bersih", v: fmtRp(keuntunganBersih), s: "Setelah hutang usaha", c: "#16A34A" },
               ].map((c) => (
                 <div key={c.l} style={{ border: "1pt solid #d1d5db", borderRadius: "6pt", padding: "7pt 9pt" }}>
                   <p style={{ fontSize: "7pt", color: "#6b7280", marginBottom: "3pt", textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.l}</p>
@@ -1111,10 +1258,10 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
             {[
               {
                 label: "Stok Tersedia",
-                value: dummyTotalItem + " item",
-                sub: fmtGram(dummyTotalGram),
+                value: totalItemSisa + " item",
+                sub: fmtGram(totalGramSisa),
                 color: "border-l-[#C99A36]",
-                breakdown: dummyKadarBreakdown.map((row) => ({
+                breakdown: kadarBreakdownSisa.map((row) => ({
                   kadar: row.kadar,
                   text: `${fmtGram(row.gram)} · ${row.item} item`,
                 })),
@@ -1140,10 +1287,10 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                 ),
               },
               {
-                label: "Stok Keluar (Periode)",
-                value: stokKeluar.length + " item",
-                sub: fmtGram(gramKeluar),
-                color: "border-l-red-400",
+                label: "Penjualan (Periode)",
+                value: jumlahTransaksiPenjualan + " transaksi",
+                sub: keluarTerjual.length + " item · " + fmtGram(gramKeluar),
+                color: "border-l-green-500",
                 breakdown: kadarKeysKeluar.map((k) => ({
                   kadar: k,
                   text: `${fmtGram(gramKeluarPerKadar[k])} · ${itemKeluarPerKadar[k]} item`,
@@ -1155,21 +1302,17 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                 ),
               },
               {
-                label: "Laba Bersih (Periode)",
-                value: fmtRp(Math.abs(labaBersih)),
-                sub: labaBersih >= 0 ? "Untung" : "Rugi",
-                color: labaBersih >= 0 ? "border-l-green-500" : "border-l-red-500",
+                label: "Keuntungan Bersih (Periode)",
+                value: fmtRp(keuntunganBersih),
+                sub: "Margin + Servis + Bunga − Hutang",
+                color: "border-l-green-500",
                 breakdown: kadarKeysLaba.map((k) => ({
                   kadar: k,
-                  text: (labaBersihPerKadar[k] >= 0 ? "+" : "−") + fmtRp(Math.abs(labaBersihPerKadar[k])),
+                  text: "+" + fmtRp(Math.abs(labaBersihPerKadar[k])),
                 })),
-                icon: labaBersih >= 0 ? (
+                icon: (
                   <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-                  </svg>
-                ) : (
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/>
                   </svg>
                 ),
               },
@@ -1210,7 +1353,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
             </p>
 
             <div className="mt-3 space-y-1.5">
-              {dummyKadarBreakdown.map((row) => (
+              {kadarBreakdownSisa.map((row) => (
                 <div key={row.kadar} className="flex flex-wrap items-center justify-between gap-3 bg-white/10 rounded-xl px-4 py-2">
                   <div className="flex items-center gap-2.5">
                     <span className="px-2.5 py-0.5 rounded-full bg-white/20 font-bold text-sm">{row.kadar}</span>
@@ -1227,20 +1370,20 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
 
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mt-4 pt-4 border-t border-white/20">
               <div>
-                <p className="text-4xl font-black">{fmtGram(dummyTotalGram)}</p>
+                <p className="text-4xl font-black">{fmtGram(totalGramSisa)}</p>
                 <p className="text-xs opacity-60 mt-1">
-                  TOTAL dari {dummyTotalItem} item &bull; Periode: {label}
+                  TOTAL dari {totalItemSisa} item &bull; Periode: {label}
                 </p>
               </div>
               <div className="flex gap-6 sm:gap-8 sm:text-right">
                 <div>
                   <p className="text-xs opacity-70">Nilai Modal</p>
-                  <p className="text-lg font-bold">{fmtRp(dummyTotalModal)}</p>
+                  <p className="text-lg font-bold">{fmtRp(totalNilaiModal)}</p>
                 </div>
                 <div>
                   <p className="text-xs opacity-70">Estimasi Nilai Jual</p>
-                  <p className="text-lg font-bold">{fmtRp(dummyTotalJual)}</p>
-                  <p className="text-xs opacity-60">Potensi Laba: {fmtRp(dummyTotalJual - dummyTotalModal)}</p>
+                  <p className="text-lg font-bold">{fmtRp(totalNilaiJual)}</p>
+                  <p className="text-xs opacity-60">Potensi Laba: {fmtRp(totalNilaiJual - totalNilaiModal)}</p>
                 </div>
               </div>
             </div>
@@ -1470,7 +1613,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                       <p className="text-xs uppercase font-bold opacity-70 tracking-wider">Total Keseluruhan Stok — per Karat</p>
 
                       <div className="space-y-1.5">
-                        {dummyKadarBreakdown.map((row) => (
+                        {kadarBreakdownSisa.map((row) => (
                           <div key={row.kadar} className="flex flex-wrap items-center justify-between gap-3 bg-white/10 rounded-xl px-4 py-2">
                             <div className="flex items-center gap-2.5">
                               <span className="px-2.5 py-0.5 rounded-full bg-white/20 font-bold text-sm">{row.kadar}</span>
@@ -1488,17 +1631,17 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                       <div className="flex flex-wrap justify-between gap-4 pt-4 border-t border-white/20">
                         <div>
                           <p className="text-xs uppercase font-bold opacity-70 tracking-wider">Total Keseluruhan (Semua Karat)</p>
-                          <p className="text-3xl font-black mt-1">{fmtGram(dummyTotalGram)}</p>
-                          <p className="text-xs opacity-60 mt-0.5">{dummyTotalUnit} unit dari {dummyTotalItem} item</p>
+                          <p className="text-3xl font-black mt-1">{fmtGram(totalGramSisa)}</p>
+                          <p className="text-xs opacity-60 mt-0.5">{totalUnitSisa} unit dari {totalItemSisa} item</p>
                         </div>
                         <div className="flex gap-6 sm:gap-8 text-right">
                           <div>
                             <p className="text-xs opacity-70">Total Modal</p>
-                            <p className="text-lg font-bold">{fmtRp(dummyTotalModal)}</p>
+                            <p className="text-lg font-bold">{fmtRp(totalNilaiModal)}</p>
                           </div>
                           <div>
                             <p className="text-xs opacity-70">Estimasi Nilai Jual</p>
-                            <p className="text-lg font-bold">{fmtRp(dummyTotalJual)}</p>
+                            <p className="text-lg font-bold">{fmtRp(totalNilaiJual)}</p>
                           </div>
                         </div>
                       </div>
@@ -1659,70 +1802,58 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                     )}
                   </div>
 
-                  {/* Stok Keluar */}
+                  {/* Penjualan (POS) — dikelompokkan per invoice, cocok dengan Riwayat Kasir */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
-                      style={{ backgroundColor: "#FEF2F2" }}>
+                      style={{ backgroundColor: "#F0FDF4" }}>
                       <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full bg-red-400" />
-                        <h3 className="font-extrabold text-gray-900">Stok Keluar</h3>
+                        <div className="w-3 h-3 rounded-full bg-green-500" />
+                        <h3 className="font-extrabold text-gray-900">Penjualan (POS)</h3>
+                        <span className="text-[11px] text-gray-400 font-medium">— sama dengan Riwayat Kasir</span>
                       </div>
                       <p className="text-sm text-gray-600">
-                        {stokKeluarFiltered.length} transaksi &bull; {fmtGram(gramKeluarF)} &bull; Penjualan: <span className="font-bold text-green-700">{fmtRp(nilaiPenjualanF)}</span>
+                        {invoiceGroupsFiltered.length} transaksi &bull; {itemKeluarF} item &bull; {fmtGram(gramKeluarF)} &bull; Nilai: <span className="font-bold text-green-700">{fmtRp(nilaiPenjualanF)}</span>
                       </p>
                     </div>
-                    {stokKeluar.length === 0 ? (
+                    {invoiceGroups.length === 0 ? (
                       <p className="px-5 py-8 text-center text-gray-400">
-                        Tidak ada stok keluar pada periode ini.
+                        Tidak ada penjualan pada periode ini.
                       </p>
-                    ) : stokKeluarFiltered.length === 0 ? (
+                    ) : invoiceGroupsFiltered.length === 0 ? (
                       <p className="px-5 py-8 text-center text-gray-400">
                         Tidak ditemukan yang cocok dengan pencarian.
                       </p>
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
-                          <thead className="bg-red-50">
+                          <thead className="bg-green-50">
                             <tr>
-                              {["No.", "Tanggal", "Kode", "Nama Barang", "Kadar", "Berat/unit", "Jml", "Total Berat", "Status", "Nilai Jual"].map((h) => (
+                              {["No.", "Tanggal", "No. Invoice", "Pelanggan", "Jml Item", "Total Berat", "Metode", "Nilai Jual"].map((h) => (
                                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {(showPreview ? stokKeluarFiltered : stokKeluarPg.pageItems).map((k, idx) => (
-                              <tr key={k.id} className="group hover:bg-red-100/60 transition-colors">
+                            {(showPreview ? invoiceGroupsFiltered : stokKeluarPg.pageItems).map((g, idx) => (
+                              <tr key={g.no_invoice} className="group hover:bg-green-100/50 transition-colors">
                                 <td className="px-4 py-3 text-xs text-gray-400">
                                   {(showPreview ? 0 : stokKeluarPg.safePage * LIST_PAGE_SIZE) + idx + 1}
                                 </td>
-                                <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(k.created_at)}</td>
-                                <td className="px-4 py-3 font-mono text-xs text-gray-500">{k.id_item}</td>
-                                <td className="px-4 py-3 font-semibold text-gray-800">{k.nama_produk}</td>
-                                <td className="px-4 py-3">
-                                  {k.kadar !== "—" && (
-                                    <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 group-hover:bg-amber-300 group-hover:text-amber-950 transition-colors">{k.kadar}</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3 text-gray-600">{fmtGram(k.berat_gram)}</td>
-                                <td className="px-4 py-3 font-bold text-center">{k.jumlah_keluar}</td>
-                                <td className="px-4 py-3 font-bold text-red-600">{fmtGram(k.berat_gram * k.jumlah_keluar)}</td>
-                                <td className="px-4 py-3">
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
-                                    k.status_baru === "Terjual" ? "bg-green-100 text-green-700" :
-                                    k.status_baru === "Retur" ? "bg-pink-100 text-pink-700" :
-                                    "bg-gray-100 text-gray-600"
-                                  }`}>{k.status_baru}</span>
-                                </td>
-                                <td className="px-4 py-3 font-semibold text-green-700">
-                                  {k.status_baru === "Terjual" ? fmtRp(k.harga_jual * k.jumlah_keluar) : "—"}
-                                </td>
+                                <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(g.created_at)}</td>
+                                <td className="px-4 py-3 font-mono text-xs text-gray-500 whitespace-nowrap">{g.no_invoice}</td>
+                                <td className="px-4 py-3 font-semibold text-gray-800">{g.pelanggan_nama || "Umum"}</td>
+                                <td className="px-4 py-3 text-center font-bold text-gray-700">{g.rows.length} <span className="text-xs font-normal text-gray-400">({g.totalQty} unit)</span></td>
+                                <td className="px-4 py-3 font-bold text-gray-900">{fmtGram(g.totalGram)}</td>
+                                <td className="px-4 py-3 text-xs text-gray-500">{g.payment_method || "—"}</td>
+                                <td className="px-4 py-3 font-semibold text-green-700">{fmtRp(g.total)}</td>
                               </tr>
                             ))}
                           </tbody>
-                          <tfoot className="bg-red-100" style={{ borderTop: "2px solid #FECACA" }}>
+                          <tfoot className="bg-green-100" style={{ borderTop: "2px solid #86EFAC" }}>
                             <tr>
-                              <td colSpan={7} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL KELUAR</td>
-                              <td className="px-4 py-3 font-extrabold text-red-600">{fmtGram(gramKeluarF)}</td>
+                              <td colSpan={4} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">TOTAL PENJUALAN ({invoiceGroupsFiltered.length} transaksi)</td>
+                              <td className="px-4 py-3 font-extrabold text-gray-800 text-center">{itemKeluarF}</td>
+                              <td className="px-4 py-3 font-extrabold text-gray-900">{fmtGram(gramKeluarF)}</td>
                               <td />
                               <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(nilaiPenjualanF)}</td>
                             </tr>
@@ -1734,13 +1865,80 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                       <Pager
                         page={stokKeluarPg.safePage}
                         totalPages={stokKeluarPg.totalPages}
-                        total={stokKeluarFiltered.length}
+                        total={invoiceGroupsFiltered.length}
                         pageSize={LIST_PAGE_SIZE}
                         onPrev={() => setPageByKey((p) => ({ ...p, keluar: Math.max(0, stokKeluarPg.safePage - 1) }))}
                         onNext={() => setPageByKey((p) => ({ ...p, keluar: Math.min(stokKeluarPg.totalPages - 1, stokKeluarPg.safePage + 1) }))}
                       />
                     )}
                   </div>
+
+                  {/* Penyesuaian Stok — barang keluar NON-jual (retur/hilang/servis, tanpa invoice).
+                       Bukan penjualan, jadi tidak dihitung ke nilai penjualan/keuntungan. */}
+                  {penyesuaianStok.length > 0 && (
+                    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                      <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2"
+                        style={{ backgroundColor: "#F9FAFB" }}>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-gray-400" />
+                          <h3 className="font-extrabold text-gray-900">Penyesuaian Stok (Non-Penjualan)</h3>
+                        </div>
+                        <p className="text-sm text-gray-500">
+                          {penyesuaianFiltered.length} entri &bull; retur / hilang / servis — tidak dihitung penjualan
+                        </p>
+                      </div>
+                      {penyesuaianFiltered.length === 0 ? (
+                        <p className="px-5 py-8 text-center text-gray-400">Tidak ditemukan yang cocok dengan pencarian.</p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                {["No.", "Tanggal", "Kode", "Nama Barang", "Kadar", "Berat/unit", "Jml", "Status", "Catatan"].map((h) => (
+                                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {(showPreview ? penyesuaianFiltered : penyesuaianPg.pageItems).map((k, idx) => (
+                                <tr key={k.id} className="group hover:bg-gray-50 transition-colors">
+                                  <td className="px-4 py-3 text-xs text-gray-400">
+                                    {(showPreview ? 0 : penyesuaianPg.safePage * LIST_PAGE_SIZE) + idx + 1}
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtTglShort(k.created_at)}</td>
+                                  <td className="px-4 py-3 font-mono text-xs text-gray-500">{k.id_item}</td>
+                                  <td className="px-4 py-3 font-semibold text-gray-800">{k.nama_produk}</td>
+                                  <td className="px-4 py-3">
+                                    {k.kadar !== "—" && (
+                                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800">{k.kadar}</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-gray-600">{fmtGram(k.berat_gram)}</td>
+                                  <td className="px-4 py-3 font-bold text-center">{k.jumlah_keluar}</td>
+                                  <td className="px-4 py-3">
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                      k.status_baru === "Retur" ? "bg-pink-100 text-pink-700" : "bg-gray-100 text-gray-600"
+                                    }`}>{k.status_baru}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-gray-500">{k.catatan || "—"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {!showPreview && (
+                        <Pager
+                          page={penyesuaianPg.safePage}
+                          totalPages={penyesuaianPg.totalPages}
+                          total={penyesuaianFiltered.length}
+                          pageSize={LIST_PAGE_SIZE}
+                          onPrev={() => setPageByKey((p) => ({ ...p, penyesuaian: Math.max(0, penyesuaianPg.safePage - 1) }))}
+                          onNext={() => setPageByKey((p) => ({ ...p, penyesuaian: Math.min(penyesuaianPg.totalPages - 1, penyesuaianPg.safePage + 1) }))}
+                        />
+                      )}
+                    </div>
+                  )}
 
                   {/* Servis */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1891,16 +2089,18 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                 </div>
               </div>
 
-              {/* ══ TAB 3: LABA RUGI ══ */}
+              {/* ══ TAB 3: LABA RUGI / KEUNTUNGAN ══ */}
               <div className={sectionCls("laba_rugi", true)}>
                 <div className="mb-3">
-                  <h2 className="font-bold text-gray-800 text-lg">Laporan Laba Rugi</h2>
-                  <p className="text-sm text-gray-500 print:hidden">Rekapitulasi pemasukan dan pengeluaran periode: {label}</p>
+                  <h2 className="font-bold text-gray-800 text-lg">Laporan Keuntungan Usaha</h2>
+                  <p className="text-sm text-gray-500 print:hidden">
+                    Keuntungan dari penjualan, jasa &amp; bunga dikurangi pengeluaran usaha (hutang). Barang toko sudah lunas, jadi pembelian stok tidak dihitung sebagai kerugian. Periode: {label}
+                  </p>
                   <p className="hidden print:block text-xs text-gray-500">Periode: {label}</p>
                 </div>
 
                 <div className="space-y-4">
-                  {/* Pemasukan */}
+                  {/* Keuntungan Usaha (Pemasukan basis margin) */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3"
                       style={{ backgroundColor: "#F0FDF4" }}>
@@ -1910,16 +2110,16 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         </svg>
                       </div>
                       <div>
-                        <h3 className="font-extrabold text-gray-900">Pemasukan</h3>
-                        <p className="text-xs text-gray-500">Semua sumber pendapatan periode {label}</p>
+                        <h3 className="font-extrabold text-gray-900">Keuntungan Usaha</h3>
+                        <p className="text-xs text-gray-500">Margin penjualan + jasa + bunga periode {label}</p>
                       </div>
                     </div>
                     <div>
                       {[
                         {
-                          label: "Penjualan Barang Emas",
-                          value: nilaiPenjualan,
-                          detail: `${keluarTerjual.length} item terjual &bull; HPP: ${fmtRp(hppPenjualan)} &bull; Laba Kotor: ${fmtRp(nilaiPenjualan - hppPenjualan)}`,
+                          label: "Laba Kotor Penjualan Emas",
+                          value: labaKotorPenjualan,
+                          detail: `${jumlahTransaksiPenjualan} transaksi &bull; Nilai jual: ${fmtRp(nilaiPenjualan)} &bull; Modal (HPP): ${fmtRp(hppPenjualan)}`,
                         },
                         {
                           label: "Pendapatan Jasa Servis",
@@ -1929,7 +2129,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         {
                           label: "Bunga Gadai (Lunas)",
                           value: pendapatanGadai,
-                          detail: `${gadaiLunas.length} gadai terlunasi`,
+                          detail: `${gadaiLunas.length} gadai terlunasi &bull; kas pinjaman toko sendiri`,
                         },
                       ].map((item) => (
                         <div key={item.label} className="px-5 py-4 flex items-center justify-between border-b border-gray-50 last:border-0">
@@ -1947,13 +2147,13 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         className="px-5 py-4 flex items-center justify-between"
                         style={{ backgroundColor: "#DCFCE7", borderTop: "2px solid #86EFAC" }}
                       >
-                        <p className="font-extrabold text-gray-900 text-base">TOTAL PEMASUKAN</p>
-                        <p className="text-2xl font-black text-green-700">{fmtRp(totalPemasukan)}</p>
+                        <p className="font-extrabold text-gray-900 text-base">TOTAL KEUNTUNGAN USAHA</p>
+                        <p className="text-2xl font-black text-green-700">{fmtRp(keuntunganKotor)}</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Pengeluaran */}
+                  {/* Pengeluaran Usaha — HANYA hutang dari fitur Hutang-Piutang */}
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                     <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3"
                       style={{ backgroundColor: "#FEF2F2" }}>
@@ -1963,8 +2163,87 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         </svg>
                       </div>
                       <div>
-                        <h3 className="font-extrabold text-gray-900">Pengeluaran</h3>
-                        <p className="text-xs text-gray-500">Modal yang dikeluarkan periode {label}</p>
+                        <h3 className="font-extrabold text-gray-900">Pengeluaran Usaha (Hutang)</h3>
+                        <p className="text-xs text-gray-500">Dari fitur Hutang-Piutang saja &bull; periode {label}</p>
+                      </div>
+                    </div>
+                    <div>
+                      {(() => {
+                        const bySupplier = hutangList.filter((h) => h.jenis_hutang === "supplier");
+                        const byOperasional = hutangList.filter((h) => h.jenis_hutang !== "supplier");
+                        const rows = [
+                          {
+                            label: "Hutang Supplier & Sales",
+                            value: bySupplier.reduce((s, h) => s + (h.harga_total || 0), 0),
+                            detail: `${bySupplier.length} hutang tercatat`,
+                          },
+                          {
+                            label: "Hutang Operasional & Pihak ke-3",
+                            value: byOperasional.reduce((s, h) => s + (h.harga_total || 0), 0),
+                            detail: `${byOperasional.length} hutang tercatat`,
+                          },
+                        ];
+                        return rows.map((item) => (
+                          <div key={item.label} className="px-5 py-4 flex items-center justify-between border-b border-gray-50 last:border-0">
+                            <div>
+                              <p className="font-semibold text-gray-800">{item.label}</p>
+                              <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
+                            </div>
+                            <p className="text-lg font-extrabold text-red-600 ml-4 shrink-0">{fmtRp(item.value)}</p>
+                          </div>
+                        ));
+                      })()}
+                      <div
+                        className="px-5 py-4 flex items-center justify-between"
+                        style={{ backgroundColor: "#FEE2E2", borderTop: "2px solid #FCA5A5" }}
+                      >
+                        <p className="font-extrabold text-gray-900 text-base">TOTAL PENGELUARAN USAHA</p>
+                        <p className="text-2xl font-black text-red-600">{fmtRp(pengeluaranHutang)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Keuntungan Bersih — tidak pernah ditampilkan sebagai "Rugi" karena stok */}
+                  <div
+                    className="rounded-2xl p-6 text-white"
+                    style={{ background: "linear-gradient(135deg, #16A34A 0%, #22C55E 100%)" }}
+                  >
+                    <p className="text-sm font-bold opacity-80 uppercase tracking-wider">
+                      Keuntungan Bersih — {label}
+                    </p>
+                    <p className="text-5xl font-black mt-2">{fmtRp(keuntunganBersih)}</p>
+                    <p className="text-base font-semibold opacity-80 mt-1">
+                      Keuntungan Usaha − Pengeluaran Usaha (Hutang)
+                    </p>
+                    <div className="flex flex-wrap gap-8 mt-4 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.3)" }}>
+                      <div>
+                        <p className="text-xs opacity-70">Keuntungan Usaha</p>
+                        <p className="text-lg font-bold">{fmtRp(keuntunganKotor)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs opacity-70">Pengeluaran (Hutang)</p>
+                        <p className="text-lg font-bold">{fmtRp(pengeluaranHutang)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs opacity-70">Nilai Penjualan</p>
+                        <p className="text-lg font-bold">{fmtRp(nilaiPenjualan)}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Arus Kas Pembelian & Buyback — catatan, BUKAN kerugian.
+                       Kas toko sendiri; barang sudah lunas. Ditampilkan agar buyback terlihat. */}
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3"
+                      style={{ backgroundColor: "#EFF6FF" }}>
+                      <div className="w-8 h-8 rounded-xl bg-blue-100 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-gray-900">Arus Kas Pembelian &amp; Buyback</h3>
+                        <p className="text-xs text-gray-500">Kas toko sendiri — hanya catatan, tidak mengurangi keuntungan</p>
                       </div>
                     </div>
                     <div>
@@ -1972,12 +2251,12 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         {
                           label: "Pembelian Stok dari Supplier",
                           value: nilaiMasukReguler,
-                          detail: `${stokMasukReguler.length} item dibeli &bull; ${fmtGram(gramMasukReguler)} total`,
+                          detail: `${stokMasukReguler.length} item &bull; ${fmtGram(gramMasukReguler)} total`,
                         },
                         {
-                          label: "Buyback Emas Rosok",
+                          label: "Pembelian Buyback Emas Rosok",
                           value: nilaiMasukRosok,
-                          detail: `${stokMasukRosok.length} item dibeli &bull; ${fmtGram(gramMasukRosok)} total`,
+                          detail: `${stokMasukRosok.length} item &bull; ${fmtGram(gramMasukRosok)} total &bull; untung terealisasi saat terjual`,
                         },
                       ].map((item) => (
                         <div key={item.label} className="px-5 py-4 flex items-center justify-between border-b border-gray-50 last:border-0">
@@ -1985,51 +2264,15 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                             <p className="font-semibold text-gray-800">{item.label}</p>
                             <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
                           </div>
-                          <p className="text-lg font-extrabold text-red-600 ml-4 shrink-0">{fmtRp(item.value)}</p>
+                          <p className="text-lg font-extrabold text-blue-600 ml-4 shrink-0">{fmtRp(item.value)}</p>
                         </div>
                       ))}
                       <div
                         className="px-5 py-4 flex items-center justify-between"
-                        style={{ backgroundColor: "#FEE2E2", borderTop: "2px solid #FCA5A5" }}
+                        style={{ backgroundColor: "#DBEAFE", borderTop: "2px solid #93C5FD" }}
                       >
-                        <p className="font-extrabold text-gray-900 text-base">TOTAL PENGELUARAN</p>
-                        <p className="text-2xl font-black text-red-600">{fmtRp(totalPengeluaran)}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Laba Bersih */}
-                  <div
-                    className="rounded-2xl p-6 text-white"
-                    style={{
-                      background: labaBersih >= 0
-                        ? "linear-gradient(135deg, #16A34A 0%, #22C55E 100%)"
-                        : "linear-gradient(135deg, #DC2626 0%, #EF4444 100%)",
-                    }}
-                  >
-                    <p className="text-sm font-bold opacity-80 uppercase tracking-wider">
-                      Laba Bersih — {label}
-                    </p>
-                    <p className="text-5xl font-black mt-2">{fmtRp(Math.abs(labaBersih))}</p>
-                    <p className="text-base font-semibold opacity-80 mt-1">
-                      {labaBersih >= 0 ? "Toko mengalami KEUNTUNGAN" : "Toko mengalami KERUGIAN"} pada periode ini
-                    </p>
-                    <div className="flex gap-8 mt-4 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.3)" }}>
-                      <div>
-                        <p className="text-xs opacity-70">Pemasukan</p>
-                        <p className="text-lg font-bold">{fmtRp(totalPemasukan)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs opacity-70">Pengeluaran</p>
-                        <p className="text-lg font-bold">{fmtRp(totalPengeluaran)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs opacity-70">Margin</p>
-                        <p className="text-lg font-bold">
-                          {totalPemasukan > 0
-                            ? ((labaBersih / totalPemasukan) * 100).toFixed(1) + "%"
-                            : "—"}
-                        </p>
+                        <p className="font-extrabold text-gray-900 text-base">TOTAL KAS PEMBELIAN</p>
+                        <p className="text-2xl font-black text-blue-600">{fmtRp(arusKasPembelian)}</p>
                       </div>
                     </div>
                   </div>
@@ -2039,9 +2282,9 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                     <div className="px-5 py-4 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3"
                       style={{ backgroundColor: "#F8F7F4" }}>
                       <div>
-                        <h3 className="font-extrabold text-gray-900">Tren Laba Rugi per Periode</h3>
+                        <h3 className="font-extrabold text-gray-900">Tren Keuntungan per Periode</h3>
                         <p className="text-xs text-gray-500 mt-0.5 print:hidden">
-                          Rincian pemasukan &amp; pengeluaran dalam periode {label}, dikelompokkan per {GROUP_BY_OPTIONS.find(([g]) => g === groupBy)?.[1].toLowerCase()}.
+                          Rincian keuntungan (margin + jasa + bunga) &amp; pengeluaran hutang dalam periode {label}, dikelompokkan per {GROUP_BY_OPTIONS.find(([g]) => g === groupBy)?.[1].toLowerCase()}.
                         </p>
                         <p className="hidden print:block text-xs text-gray-500 mt-0.5">
                           Dikelompokkan per {GROUP_BY_OPTIONS.find(([g]) => g === groupBy)?.[1].toLowerCase()}
@@ -2071,7 +2314,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50">
                             <tr>
-                              {["No.", "Periode", "Pemasukan", "Pengeluaran", "Laba Bersih", "Margin %"].map((h) => (
+                              {["No.", "Periode", "Keuntungan Usaha", "Pengeluaran", "Keuntungan Bersih", "Margin %"].map((h) => (
                                 <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-500 whitespace-nowrap">{h}</th>
                               ))}
                             </tr>
@@ -2097,13 +2340,13 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                               <td colSpan={2} className="px-4 py-3 font-extrabold text-gray-800 text-xs uppercase">
                                 TOTAL ({trendRows.length} {GROUP_BY_OPTIONS.find(([g]) => g === groupBy)?.[1].toLowerCase()})
                               </td>
-                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(totalPemasukan)}</td>
-                              <td className="px-4 py-3 font-extrabold text-red-600">{fmtRp(totalPengeluaran)}</td>
-                              <td className={`px-4 py-3 font-extrabold ${labaBersih >= 0 ? "text-green-700" : "text-red-600"}`}>
-                                {labaBersih >= 0 ? "+" : "−"}{fmtRp(Math.abs(labaBersih))}
+                              <td className="px-4 py-3 font-extrabold text-green-700">{fmtRp(keuntunganKotor)}</td>
+                              <td className="px-4 py-3 font-extrabold text-red-600">{fmtRp(pengeluaranHutang)}</td>
+                              <td className={`px-4 py-3 font-extrabold ${keuntunganBersih >= 0 ? "text-green-700" : "text-red-600"}`}>
+                                {keuntunganBersih >= 0 ? "+" : "−"}{fmtRp(Math.abs(keuntunganBersih))}
                               </td>
                               <td className="px-4 py-3 font-extrabold text-gray-700">
-                                {totalPemasukan > 0 ? ((labaBersih / totalPemasukan) * 100).toFixed(1) + "%" : "—"}
+                                {keuntunganKotor > 0 ? ((keuntunganBersih / keuntunganKotor) * 100).toFixed(1) + "%" : "—"}
                               </td>
                             </tr>
                           </tfoot>
@@ -2492,9 +2735,9 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         {/* Strip ringkasan */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                           {[
-                            { label: "Total Transaksi", value: allTx.length + " aktivitas", sub: "", color: "border-gray-300" },
-                            { label: "Stok Masuk", value: stokMasuk.length + " item", sub: fmtRp(totalMasuk), color: "border-blue-400" },
-                            { label: "Stok Keluar", value: stokKeluar.length + " item", sub: fmtRp(nilaiPenjualan) + " penjualan", color: "border-red-400" },
+                            { label: "Total Aktivitas", value: allTx.length + " aktivitas", sub: "", color: "border-gray-300" },
+                            { label: "Pembelian", value: stokMasuk.length + " item", sub: fmtRp(totalMasuk) + " kas", color: "border-blue-400" },
+                            { label: "Penjualan", value: jumlahTransaksiPenjualan + " transaksi", sub: fmtRp(nilaiPenjualan) + " nilai", color: "border-green-400" },
                             { label: "Servis + Gadai", value: (servisList.length + gadaiList.length) + " aktivitas", sub: fmtRp(pendapatanServis + pendapatanGadai) + " pendapatan", color: "border-purple-400" },
                           ].map((c) => (
                             <div key={c.label} className={`bg-white rounded-xl p-4 shadow-sm border border-gray-100 border-l-4 ${c.color}`}>
@@ -2635,9 +2878,9 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                               <p className="text-xs opacity-60">Jual + Servis + Bunga</p>
                             </div>
                             <div>
-                              <p className="text-xs opacity-70">Laba Bersih</p>
-                              <p className={`text-lg font-bold ${labaBersih >= 0 ? "text-green-300" : "text-red-300"}`}>
-                                {labaBersih >= 0 ? "+" : "−"}{fmtRp(Math.abs(labaBersih))}
+                              <p className="text-xs opacity-70">Keuntungan Bersih</p>
+                              <p className={`text-lg font-bold ${keuntunganBersih >= 0 ? "text-green-300" : "text-red-300"}`}>
+                                {keuntunganBersih >= 0 ? "+" : "−"}{fmtRp(Math.abs(keuntunganBersih))}
                               </p>
                             </div>
                           </div>
