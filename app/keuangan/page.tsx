@@ -796,7 +796,14 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
 
   // ── Pengeluaran usaha = hutang toko yang tercatat pada periode (fitur Hutang-Piutang).
   // Barang masuk / buyback TIDAK termasuk (kas toko sendiri, barang sudah lunas). ──
-  const pengeluaranHutang = hutangList.reduce((s, h) => s + (h.harga_total || 0), 0);
+  // Hutang SUPPLIER = pembelian stok emas secara kredit → diperlakukan sama seperti
+  // pembelian tunai: TIDAK mengurangi keuntungan (modalnya sudah dihitung di laba kotor
+  // lewat harga_beli; kalau dikurangkan lagi = double-count). Hanya hutang operasional
+  // & pihak ke-3 yang merupakan biaya usaha pemotong laba.
+  const hutangUsahaList = hutangList.filter((h) => h.jenis_hutang !== "supplier");
+  const hutangSupplierList = hutangList.filter((h) => h.jenis_hutang === "supplier");
+  const pengeluaranHutang = hutangUsahaList.reduce((s, h) => s + (h.harga_total || 0), 0);
+  const pembelianStokKredit = hutangSupplierList.reduce((s, h) => s + (h.harga_total || 0), 0);
 
   // ── Keuntungan Bersih (basis margin) — tidak akan pernah "rugi" gara-gara stok. ──
   // = laba kotor penjualan + jasa servis + bunga gadai − pengeluaran hutang usaha.
@@ -912,7 +919,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   invoiceGroups.forEach((g) => addTrend(new Date(g.created_at), "pemasukan", g.labaKotor));
   servisSelesai.forEach((s) => addTrend(new Date(s.tanggal_masuk), "pemasukan", s.estimasi_biaya));
   gadaiLunas.forEach((g) => addTrend(new Date(g.tanggal_gadai), "pemasukan", hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan)));
-  hutangList.forEach((h) => addTrend(new Date(h.created_at), "pengeluaran", h.harga_total || 0));
+  hutangUsahaList.forEach((h) => addTrend(new Date(h.created_at), "pengeluaran", h.harga_total || 0));
 
   const trendRows = Object.keys(trendBuckets)
     .sort()
@@ -2168,31 +2175,22 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                       </div>
                     </div>
                     <div>
-                      {(() => {
-                        const bySupplier = hutangList.filter((h) => h.jenis_hutang === "supplier");
-                        const byOperasional = hutangList.filter((h) => h.jenis_hutang !== "supplier");
-                        const rows = [
-                          {
-                            label: "Hutang Supplier & Sales",
-                            value: bySupplier.reduce((s, h) => s + (h.harga_total || 0), 0),
-                            detail: `${bySupplier.length} hutang tercatat`,
-                          },
-                          {
-                            label: "Hutang Operasional & Pihak ke-3",
-                            value: byOperasional.reduce((s, h) => s + (h.harga_total || 0), 0),
-                            detail: `${byOperasional.length} hutang tercatat`,
-                          },
-                        ];
-                        return rows.map((item) => (
-                          <div key={item.label} className="px-5 py-4 flex items-center justify-between border-b border-gray-50 last:border-0">
-                            <div>
-                              <p className="font-semibold text-gray-800">{item.label}</p>
-                              <p className="text-xs text-gray-500 mt-0.5">{item.detail}</p>
-                            </div>
-                            <p className="text-lg font-extrabold text-red-600 ml-4 shrink-0">{fmtRp(item.value)}</p>
-                          </div>
-                        ));
-                      })()}
+                      {/* Hanya hutang operasional & pihak ke-3 yang memotong keuntungan. */}
+                      <div className="px-5 py-4 flex items-center justify-between border-b border-gray-50">
+                        <div>
+                          <p className="font-semibold text-gray-800">Hutang Operasional & Pihak ke-3</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{hutangUsahaList.length} hutang tercatat &bull; memotong laba</p>
+                        </div>
+                        <p className="text-lg font-extrabold text-red-600 ml-4 shrink-0">{fmtRp(pengeluaranHutang)}</p>
+                      </div>
+                      {/* Supplier = pembelian stok emas (kredit): catatan saja, TIDAK memotong laba. */}
+                      <div className="px-5 py-4 flex items-center justify-between border-b border-gray-50">
+                        <div>
+                          <p className="font-semibold text-gray-500">Hutang Supplier & Sales</p>
+                          <p className="text-xs text-gray-400 mt-0.5">{hutangSupplierList.length} hutang &bull; pembelian stok, tidak memotong laba</p>
+                        </div>
+                        <p className="text-lg font-bold text-gray-400 ml-4 shrink-0">{fmtRp(pembelianStokKredit)}</p>
+                      </div>
                       <div
                         className="px-5 py-4 flex items-center justify-between"
                         style={{ backgroundColor: "#FEE2E2", borderTop: "2px solid #FCA5A5" }}

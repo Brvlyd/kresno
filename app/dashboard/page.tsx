@@ -30,8 +30,8 @@ interface InventoriRow {
 interface Stats {
   totalItem: number;
   totalJenis: number;
-  hutangBelumLunas: number;
-  piutangBelumLunas: number;
+  hutangBelumLunasCount: number;
+  piutangBelumLunasCount: number;
 }
 
 interface QuickMenuItem {
@@ -399,7 +399,7 @@ export default function DashboardPage() {
   const supabase = createClient();
   const router = useRouter();
 
-  const [stats, setStats] = useState<Stats>({ totalItem: 0, totalJenis: 0, hutangBelumLunas: 0, piutangBelumLunas: 0 });
+  const [stats, setStats] = useState<Stats>({ totalItem: 0, totalJenis: 0, hutangBelumLunasCount: 0, piutangBelumLunasCount: 0 });
   const [hargaEmas, setHargaEmas] = useState<HargaEmas[]>([]);
   const [inventori, setInventori] = useState<InventoriRow[]>([]);
   const [allInventori, setAllInventori] = useState<InventoriRow[]>([]);
@@ -466,11 +466,11 @@ export default function DashboardPage() {
           .eq("tanggal", todayStr)
           .order("karat", { ascending: false })
           .order("label", { ascending: true }),
-        fetchAllRows<{ harga_total: number }>((from, to) =>
-          supabase.from("hutang").select("harga_total").eq("status", "Belum Lunas").range(from, to),
+        fetchAllRows<{ id: string }>((from, to) =>
+          supabase.from("hutang").select("id").eq("status", "Belum Lunas").range(from, to),
         ),
-        fetchAllRows<{ jumlah_piutang: number }>((from, to) =>
-          supabase.from("piutang").select("jumlah_piutang").eq("status", "Belum Lunas").range(from, to),
+        fetchAllRows<{ id: string }>((from, to) =>
+          supabase.from("piutang").select("id").eq("status", "Belum Lunas").range(from, to),
         ),
       ]);
 
@@ -478,8 +478,8 @@ export default function DashboardPage() {
       setStats({
         totalItem:   allData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
         totalJenis:  allData.length,
-        hutangBelumLunas:  hutangRes.reduce((s, r) => s + (r.harga_total ?? 0), 0),
-        piutangBelumLunas: piutangRes.reduce((s, r) => s + (r.jumlah_piutang ?? 0), 0),
+        hutangBelumLunasCount:  hutangRes.length,
+        piutangBelumLunasCount: piutangRes.length,
       });
 
       const inventoriData = invRes.data ?? [];
@@ -611,16 +611,16 @@ export default function DashboardPage() {
                 <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7"><rect x="3" y="4" width="18" height="16" rx="2" stroke="#C99A36" strokeWidth="2" fill="none"/><path d="M7 9h10M7 13h10M7 17h6" stroke="#C99A36" strokeWidth="2" strokeLinecap="round"/></svg>
               </div>
               <div>
-                <p className="text-gray-500 text-base font-medium mb-1">Hutang &amp; Piutang Belum Lunas</p>
+                <p className="text-gray-500 text-base font-medium mb-1">Belum Lunas</p>
                 {loading
                   ? <div className="h-9 w-32 bg-gray-200 animate-pulse rounded" />
                   : (
-                    <div className="flex items-baseline gap-3">
-                      <p className="text-lg font-bold leading-none text-red-500">
-                        {fmt(stats.hutangBelumLunas)} <span className="text-xs text-gray-500 font-medium">hutang</span>
+                    <div className="flex items-baseline gap-4">
+                      <p className="text-3xl font-bold leading-none text-red-500">
+                        {fmt(stats.hutangBelumLunasCount)} <span className="text-base text-gray-500 font-medium">hutang</span>
                       </p>
-                      <p className="text-lg font-bold leading-none text-blue-600">
-                        {fmt(stats.piutangBelumLunas)} <span className="text-xs text-gray-500 font-medium">piutang</span>
+                      <p className="text-3xl font-bold leading-none text-blue-600">
+                        {fmt(stats.piutangBelumLunasCount)} <span className="text-base text-gray-500 font-medium">piutang</span>
                       </p>
                     </div>
                   )
