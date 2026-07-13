@@ -1137,11 +1137,12 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                 </div>
               ))}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "8pt", marginBottom: "12pt" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8pt", marginBottom: "12pt" }}>
               {[
                 { l: "Nilai Modal Stok", v: fmtRp(totalNilaiModal), s: "Estimasi jual: " + fmtRp(totalNilaiJual), c: "#92400E" },
                 { l: "Modal Tertahan (Gadai Aktif)", v: fmtRp(gadaiAktifAsOf.reduce((s, g) => s + g.nilai_pinjaman, 0)), s: gadaiAktifAsOf.length + " gadai belum lunas", c: "#EA580C" },
                 { l: "Servis Belum Selesai", v: servisPendingAsOf.length + " order", s: "Est. " + fmtRp(servisPendingAsOf.reduce((s, r) => s + r.estimasi_biaya, 0)), c: "#7C3AED" },
+                { l: "Kas Buyback Rosok", v: fmtRp(nilaiMasukRosok), s: stokMasukRosok.length + " item · " + fmtGram(gramMasukRosok), c: "#2563EB" },
               ].map((c) => (
                 <div key={c.l} style={{ border: "1pt solid #d1d5db", borderRadius: "6pt", padding: "7pt 9pt" }}>
                   <p style={{ fontSize: "7pt", color: "#6b7280", marginBottom: "3pt", textTransform: "uppercase", letterSpacing: "0.05em" }}>{c.l}</p>
