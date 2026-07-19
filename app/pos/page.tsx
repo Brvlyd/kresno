@@ -785,7 +785,8 @@ function POSContent() {
     background: white !important;
   }
   @page {
-    size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm;
+    /* Kertas = ukuran nota + margin di tiap sisi (ukuran custom = ukuran nota, bukan kertas). */
+    size: ${invoiceSize.widthMm + 2 * invoiceSize.marginMm}mm ${invoiceSize.heightMm + 2 * invoiceSize.marginMm}mm;
     margin: ${invoiceSize.marginMm}mm;
   }
 }

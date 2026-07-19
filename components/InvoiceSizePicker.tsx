@@ -12,7 +12,12 @@ export function InvoiceSizePicker({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
-      <span className="font-semibold text-gray-500 whitespace-nowrap">📄 Ukuran Kertas:</span>
+      <span
+        className="font-semibold text-gray-500 whitespace-nowrap"
+        title="Ukuran nota yang tercetak (bukan ukuran kertas). Kertas = ukuran ini + margin di tiap sisi."
+      >
+        📄 Ukuran Nota:
+      </span>
       <input
         type="number"
         min={20}

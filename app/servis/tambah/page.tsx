@@ -224,7 +224,7 @@ function TambahServisContent() {
           .flex.min-h-screen { display: none !important; }
           #invoice-print { display: block !important; }
           html, body { height: auto !important; margin: 0; background: white !important; }
-          @page { size: ${invoiceSize.widthMm}mm ${invoiceSize.heightMm}mm; margin: ${invoiceSize.marginMm}mm; }
+          @page { size: ${invoiceSize.widthMm + 2 * invoiceSize.marginMm}mm ${invoiceSize.heightMm + 2 * invoiceSize.marginMm}mm; margin: ${invoiceSize.marginMm}mm; }
         }
       `}</style>
 

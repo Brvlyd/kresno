@@ -336,7 +336,10 @@ export function InvoiceCetakBundle(p: InvoiceCetakBundleProps) {
     return (
       <div id="invoice-print" style={{ display: "none" }}>
         {Array.from({ length: n }, (_, i) => (
-          <div key={i} style={{ pageBreakAfter: i < n - 1 ? "always" : undefined }}>
+          // `break-before: page` pada rangkap ke-2 dst (bukan `page-break-after` pada
+          // rangkap sebelumnya) — cara lama bikin margin atas @page hilang di halaman
+          // berikutnya (rangkap ke-2 mepet ke atas). `break-before` menghormati margin @page.
+          <div key={i} style={{ breakBefore: i > 0 ? "page" : undefined, breakInside: "avoid" }}>
             <InvoicePrintFrame widthMm={p.widthMm!} heightMm={p.heightMm!} marginMm={p.marginMm!}>
               {invoice}
             </InvoicePrintFrame>
@@ -383,7 +386,10 @@ export function InvoiceCetakBundle(p: InvoiceCetakBundleProps) {
       <div
         key={idx}
         style={{
-          pageBreakAfter: isPrint && idx < flatItems.length - 1 ? "always" : undefined,
+          // Lihat catatan di atas: `break-before: page` menjaga margin atas @page tiap
+          // halaman (halaman/rangkap ke-2 dst tidak mepet ke atas seperti `page-break-after`).
+          breakBefore: isPrint && idx > 0 ? "page" : undefined,
+          breakInside: isPrint ? "avoid" : undefined,
           marginBottom: !isPrint && idx < flatItems.length - 1 ? "24pt" : undefined,
         }}
       >
