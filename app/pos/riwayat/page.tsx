@@ -5,10 +5,11 @@ import Link from "next/link";
 import AppLayout from "@/components/AppLayout";
 import DateField from "@/components/DateField";
 import { InvoiceCetakBundle } from "@/components/pos/InvoiceCetak";
-import { DetailRiwayatModal, RiwayatRowItem } from "@/components/pos/DetailRiwayatModal";
+import { DetailRiwayatModal, RiwayatRowItem, type PosStockItem } from "@/components/pos/DetailRiwayatModal";
 import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
 import { useInvoiceSize } from "@/lib/invoiceSize";
 import { createClient } from "@/lib/supabase/client";
+import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { printClean } from "@/lib/print";
 import {
   RIWAYAT_SELECT,
@@ -37,6 +38,24 @@ export default function RiwayatTransaksiPage() {
 
   const [selectedRiwayat, setSelectedRiwayat] = useState<RiwayatTransaksi | null>(null);
   const [printRiwayat, setPrintRiwayat] = useState<RiwayatTransaksi | null>(null);
+  const [inventoriItems, setInventoriItems] = useState<PosStockItem[]>([]);
+
+  /* ── Daftar barang tersedia — dipakai saat menambah barang ke invoice yang diedit ── */
+  async function loadInventoriItems() {
+    const data = await fetchAllRows<PosStockItem>((from, to) =>
+      supabase
+        .from("inventori")
+        .select("id, id_item, nama_produk, kadar, berat_gram, jumlah, harga_jual, gambar_url")
+        .eq("status_inventori", "Tersedia")
+        .gt("jumlah", 0)
+        .order("nama_produk")
+        .order("id", { ascending: true })
+        .range(from, to),
+    );
+    setInventoriItems(data);
+  }
+
+  useEffect(() => { loadInventoriItems(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadRiwayat(opts: { search: string; dateFrom: string; dateTo: string }) {
     setLoading(true);
@@ -243,6 +262,17 @@ export default function RiwayatTransaksiPage() {
           onPrint={() => {
             setPrintRiwayat(selectedRiwayat);
             setSelectedRiwayat(null);
+          }}
+          inventoriItems={inventoriItems}
+          onSaved={() => {
+            setSelectedRiwayat(null);
+            loadRiwayat({ search, dateFrom, dateTo });
+            loadInventoriItems();
+          }}
+          onDeleted={() => {
+            setSelectedRiwayat(null);
+            loadRiwayat({ search, dateFrom, dateTo });
+            loadInventoriItems();
           }}
         />
       )}

@@ -24,6 +24,7 @@ import {
   groupRiwayatRows,
   riwayatToInvoiceProps,
   todayStr,
+  buildInventoriKeluarInserts,
   type InvoiceLineItem,
   type RiwayatRow,
   type RiwayatTransaksi,
@@ -695,27 +696,31 @@ function POSContent() {
       return;
     }
 
-    const inserts = validRows.map((r) => ({
-      inventori_id: r.item.id,
-      id_item: r.item.id_item,
-      nama_produk: r.item.nama_produk,
-      jumlah_keluar: r.qty,
-      jumlah_sisa: jumlahSisaByItemId.get(r.item.id)!,
-      status_baru: "Terjual",
-      catatan: catatan.trim() || null,
-      no_invoice: noInvoice,
-      pelanggan_nama: pelangganNama.trim() || "Umum",
-      pelanggan_hp: toFullPhone(pelangganHP) || null,
-      payment_method: paymentMethod,
-      kadar: r.item.kadar,
-      berat_gram: r.item.berat_gram,
-      harga_satuan: r.hargaJual,
-      ongkos: r.ongkos,
-      diskon: diskonNum,
-      ppn_persen: ppnEnabled ? ppnPercentNum : 0,
-      ppn_amount: ppnAmount,
-      total_transaksi: total,
-    }));
+    const inserts = buildInventoriKeluarInserts(
+      validRows.map((r) => ({
+        inventoriId: r.item.id,
+        idItem: r.item.id_item,
+        namaProduk: r.item.nama_produk,
+        kadar: r.item.kadar,
+        beratGram: r.item.berat_gram,
+        hargaJual: r.hargaJual,
+        ongkos: r.ongkos,
+        qty: r.qty,
+      })),
+      {
+        noInvoice,
+        pelangganNama: pelangganNama.trim() || "Umum",
+        pelangganHp: toFullPhone(pelangganHP) || null,
+        paymentMethod,
+        catatan: catatan.trim() || null,
+        diskon: diskonNum,
+        ppnEnabled,
+        ppnPercent: ppnPercentNum,
+        ppnAmount,
+        total,
+        jumlahSisaByItemId,
+      }
+    );
 
     const { error } = await supabase.from("inventori_keluar").insert(inserts);
 
@@ -1263,6 +1268,9 @@ function POSContent() {
             setPrintRiwayat(selectedRiwayat);
             setSelectedRiwayat(null);
           }}
+          inventoriItems={items}
+          onSaved={() => { setSelectedRiwayat(null); loadRiwayat(); loadItems(); }}
+          onDeleted={() => { setSelectedRiwayat(null); loadRiwayat(); loadItems(); }}
         />
       )}
 

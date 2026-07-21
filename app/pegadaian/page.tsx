@@ -6,7 +6,11 @@ import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
-import { fmtRupiah, type CicilanItem, type GadaiBarangItem } from "@/lib/gadai";
+import {
+  fmtRupiah, JENIS_PERHIASAN_OPTIONS, KADAR_OPTIONS, JANGKA_WAKTU_OPTIONS,
+  buildCicilanSchedule, summarizeBarang,
+  type CicilanItem, type GadaiBarangItem,
+} from "@/lib/gadai";
 import type { InvoiceGadaiData } from "@/lib/gadai";
 import { InvoiceGadai } from "@/components/InvoiceGadai";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
@@ -14,6 +18,28 @@ import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
 import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
 import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
+import { useJenisBarang } from "@/lib/useJenisBarang";
+import { useCustomList } from "@/lib/useCustomList";
+import { useNamaBarangList } from "@/lib/masterData";
+import { MasterDataPicker } from "@/components/MasterDataPicker";
+import { AutocompleteField } from "@/components/AutocompleteField";
+import StorageImage from "@/components/StorageImage";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+
+interface BarangItemForm {
+  jenis_perhiasan: string;
+  nama_barang: string;
+  berat_gram: string;
+  kadar: string;
+  kondisi_barang: string;
+  deskripsi: string;
+  foto_barang_url: string;
+}
+
+const emptyBarangItem = (): BarangItemForm => ({
+  jenis_perhiasan: JENIS_PERHIASAN_OPTIONS[0], nama_barang: "", berat_gram: "",
+  kadar: "", kondisi_barang: "", deskripsi: "", foto_barang_url: "",
+});
 
 /* ─── Types ─── */
 interface GadaiRow {
@@ -80,6 +106,33 @@ function DetailGadaiPopup({
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
   const [invoiceSize, setInvoiceSize] = useInvoiceSize("pegadaian");
 
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState({
+    pelanggan_nama: "", pelanggan_hp: "", pelanggan_alamat: "", foto_ktp_url: "",
+    items: [emptyBarangItem()] as BarangItemForm[],
+    nilai_taksiran: "", nilai_pinjaman: "", bunga_persen: "",
+    jangka_waktu_bulan: JANGKA_WAKTU_OPTIONS[0],
+    tanggal_gadai: "", tanggal_jatuh_tempo: "",
+    opsi_pembayaran: "Tunai" as "Tunai" | "Cicilan",
+    catatan: "",
+  });
+  const [uploadingKtp, setUploadingKtp] = useState(false);
+  const [uploadingBarangIdx, setUploadingBarangIdx] = useState<number | null>(null);
+  const [editMsg, setEditMsg] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const { allJenis: jenisOptions, addCustomJenis } = useJenisBarang(JENIS_PERHIASAN_OPTIONS);
+  const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
+  const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
+
+  const setEdit = <K extends keyof typeof editForm>(key: K, val: (typeof editForm)[K]) =>
+    setEditForm((f) => ({ ...f, [key]: val }));
+  const setEditItem = <K extends keyof BarangItemForm>(idx: number, key: K, val: BarangItemForm[K]) =>
+    setEditForm((f) => ({ ...f, items: f.items.map((it, i) => (i === idx ? { ...it, [key]: val } : it)) }));
+  const addEditItem = () => setEditForm((f) => ({ ...f, items: [...f.items, emptyBarangItem()] }));
+  const removeEditItem = (idx: number) => setEditForm((f) => ({ ...f, items: f.items.filter((_, i) => i !== idx) }));
+
   useEffect(() => {
     if (!open || !item) return;
     setMsg("");
@@ -119,6 +172,155 @@ function DetailGadaiPopup({
   }, [open, item]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!open || !item) return null;
+
+  function openEdit() {
+    if (!item) return;
+    setEditForm({
+      pelanggan_nama: item.pelanggan_nama,
+      pelanggan_hp: item.pelanggan_hp ?? "",
+      pelanggan_alamat: item.pelanggan_alamat ?? "",
+      foto_ktp_url: item.foto_ktp_url ?? "",
+      items: barangItems.map((b) => ({
+        jenis_perhiasan: b.jenis_perhiasan,
+        nama_barang: b.nama_barang,
+        berat_gram: String(b.berat_gram),
+        kadar: b.kadar,
+        kondisi_barang: b.kondisi_barang ?? "",
+        deskripsi: b.deskripsi ?? "",
+        foto_barang_url: b.foto_barang_url ?? "",
+      })),
+      nilai_taksiran: String(item.nilai_taksiran),
+      nilai_pinjaman: String(item.nilai_pinjaman),
+      bunga_persen: String(item.bunga_persen),
+      jangka_waktu_bulan: item.jangka_waktu_bulan,
+      tanggal_gadai: item.tanggal_gadai,
+      tanggal_jatuh_tempo: item.tanggal_jatuh_tempo,
+      opsi_pembayaran: item.opsi_pembayaran,
+      catatan: item.catatan ?? "",
+    });
+    setEditMsg("");
+    setEditMode(true);
+  }
+
+  async function uploadFotoKtpEdit(file: File) {
+    setUploadingKtp(true);
+    setEditMsg("");
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `ktp-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("pegadaian-images").upload(path, file, { cacheControl: "3600", upsert: true });
+    if (error) { setEditMsg("Gagal upload foto: " + error.message); setUploadingKtp(false); return; }
+    const { data } = supabase.storage.from("pegadaian-images").getPublicUrl(path);
+    setEdit("foto_ktp_url", data.publicUrl);
+    setUploadingKtp(false);
+  }
+
+  async function uploadFotoBarangEdit(file: File, idx: number) {
+    setUploadingBarangIdx(idx);
+    setEditMsg("");
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `barang-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("pegadaian-images").upload(path, file, { cacheControl: "3600", upsert: true });
+    if (error) { setEditMsg("Gagal upload foto: " + error.message); setUploadingBarangIdx(null); return; }
+    const { data } = supabase.storage.from("pegadaian-images").getPublicUrl(path);
+    setEditItem(idx, "foto_barang_url", data.publicUrl);
+    setUploadingBarangIdx(null);
+  }
+
+  function editMissingFields(): string[] {
+    const missing: string[] = [];
+    if (!editForm.pelanggan_nama.trim()) missing.push("Nama Pelanggan");
+    if (!editForm.pelanggan_hp.trim()) missing.push("No. HP");
+    if (!editForm.pelanggan_alamat.trim()) missing.push("Alamat");
+    editForm.items.forEach((it, i) => {
+      const n = editForm.items.length > 1 ? ` #${i + 1}` : "";
+      if (!it.nama_barang.trim()) missing.push(`Nama Barang${n}`);
+      if (!it.berat_gram.trim() || (parseFloat(it.berat_gram) || 0) <= 0) missing.push(`Berat (gram)${n}`);
+      if (!it.kadar.trim()) missing.push(`Kadar Emas${n}`);
+    });
+    if (!editForm.nilai_taksiran.trim() || (parseFloat(editForm.nilai_taksiran) || 0) <= 0) missing.push("Nilai Taksiran");
+    if (!editForm.nilai_pinjaman.trim() || (parseFloat(editForm.nilai_pinjaman) || 0) <= 0) missing.push("Nilai Pinjaman");
+    if (!editForm.bunga_persen.trim()) missing.push("Bunga (%)");
+    return missing;
+  }
+
+  function editItemsNumeric() {
+    return editForm.items.map((it) => ({
+      jenis_perhiasan: it.jenis_perhiasan,
+      nama_barang: it.nama_barang.trim(),
+      berat_gram: parseFloat(it.berat_gram) || 0,
+      kadar: it.kadar,
+      kondisi_barang: it.kondisi_barang.trim() || null,
+      deskripsi: it.deskripsi.trim() || null,
+      foto_barang_url: it.foto_barang_url.trim() || null,
+    }));
+  }
+
+  async function saveEdit() {
+    if (!item) return;
+    const missing = editMissingFields();
+    if (missing.length > 0) { setEditMsg(`Lengkapi dulu: ${missing.join(", ")}.`); return; }
+
+    setBusy(true);
+    setEditMsg("");
+
+    const summary = summarizeBarang(editItemsNumeric());
+    const { error } = await supabase.from("gadai").update({
+      pelanggan_nama: editForm.pelanggan_nama.trim(),
+      pelanggan_hp: editForm.pelanggan_hp.trim(),
+      pelanggan_alamat: editForm.pelanggan_alamat.trim(),
+      foto_ktp_url: editForm.foto_ktp_url.trim() || null,
+      ...summary,
+      nilai_taksiran: Math.round(parseFloat(editForm.nilai_taksiran) || 0),
+      nilai_pinjaman: Math.round(parseFloat(editForm.nilai_pinjaman) || 0),
+      bunga_persen: parseFloat(editForm.bunga_persen) || 0,
+      jangka_waktu_bulan: editForm.jangka_waktu_bulan,
+      tanggal_gadai: editForm.tanggal_gadai,
+      tanggal_jatuh_tempo: editForm.tanggal_jatuh_tempo,
+      opsi_pembayaran: editForm.opsi_pembayaran,
+      catatan: editForm.catatan.trim() || null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", item.id);
+    if (error) { setBusy(false); setEditMsg("Gagal menyimpan: " + error.message); return; }
+
+    await supabase.from("gadai_barang").delete().eq("gadai_id", item.id);
+    const { error: barangError } = await supabase.from("gadai_barang").insert(
+      editItemsNumeric().map((it, i) => ({ ...it, gadai_id: item.id, urutan: i + 1 }))
+    );
+    if (barangError) { setBusy(false); setEditMsg("Data tersimpan, tapi gagal menyimpan data barang: " + barangError.message); return; }
+
+    // Cicilan HANYA digenerate kalau baru sekarang berubah jadi "Cicilan" & belum ada jadwal
+    // sama sekali — kalau jadwal sudah ada (opsi_pembayaran sudah "Cicilan" sejak awal),
+    // tidak disentuh supaya cicilan yang sudah lunas tidak ikut ter-reset.
+    if (item.opsi_pembayaran !== "Cicilan" && editForm.opsi_pembayaran === "Cicilan" && cicilan.length === 0) {
+      const schedule = buildCicilanSchedule(
+        parseFloat(editForm.nilai_pinjaman) || 0,
+        parseFloat(editForm.bunga_persen) || 0,
+        editForm.jangka_waktu_bulan,
+        editForm.tanggal_gadai
+      );
+      const { error: cicilanError } = await supabase.from("gadai_cicilan").insert(
+        schedule.map((c) => ({ ...c, gadai_id: item.id }))
+      );
+      if (cicilanError) { setBusy(false); setEditMsg("Data tersimpan, tapi gagal membuat jadwal cicilan: " + cicilanError.message); return; }
+    }
+
+    setBusy(false);
+    editForm.items.forEach((it) => recordNamaBarang(it.nama_barang));
+    setEditMode(false);
+    onChanged();
+    onClose();
+  }
+
+  async function hapusGadai() {
+    if (!item) return;
+    setDeleting(true);
+    const { error } = await supabase.from("gadai").delete().eq("id", item.id);
+    setDeleting(false);
+    if (error) { alert("Gagal menghapus pengajuan gadai: " + error.message); return; }
+    setShowDeleteConfirm(false);
+    onChanged();
+    onClose();
+  }
 
   const tandaiCicilanLunas = async (cicilanId: string) => {
     setBusy(true);
@@ -206,6 +408,7 @@ function DetailGadaiPopup({
         </div>
 
         {/* Body */}
+        {!editMode && (
         <div className="px-6 py-5 space-y-5">
           <div className="flex items-center justify-between">
             <Badge status={item.status} />
@@ -346,6 +549,21 @@ function DetailGadaiPopup({
             )}
           </div>
 
+          <div className="flex gap-3">
+            <button
+              onClick={openEdit}
+              className="flex-1 py-2.5 rounded-xl border-2 border-amber-400 text-amber-600 font-semibold text-sm hover:bg-amber-50 transition-colors"
+            >
+              ✏️ Edit Data Gadai
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex-1 py-2.5 rounded-xl border-2 border-red-300 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors"
+            >
+              🗑️ Hapus
+            </button>
+          </div>
+
           {item.status === "Aktif" && (
             <button
               onClick={() => router.push(
@@ -358,8 +576,264 @@ function DetailGadaiPopup({
             </button>
           )}
         </div>
+        )}
+
+        {/* Body: Edit mode */}
+        {editMode && (
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Data Pelanggan</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Nama Pelanggan</label>
+                  <input value={editForm.pelanggan_nama} onChange={(e) => setEdit("pelanggan_nama", e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">No. HP</label>
+                  <input value={editForm.pelanggan_hp} onChange={(e) => setEdit("pelanggan_hp", e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Alamat</label>
+                <textarea value={editForm.pelanggan_alamat} onChange={(e) => setEdit("pelanggan_alamat", e.target.value)} rows={2}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] resize-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Foto KTP</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+                    {editForm.foto_ktp_url ? (
+                      <StorageImage src={editForm.foto_ktp_url} alt="Foto KTP" className="w-full h-full object-cover" />
+                    ) : (
+                      <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </div>
+                  <label className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border-2 cursor-pointer transition-colors hover:bg-amber-50"
+                    style={{ borderColor: "#C99A36", color: "#C99A36" }}>
+                    {uploadingKtp ? "Mengunggah..." : "Ganti Foto"}
+                    <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploadingKtp}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFotoKtpEdit(f); }} />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              Data Barang {editForm.items.length > 1 ? `(${editForm.items.length} item)` : ""}
+            </h3>
+            <div className="space-y-3">
+              {editForm.items.map((it, idx) => (
+                <div key={idx} className={editForm.items.length > 1 ? "border border-gray-200 rounded-lg p-3 space-y-2" : "space-y-2"}>
+                  {editForm.items.length > 1 && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-gray-400">Barang #{idx + 1}</p>
+                      <button type="button" onClick={() => removeEditItem(idx)} className="text-xs font-semibold text-red-500 hover:underline">
+                        Hapus
+                      </button>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Jenis Perhiasan</label>
+                    <MasterDataPicker
+                      value={it.jenis_perhiasan}
+                      onChange={(v) => setEditItem(idx, "jenis_perhiasan", v)}
+                      options={jenisOptions}
+                      onAddNew={addCustomJenis}
+                      modalTitle="Tambah Jenis Perhiasan Baru"
+                      modalLabel="Nama Jenis Perhiasan"
+                      inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Nama Barang</label>
+                    <AutocompleteField
+                      value={it.nama_barang}
+                      onChange={(v) => setEditItem(idx, "nama_barang", v)}
+                      onSelect={(v) => setEditItem(idx, "nama_barang", v)}
+                      suggestions={namaBarangOptions.filter((n) => n.toLowerCase().includes(it.nama_barang.trim().toLowerCase())).slice(0, 8)}
+                      renderLabel={(n) => n}
+                      inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1">Berat (gram)</label>
+                      <input type="number" min="0" step="0.01" value={it.berat_gram} onChange={(e) => setEditItem(idx, "berat_gram", e.target.value)}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 mb-1">Kadar Emas</label>
+                      <MasterDataPicker
+                        value={it.kadar}
+                        onChange={(v) => setEditItem(idx, "kadar", v)}
+                        options={kadarOptions}
+                        onAddNew={addCustomKadar}
+                        modalTitle="Tambah Kadar Baru"
+                        modalLabel="Kadar Emas"
+                        inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Kondisi Barang</label>
+                    <input value={it.kondisi_barang} onChange={(e) => setEditItem(idx, "kondisi_barang", e.target.value)}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Deskripsi</label>
+                    <textarea value={it.deskripsi} onChange={(e) => setEditItem(idx, "deskripsi", e.target.value)} rows={2}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] resize-none" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Foto Barang</label>
+                    <div className="flex items-center gap-3">
+                      <div className="w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+                        {it.foto_barang_url ? (
+                          <StorageImage src={it.foto_barang_url} alt="Foto Barang" className="w-full h-full object-cover" />
+                        ) : (
+                          <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </div>
+                      <label className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border-2 cursor-pointer transition-colors hover:bg-amber-50"
+                        style={{ borderColor: "#C99A36", color: "#C99A36" }}>
+                        {uploadingBarangIdx === idx ? "Mengunggah..." : "Ganti Foto"}
+                        <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploadingBarangIdx === idx}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFotoBarangEdit(f, idx); }} />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addEditItem}
+                className="w-full py-2.5 rounded-xl border-2 border-dashed font-semibold text-sm transition-colors hover:bg-amber-50"
+                style={{ borderColor: "#C99A36", color: "#C99A36" }}
+              >
+                + Tambah Barang Lain
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Data Pinjaman</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Nilai Taksiran (Rp)</label>
+                  <input type="number" min="0" value={editForm.nilai_taksiran} onChange={(e) => setEdit("nilai_taksiran", e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Nilai Pinjaman (Rp)</label>
+                  <input type="number" min="0" value={editForm.nilai_pinjaman} onChange={(e) => setEdit("nilai_pinjaman", e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Bunga (% per bulan)</label>
+                <input type="number" min="0" step="0.1" value={editForm.bunga_persen} onChange={(e) => setEdit("bunga_persen", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Jangka Waktu</label>
+                <div className="flex flex-wrap gap-2">
+                  {JANGKA_WAKTU_OPTIONS.map((bulan) => (
+                    <button key={bulan} type="button" onClick={() => setEdit("jangka_waktu_bulan", bulan)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-semibold border-2 transition-colors ${
+                        editForm.jangka_waktu_bulan === bulan ? "bg-[#C99A36] border-[#C99A36] text-white" : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                      }`}>
+                      {bulan} Bulan
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Tanggal Gadai</label>
+                  <input type="date" value={editForm.tanggal_gadai} onChange={(e) => setEdit("tanggal_gadai", e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Tanggal Jatuh Tempo</label>
+                  <input type="date" value={editForm.tanggal_jatuh_tempo} onChange={(e) => setEdit("tanggal_jatuh_tempo", e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Opsi Pembayaran</label>
+                <div className="flex flex-wrap gap-2">
+                  {(["Tunai", "Cicilan"] as const).map((opsi) => (
+                    <button key={opsi} type="button" onClick={() => setEdit("opsi_pembayaran", opsi)}
+                      className={`px-3 py-1.5 rounded-full text-sm font-semibold border-2 transition-colors ${
+                        editForm.opsi_pembayaran === opsi ? "bg-[#C99A36] border-[#C99A36] text-white" : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                      }`}>
+                      {opsi}
+                    </button>
+                  ))}
+                </div>
+                {item.opsi_pembayaran === "Cicilan" ? (
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    Jadwal cicilan yang sudah ada tidak otomatis disesuaikan — cek kembali manual jika perlu.
+                  </p>
+                ) : editForm.opsi_pembayaran === "Cicilan" && (
+                  <p className="text-xs text-gray-400 mt-1.5">
+                    Jadwal cicilan baru akan dibuat otomatis sebanyak {editForm.jangka_waktu_bulan} bulan saat disimpan.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Catatan</label>
+            <textarea value={editForm.catatan} onChange={(e) => setEdit("catatan", e.target.value)} rows={2}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] resize-none" />
+          </div>
+
+          {editMsg && (
+            <p className="text-sm font-semibold py-2.5 px-4 rounded-xl bg-red-50 text-red-600">{editMsg}</p>
+          )}
+
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <button
+              onClick={() => { setEditMode(false); setEditMsg(""); }}
+              disabled={busy}
+              className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            >
+              Batal
+            </button>
+            <button
+              onClick={saveEdit}
+              disabled={busy}
+              className="flex-1 py-3 rounded-xl text-white font-semibold hover:opacity-90 disabled:opacity-50 transition-all"
+              style={{ backgroundColor: "#C99A36" }}
+            >
+              {busy ? "Menyimpan..." : "Simpan Perubahan"}
+            </button>
+          </div>
+        </div>
+        )}
       </div>
     </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Hapus Pengajuan Gadai Ini?"
+        message={<>Pengajuan gadai <strong>{item.no_gadai}</strong> beserta seluruh data barang & jadwal cicilannya akan dihapus permanen.</>}
+        confirming={deleting}
+        onConfirm={hapusGadai}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
 
       {/* ── MODAL: PREVIEW / CETAK INVOICE ── */}
       {showInvoicePreview && (

@@ -18,6 +18,7 @@ import { useNamaBarangList } from "@/lib/masterData";
 import { MasterDataPicker } from "@/components/MasterDataPicker";
 import { AutocompleteField } from "@/components/AutocompleteField";
 import DateField from "@/components/DateField";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 const KADAR_FORMAT_RE = /^\d+(\.\d+)?K$/;
 const validateKadarFormat = (v: string): string | null =>
@@ -118,6 +119,9 @@ export default function PembelianPage() {
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editMsg, setEditMsg] = useState("");
+
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
   const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
@@ -345,6 +349,21 @@ export default function PembelianPage() {
     setSelectedRow(updated);
     setEditMode(false);
     setEditForm(null);
+  }
+
+  async function hapusRiwayat() {
+    if (!selectedRow) return;
+    setDeleting(true);
+    const { error } = await supabase
+      .from("inventori")
+      .delete()
+      .eq("id", selectedRow.id)
+      .eq("sub_jenis_aset", "Emas Rosok");
+    setDeleting(false);
+    if (error) { alert("Gagal menghapus riwayat pembelian: " + error.message); return; }
+    setRiwayat((prev) => prev.filter((r) => r.id !== selectedRow.id));
+    setShowDeleteConfirm(false);
+    closeDetailModal();
   }
 
   return (
@@ -760,7 +779,7 @@ export default function PembelianPage() {
                     </div>
                   ))}
                 </div>
-                <div className="px-6 pb-5 grid grid-cols-3 gap-2">
+                <div className="px-6 pb-5 grid grid-cols-4 gap-2">
                   <button
                     onClick={closeDetailModal}
                     className="py-2.5 rounded-xl border border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 transition-colors"
@@ -773,6 +792,12 @@ export default function PembelianPage() {
                     style={{ borderColor: "#C99A36", color: "#C99A36" }}
                   >
                     ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => setShowDeleteConfirm(true)}
+                    className="py-2.5 rounded-xl border-2 border-red-300 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors"
+                  >
+                    🗑️ Hapus
                   </button>
                   <button
                     onClick={() => { setPreviewRow(selectedRow); closeDetailModal(); }}
@@ -930,6 +955,25 @@ export default function PembelianPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Hapus Riwayat Pembelian Ini?"
+        message={
+          selectedRow ? (
+            <>
+              <strong>{selectedRow.nama_produk}</strong> ({selectedRow.id_item}) akan dihapus permanen dari
+              riwayat pembelian.
+              {selectedRow.jumlah <= 0 && (
+                <> Barang ini sudah pernah terjual — yang dihapus hanya catatan riwayat pembeliannya, bukan riwayat penjualannya.</>
+              )}
+            </>
+          ) : null
+        }
+        confirming={deleting}
+        onConfirm={hapusRiwayat}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </>
   );
 }

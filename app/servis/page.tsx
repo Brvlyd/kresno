@@ -6,7 +6,10 @@ import AppLayout from "@/components/AppLayout";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
-import { fmtRupiah } from "@/lib/servis";
+import {
+  JENIS_PERHIASAN_OPTIONS, KADAR_OPTIONS, JENIS_KERUSAKAN_OPTIONS, JENIS_TINDAKAN_OPTIONS,
+  PRIORITAS_OPTIONS, fmtRupiah,
+} from "@/lib/servis";
 import type { InvoiceServisData } from "@/lib/servis";
 import { InvoiceServis } from "@/components/InvoiceServis";
 import { InvoicePagePreview } from "@/components/InvoicePagePreview";
@@ -14,6 +17,13 @@ import { InvoicePrintFrame } from "@/components/InvoicePrintFrame";
 import { InvoiceSizePicker } from "@/components/InvoiceSizePicker";
 import { useInvoiceSize } from "@/lib/invoiceSize";
 import { printClean } from "@/lib/print";
+import { useJenisBarang } from "@/lib/useJenisBarang";
+import { useCustomList } from "@/lib/useCustomList";
+import { useNamaBarangList } from "@/lib/masterData";
+import { MasterDataPicker } from "@/components/MasterDataPicker";
+import { AutocompleteField } from "@/components/AutocompleteField";
+import StorageImage from "@/components/StorageImage";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 
 /* ─── Types ─── */
 interface ServisRow {
@@ -77,11 +87,144 @@ function DetailServisPopup({
   const [showInvoicePreview, setShowInvoicePreview] = useState(false);
   const [invoiceSize, setInvoiceSize] = useInvoiceSize("servis");
 
+  const [editMode, setEditMode] = useState(false);
+  const [editJenis, setEditJenis] = useState<"Cuci" | "Perbaikan">("Cuci");
+  const [editForm, setEditForm] = useState({
+    pelanggan_nama: "", pelanggan_hp: "", pelanggan_alamat: "",
+    jenis_perhiasan: "", nama_barang: "", berat_gram: "", kadar: "",
+    kondisi_awal: "", deskripsi: "", foto_barang_url: "",
+    jenis_kerusakan: "", jenis_tindakan: "", prioritas: PRIORITAS_OPTIONS[0], catatan_kerusakan: "",
+    estimasi_biaya: "", uang_muka: "", tanggal_masuk: "", estimasi_selesai: "",
+    catatan_tambahan: "",
+  });
+  const [uploadingFoto, setUploadingFoto] = useState(false);
+  const [editMsg, setEditMsg] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const { allJenis: jenisOptions, addCustomJenis } = useJenisBarang(JENIS_PERHIASAN_OPTIONS);
+  const { all: kerusakanOptions, addCustom: addCustomKerusakan } = useCustomList("jenis_kerusakan_custom", JENIS_KERUSAKAN_OPTIONS);
+  const { all: tindakanOptions, addCustom: addCustomTindakan } = useCustomList("jenis_tindakan_custom", JENIS_TINDAKAN_OPTIONS);
+  const { all: kadarOptions, addCustom: addCustomKadar } = useCustomList("kadar_master", KADAR_OPTIONS);
+  const { all: namaBarangOptions, record: recordNamaBarang } = useNamaBarangList();
+
+  const setEdit = <K extends keyof typeof editForm>(key: K, val: (typeof editForm)[K]) =>
+    setEditForm((f) => ({ ...f, [key]: val }));
+
   useEffect(() => {
     if (open) setMsg("");
   }, [open]);
 
   if (!open || !item) return null;
+
+  function openEdit() {
+    if (!item) return;
+    setEditJenis(item.jenis_servis);
+    setEditForm({
+      pelanggan_nama: item.pelanggan_nama,
+      pelanggan_hp: item.pelanggan_hp ?? "",
+      pelanggan_alamat: item.pelanggan_alamat ?? "",
+      jenis_perhiasan: item.jenis_perhiasan,
+      nama_barang: item.nama_barang,
+      berat_gram: String(item.berat_gram),
+      kadar: item.kadar,
+      kondisi_awal: item.kondisi_awal ?? "",
+      deskripsi: item.deskripsi ?? "",
+      foto_barang_url: item.foto_barang_url ?? "",
+      jenis_kerusakan: item.jenis_kerusakan ?? "",
+      jenis_tindakan: item.jenis_tindakan ?? "",
+      prioritas: item.prioritas ?? PRIORITAS_OPTIONS[0],
+      catatan_kerusakan: item.catatan_kerusakan ?? "",
+      estimasi_biaya: String(item.estimasi_biaya),
+      uang_muka: String(item.uang_muka),
+      tanggal_masuk: item.tanggal_masuk,
+      estimasi_selesai: item.estimasi_selesai ?? "",
+      catatan_tambahan: item.catatan_tambahan ?? "",
+    });
+    setEditMsg("");
+    setEditMode(true);
+  }
+
+  async function uploadFotoEdit(file: File) {
+    setUploadingFoto(true);
+    setEditMsg("");
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `barang-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("servis-images").upload(path, file, { cacheControl: "3600", upsert: true });
+    if (error) {
+      setEditMsg("Gagal upload foto: " + error.message);
+      setUploadingFoto(false);
+      return;
+    }
+    const { data } = supabase.storage.from("servis-images").getPublicUrl(path);
+    setEdit("foto_barang_url", data.publicUrl);
+    setUploadingFoto(false);
+  }
+
+  function editMissingFields(): string[] {
+    const missing: string[] = [];
+    if (!editForm.pelanggan_nama.trim()) missing.push("Nama Pelanggan");
+    if (!editForm.pelanggan_hp.trim()) missing.push("No. HP");
+    if (!editForm.pelanggan_alamat.trim()) missing.push("Alamat");
+    if (!editForm.nama_barang.trim()) missing.push("Nama Barang");
+    if (!editForm.berat_gram.trim() || (parseFloat(editForm.berat_gram) || 0) <= 0) missing.push("Berat (gram)");
+    if (!editForm.kadar.trim()) missing.push("Kadar Emas");
+    if (!editForm.estimasi_biaya.trim() || (parseFloat(editForm.estimasi_biaya) || 0) <= 0) missing.push("Estimasi Biaya");
+    if (editJenis === "Perbaikan") {
+      if (!editForm.jenis_kerusakan.trim()) missing.push("Jenis Kerusakan");
+      if (!editForm.jenis_tindakan.trim()) missing.push("Jenis Tindakan");
+    }
+    return missing;
+  }
+
+  async function saveEdit() {
+    if (!item) return;
+    const missing = editMissingFields();
+    if (missing.length > 0) { setEditMsg(`Lengkapi dulu: ${missing.join(", ")}.`); return; }
+
+    setBusy(true);
+    setEditMsg("");
+    const { error } = await supabase.from("servis").update({
+      jenis_servis: editJenis,
+      pelanggan_nama: editForm.pelanggan_nama.trim(),
+      pelanggan_hp: editForm.pelanggan_hp.trim(),
+      pelanggan_alamat: editForm.pelanggan_alamat.trim(),
+      jenis_perhiasan: editForm.jenis_perhiasan,
+      nama_barang: editForm.nama_barang.trim(),
+      berat_gram: parseFloat(editForm.berat_gram) || 0,
+      kadar: editForm.kadar,
+      kondisi_awal: editForm.kondisi_awal.trim() || null,
+      deskripsi: editForm.deskripsi.trim() || null,
+      foto_barang_url: editForm.foto_barang_url.trim() || null,
+      jenis_kerusakan: editJenis === "Perbaikan" ? editForm.jenis_kerusakan : null,
+      jenis_tindakan: editJenis === "Perbaikan" ? editForm.jenis_tindakan : null,
+      prioritas: editJenis === "Perbaikan" ? editForm.prioritas : null,
+      catatan_kerusakan: editJenis === "Perbaikan" ? (editForm.catatan_kerusakan.trim() || null) : null,
+      estimasi_biaya: Math.round(parseFloat(editForm.estimasi_biaya) || 0),
+      uang_muka: Math.round(parseFloat(editForm.uang_muka) || 0),
+      tanggal_masuk: editForm.tanggal_masuk,
+      estimasi_selesai: editForm.estimasi_selesai || null,
+      catatan_tambahan: editForm.catatan_tambahan.trim() || null,
+      updated_at: new Date().toISOString(),
+    }).eq("id", item.id);
+    setBusy(false);
+    if (error) { setEditMsg("Gagal menyimpan: " + error.message); return; }
+    recordNamaBarang(editForm.nama_barang);
+    setEditMode(false);
+    onChanged();
+    onClose();
+  }
+
+  async function hapusServis() {
+    if (!item) return;
+    setDeleting(true);
+    const { error } = await supabase.from("servis").delete().eq("id", item.id);
+    setDeleting(false);
+    if (error) { alert("Gagal menghapus servis: " + error.message); return; }
+    setShowDeleteConfirm(false);
+    onChanged();
+    onClose();
+  }
 
   const tandaiSelesai = async () => {
     setBusy(true);
@@ -165,6 +308,7 @@ function DetailServisPopup({
         </div>
 
         {/* Body */}
+        {!editMode && (
         <div className="px-6 py-5 space-y-5">
           <div className="flex items-center justify-between">
             <Badge status={item.status} />
@@ -281,6 +425,21 @@ function DetailServisPopup({
             )}
           </div>
 
+          <div className="flex gap-3">
+            <button
+              onClick={openEdit}
+              className="flex-1 py-2.5 rounded-xl border-2 border-amber-400 text-amber-600 font-semibold text-sm hover:bg-amber-50 transition-colors"
+            >
+              ✏️ Edit Data Servis
+            </button>
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex-1 py-2.5 rounded-xl border-2 border-red-300 text-red-500 font-semibold text-sm hover:bg-red-50 transition-colors"
+            >
+              🗑️ Hapus
+            </button>
+          </div>
+
           {item.status !== "Diambil" && (item.estimasi_biaya - item.uang_muka) > 0 && (
             <button
               onClick={() => router.push(
@@ -293,8 +452,245 @@ function DetailServisPopup({
             </button>
           )}
         </div>
+        )}
+
+        {/* Body: Edit mode */}
+        {editMode && (
+        <div className="px-6 py-5 space-y-4">
+          <div className="flex gap-2 p-1 bg-gray-100 rounded-xl max-w-xs">
+            {(["Cuci", "Perbaikan"] as const).map((j) => (
+              <button
+                key={j}
+                type="button"
+                onClick={() => setEditJenis(j)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all ${
+                  editJenis === j ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
+                }`}
+              >
+                {j}
+              </button>
+            ))}
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Data Pelanggan</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Nama Pelanggan</label>
+                <input value={editForm.pelanggan_nama} onChange={(e) => setEdit("pelanggan_nama", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">No. HP</label>
+                <input value={editForm.pelanggan_hp} onChange={(e) => setEdit("pelanggan_hp", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Alamat</label>
+                <textarea value={editForm.pelanggan_alamat} onChange={(e) => setEdit("pelanggan_alamat", e.target.value)} rows={2}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] resize-none" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Data Perhiasan</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Jenis Perhiasan</label>
+                <MasterDataPicker
+                  value={editForm.jenis_perhiasan}
+                  onChange={(v) => setEdit("jenis_perhiasan", v)}
+                  options={jenisOptions}
+                  onAddNew={addCustomJenis}
+                  placeholder="Cari atau pilih jenis perhiasan..."
+                  modalTitle="Tambah Jenis Perhiasan Baru"
+                  modalLabel="Nama Jenis Perhiasan"
+                  inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Nama Barang</label>
+                <AutocompleteField
+                  value={editForm.nama_barang}
+                  onChange={(v) => setEdit("nama_barang", v)}
+                  onSelect={(v) => setEdit("nama_barang", v)}
+                  suggestions={namaBarangOptions.filter((n) => n.toLowerCase().includes(editForm.nama_barang.trim().toLowerCase())).slice(0, 8)}
+                  renderLabel={(n) => n}
+                  inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Berat (gram)</label>
+                  <input type="number" min="0" step="0.01" value={editForm.berat_gram} onChange={(e) => setEdit("berat_gram", e.target.value)}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Kadar Emas</label>
+                  <MasterDataPicker
+                    value={editForm.kadar}
+                    onChange={(v) => setEdit("kadar", v)}
+                    options={kadarOptions}
+                    onAddNew={addCustomKadar}
+                    placeholder="Contoh: 24K"
+                    modalTitle="Tambah Kadar Baru"
+                    modalLabel="Kadar Emas"
+                    inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Kondisi Awal</label>
+                <input value={editForm.kondisi_awal} onChange={(e) => setEdit("kondisi_awal", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Deskripsi</label>
+                <textarea value={editForm.deskripsi} onChange={(e) => setEdit("deskripsi", e.target.value)} rows={2}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] resize-none" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Foto Barang</label>
+                <div className="flex items-center gap-3">
+                  <div className="w-16 h-16 rounded-lg border border-gray-200 bg-gray-50 flex items-center justify-center overflow-hidden shrink-0">
+                    {editForm.foto_barang_url ? (
+                      <StorageImage src={editForm.foto_barang_url} alt="Foto Barang" className="w-full h-full object-cover" />
+                    ) : (
+                      <svg className="w-6 h-6 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14M14 8h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </div>
+                  <label className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border-2 cursor-pointer transition-colors hover:bg-amber-50"
+                    style={{ borderColor: "#C99A36", color: "#C99A36" }}>
+                    {uploadingFoto ? "Mengunggah..." : "Ganti Foto"}
+                    <input type="file" accept="image/*" capture="environment" className="hidden" disabled={uploadingFoto}
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadFotoEdit(f); }} />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {editJenis === "Perbaikan" && (
+            <div>
+              <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Detail Perbaikan</h3>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Jenis Kerusakan</label>
+                    <MasterDataPicker
+                      value={editForm.jenis_kerusakan}
+                      onChange={(v) => setEdit("jenis_kerusakan", v)}
+                      options={kerusakanOptions}
+                      onAddNew={addCustomKerusakan}
+                      modalTitle="Tambah Jenis Kerusakan Baru"
+                      modalLabel="Nama Jenis Kerusakan"
+                      inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 mb-1">Jenis Tindakan</label>
+                    <MasterDataPicker
+                      value={editForm.jenis_tindakan}
+                      onChange={(v) => setEdit("jenis_tindakan", v)}
+                      options={tindakanOptions}
+                      onAddNew={addCustomTindakan}
+                      modalTitle="Tambah Jenis Tindakan Baru"
+                      modalLabel="Nama Jenis Tindakan"
+                      inputClassName="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Prioritas</label>
+                  <div className="flex flex-wrap gap-2">
+                    {PRIORITAS_OPTIONS.map((p) => (
+                      <button key={p} type="button" onClick={() => setEdit("prioritas", p)}
+                        className={`px-3 py-1.5 rounded-full text-sm font-semibold border-2 transition-colors ${
+                          editForm.prioritas === p ? "bg-[#C99A36] border-[#C99A36] text-white" : "border-gray-200 text-gray-600 hover:border-[#C99A36]"
+                        }`}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">Catatan Kerusakan</label>
+                  <textarea value={editForm.catatan_kerusakan} onChange={(e) => setEdit("catatan_kerusakan", e.target.value)} rows={2}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] resize-none" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Biaya & Estimasi</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Estimasi Biaya (Rp)</label>
+                <input type="number" min="0" value={editForm.estimasi_biaya} onChange={(e) => setEdit("estimasi_biaya", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Uang Muka (Rp)</label>
+                <input type="number" min="0" value={editForm.uang_muka} onChange={(e) => setEdit("uang_muka", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Tanggal Masuk</label>
+                <input type="date" value={editForm.tanggal_masuk} onChange={(e) => setEdit("tanggal_masuk", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 mb-1">Estimasi Selesai</label>
+                <input type="date" value={editForm.estimasi_selesai} onChange={(e) => setEdit("estimasi_selesai", e.target.value)}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36]" />
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 mb-1">Catatan Tambahan</label>
+            <textarea value={editForm.catatan_tambahan} onChange={(e) => setEdit("catatan_tambahan", e.target.value)} rows={2}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#C99A36] resize-none" />
+          </div>
+
+          {editMsg && (
+            <p className="text-sm font-semibold py-2.5 px-4 rounded-xl bg-red-50 text-red-600">{editMsg}</p>
+          )}
+
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <button
+              onClick={() => { setEditMode(false); setEditMsg(""); }}
+              disabled={busy}
+              className="flex-1 py-3 rounded-xl border-2 border-gray-300 text-gray-700 font-semibold hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            >
+              Batal
+            </button>
+            <button
+              onClick={saveEdit}
+              disabled={busy}
+              className="flex-1 py-3 rounded-xl text-white font-semibold hover:opacity-90 disabled:opacity-50 transition-all"
+              style={{ backgroundColor: "#C99A36" }}
+            >
+              {busy ? "Menyimpan..." : "Simpan Perubahan"}
+            </button>
+          </div>
+        </div>
+        )}
       </div>
     </div>
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Hapus Data Servis Ini?"
+        message={<>Data servis <strong>{item.no_servis}</strong> akan dihapus permanen.</>}
+        confirming={deleting}
+        onConfirm={hapusServis}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
 
       {/* ── MODAL: PREVIEW / CETAK INVOICE ── */}
       {showInvoicePreview && (
