@@ -38,7 +38,9 @@ function KonfirmasiKeluarContent() {
   const [catatan, setCatatan] = useState("");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
-  const [done, setDone] = useState(false);
+  // Ringkasan hasil konfirmasi — dipakai layar sukses supaya yang ditampilkan adalah
+  // status yang BENAR-BENAR tersimpan (bisa beda dari pilihan kalau stoknya masih sisa).
+  const [hasil, setHasil] = useState<{ keluar: number; sisa: number; statusInventori: string } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -66,11 +68,21 @@ function KonfirmasiKeluarContent() {
 
     const jumlahSisa = item.jumlah - jumlah;
 
+    // Status baru hanya menggambarkan pcs yang KELUAR, bukan seluruh baris. Selama masih
+    // ada sisa, baris tetap "Tersedia" supaya sisanya masih bisa dijual di kasir
+    // (app/pos/page.tsx menyaring status_inventori = "Tersedia") dan tetap terhitung
+    // sebagai stok di laporan keuangan. Sebelumnya seluruh baris ikut ditandai, jadi pada
+    // "2 dari 5 pcs hilang" 3 pcs sisanya jadi mati — tidak bisa dijual walau fisiknya
+    // masih ada. Ini pola yang sama dengan POS (app/pos/page.tsx) yang hanya menutup baris
+    // begitu stoknya benar-benar habis. Riwayat keluar tetap tercatat utuh di
+    // inventori_keluar, jadi status_baru per kejadian tidak hilang.
+    const statusInventoriBaru = jumlahSisa > 0 ? "Tersedia" : statusBaru;
+
     const { error: updateError } = await supabase
       .from("inventori")
       .update({
         jumlah: jumlahSisa,
-        status_inventori: statusBaru,
+        status_inventori: statusInventoriBaru,
         updated_at: new Date().toISOString(),
       })
       .eq("id", item.id);
@@ -97,7 +109,7 @@ function KonfirmasiKeluarContent() {
       return;
     }
 
-    setDone(true);
+    setHasil({ keluar: jumlah, sisa: jumlahSisa, statusInventori: statusInventoriBaru });
   };
 
   return (
@@ -127,7 +139,7 @@ function KonfirmasiKeluarContent() {
                 Kembali ke Inventori
               </button>
             </div>
-          ) : done ? (
+          ) : hasil ? (
             <div className="border border-green-200 bg-green-50 rounded-xl p-8 text-center">
               <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
                 <svg className="w-7 h-7 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -136,7 +148,17 @@ function KonfirmasiKeluarContent() {
               </div>
               <p className="text-gray-800 font-semibold text-lg mb-1">Barang Keluar Dikonfirmasi</p>
               <p className="text-gray-500 text-sm mb-5">
-                {item.nama_produk} ({item.id_item}) — status diperbarui menjadi <strong>{statusBaru}</strong>.
+                {item.nama_produk} ({item.id_item}) — <strong>{hasil.keluar} pcs</strong> keluar sebagai{" "}
+                <strong>{statusBaru}</strong>.{" "}
+                {hasil.sisa > 0 ? (
+                  <>
+                    Sisa <strong>{hasil.sisa} pcs</strong> tetap berstatus <strong>Tersedia</strong> dan masih bisa dijual.
+                  </>
+                ) : (
+                  <>
+                    Stok habis, status barang menjadi <strong>{hasil.statusInventori}</strong>.
+                  </>
+                )}
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <button
@@ -215,7 +237,8 @@ function KonfirmasiKeluarContent() {
                       {STATUS_KELUAR_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
                     <p className="text-xs text-gray-400 mt-1">
-                      Barang tetap tercatat di inventori (riwayat), hanya status & stok yang diperbarui.
+                      Berlaku untuk pcs yang keluar saja. Kalau masih ada sisa stok, barang tetap
+                      berstatus &quot;Tersedia&quot; dan bisa dijual; statusnya baru berubah kalau stok habis.
                     </p>
                   </div>
                 </div>

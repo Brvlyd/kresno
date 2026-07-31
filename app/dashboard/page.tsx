@@ -456,8 +456,18 @@ export default function DashboardPage() {
         // Stats selalu dari SEMUA data, tidak terpengaruh filter tanggal.
         // .range() dipakai supaya tidak kepotong diam-diam di batas default
         // Supabase Max Rows (1000 baris) begitu inventori sudah cukup besar.
+        // Filternya disamakan dengan definisi "stok yang benar-benar ada" di kasir
+        // (app/pos/page.tsx): baris yang sudah habis terjual (jumlah = 0) atau yang
+        // statusnya bukan "Tersedia" (Hilang/Retur/Dalam Servis/…) tidak ikut dihitung.
+        // Tanpa ini, "Total Entri Barang" hanya bisa naik & tidak pernah turun karena
+        // baris yang sudah terjual habis pun masih ikut tercacah.
         fetchAllRows<{ id: string; jumlah: number }>((from, to) =>
-          supabase.from("inventori").select("id,jumlah").range(from, to),
+          supabase
+            .from("inventori")
+            .select("id,jumlah")
+            .eq("status_inventori", "Tersedia")
+            .gt("jumlah", 0)
+            .range(from, to),
         ),
         invQuery,
         supabase
@@ -593,7 +603,7 @@ export default function DashboardPage() {
                 <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7"><rect x="4" y="4" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="13" y="4" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="4" y="13" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="13" y="13" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/></svg>
               </div>
               <div>
-                <p className="text-gray-500 text-base font-medium mb-1">Total Jenis Barang</p>
+                <p className="text-gray-500 text-base font-medium mb-1">Total Entri Barang</p>
                 {loading
                   ? <div className="h-9 w-20 bg-gray-200 animate-pulse rounded" />
                   : <p className="text-3xl font-bold leading-none" style={{ color: "#C99A36" }}>
