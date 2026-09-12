@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED, matchesBarcodeScan, STATUS_OPTIONS } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
-import { hitungHargaDariPersentase, type HargaEmasKarat } from "@/lib/hargaEmas";
+import { hitungHargaDariPersentase, patokanModal24K, type HargaEmasKarat } from "@/lib/hargaEmas";
 import { KADAR_OPTIONS } from "@/lib/gadai";
 import { AddJenisModal } from "@/components/AddJenisModal";
 import StorageImage from "@/components/StorageImage";
@@ -538,7 +538,9 @@ function DetailBarangPopup({
 
     const persenModalNum = parseFloat(form.persen_modal) || 0;
     const persenJualNum = parseFloat(form.persen_jual) || 0;
-    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, hargaEmas24K.harga_beli);
+    // Cadangan ke harga_jual kalau kolom harga_beli 24K kosong — tanpa ini modal
+    // katalog tersimpan Rp 0 dan laba kotor jadi 100% dari harga jual.
+    const hargaBeliRp = hitungHargaDariPersentase(beratGramNum, persenModalNum, patokanModal24K(hargaEmas24K) ?? 0);
     const hargaJualRp = hitungHargaDariPersentase(beratGramNum, persenJualNum, hargaEmas24K.harga_jual);
 
     const payload = {
@@ -869,7 +871,9 @@ function DetailBarangPopup({
               <PercentInput value={form.persen_jual} onChange={(v) => set("persen_jual", v)} />
             </div>
             <p className="text-xs text-gray-400 mt-1.5">
-              % dari harga emas 24K hari ini (Dashboard) — bukan harga sesuai karat barang ini. Harga Rupiah sebenarnya baru muncul saat barang ini dijual.
+              % dari harga emas 24K hari ini (Dashboard) — bukan harga sesuai karat barang ini.
+              Saat barang dijual, harga jual <b>dan</b> modalnya sama-sama dihitung ulang dengan
+              harga emas hari itu, jadi selisih kedua persentase inilah margin yang akan tercatat.
             </p>
             {(() => {
               const beratPreview = parseFloat(form.berat_gram) || 0;
@@ -886,13 +890,37 @@ function DetailBarangPopup({
                 );
               }
               if (!beratPreview || (!persenModalPreview && !persenJualPreview)) return null;
-              const modalRp = hitungHargaDariPersentase(beratPreview, persenModalPreview, hargaEmas24KPreview.harga_beli);
+              // Patokan modal pakai helper yang sama dengan Kasir — termasuk
+              // cadangan ke harga_jual kalau kolom harga_beli 24K kosong, supaya
+              // angka di sini tidak beda dengan yang nanti benar-benar tercatat.
+              const patokanModal = patokanModal24K(hargaEmas24KPreview);
+              const modalRp = patokanModal ? hitungHargaDariPersentase(beratPreview, persenModalPreview, patokanModal) : 0;
               const jualRp = hitungHargaDariPersentase(beratPreview, persenJualPreview, hargaEmas24KPreview.harga_jual);
+              // Margin yang akan tercatat sbg laba kotor kalau barang ini terjual
+              // hari ini — belum dipotong diskon/ongkos yang sifatnya per-transaksi.
+              const labaRp = jualRp - modalRp;
+              const marginPersen = jualRp > 0 ? (labaRp / jualRp) * 100 : 0;
+              const adaDuaPersentase = persenModalPreview > 0 && persenJualPreview > 0;
               return (
-                <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
-                  <p className="text-gray-400">≈ Rp {modalRp.toLocaleString("id-ID")}</p>
-                  <p className="text-gray-400">≈ Rp {jualRp.toLocaleString("id-ID")}</p>
-                </div>
+                <>
+                  <div className="grid grid-cols-2 gap-2 mt-2 text-xs">
+                    <p className="text-gray-400">≈ Rp {modalRp.toLocaleString("id-ID")}</p>
+                    <p className="text-gray-400">≈ Rp {jualRp.toLocaleString("id-ID")}</p>
+                  </div>
+                  {adaDuaPersentase && (
+                    <p className={`text-xs mt-1.5 font-semibold ${labaRp >= 0 ? "text-green-600" : "text-red-500"}`}>
+                      ≈ Laba kotor Rp {labaRp.toLocaleString("id-ID")}
+                      <span className="font-normal text-gray-400">
+                        {" "}· margin {marginPersen.toFixed(1).replace(".", ",")}% dari harga jual
+                        {labaRp < 0 && " · persentase modal lebih tinggi dari persentase jual"}
+                      </span>
+                      <br />
+                      <span className="font-normal text-gray-400">
+                        Belum termasuk diskon/ongkos — itu baru ditentukan per transaksi saat barang ini benar-benar dijual di Kasir.
+                      </span>
+                    </p>
+                  )}
+                </>
               );
             })()}
           </div>

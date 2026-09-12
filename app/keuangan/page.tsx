@@ -264,6 +264,11 @@ interface InvoiceGroup {
   total: number;      // total_transaksi (yang dibayar pelanggan)
   modal: number;      // Σ modalPerUnit × qty (HPP, snapshot harga emas hari transaksi)
   labaKotor: number;  // (subtotal + ongkos − diskon) − modal
+  /** true = ada baris yang modalnya belum disnapshot (migration 032 tidak bisa
+   * merekonstruksinya), jadi angkanya jatuh ke harga_beli katalog inventori yang
+   * bisa berbeda dari harga emas saat transaksi. Ditandai di tampilan supaya
+   * tidak dikira angka pasti. */
+  modalPerkiraan: boolean;
 }
 
 interface ServisRow {
@@ -804,7 +809,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
           pelanggan_nama: k.pelanggan_nama, payment_method: k.payment_method,
           rows: [], totalQty: 0, totalGram: 0, subtotal: 0, ongkos: 0,
           diskon: k.diskon || 0, ppn: k.ppn_amount || 0, total: k.total_transaksi || 0,
-          modal: 0, labaKotor: 0,
+          modal: 0, labaKotor: 0, modalPerkiraan: false,
         };
         map.set(key, g);
       }
@@ -814,6 +819,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       g.subtotal += (k.harga_satuan || 0) * k.jumlah_keluar;
       g.ongkos += k.ongkos || 0;
       g.modal += modalPerUnit(k) * k.jumlah_keluar;
+      if (k.harga_modal == null) g.modalPerkiraan = true;
     }
     for (const g of map.values()) {
       // Laba kotor = (barang + ongkos − diskon) − modal. PPN tidak dihitung untung
@@ -831,6 +837,9 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   const nilaiPenjualan = invoiceGroups.reduce((s, g) => s + g.total, 0); // = total rupiah Riwayat Kasir
   const hppPenjualan = invoiceGroups.reduce((s, g) => s + g.modal, 0);
   const labaKotorPenjualan = invoiceGroups.reduce((s, g) => s + g.labaKotor, 0);
+  // Berapa invoice yang modalnya masih perkiraan (belum tersnapshot) — ditampilkan
+  // di kartu Keuntungan supaya ketahuan kalau ada bagian laporan yang belum presisi.
+  const invoiceModalPerkiraan = invoiceGroups.filter((g) => g.modalPerkiraan).length;
 
   const servisSelesai = servisList.filter((s) => s.status === "Diambil" || s.status === "Selesai");
   const pendapatanServis = servisSelesai.reduce((s, r) => s + r.estimasi_biaya, 0);
@@ -1007,7 +1016,11 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       date: new Date(g.created_at),
       title: (g.pelanggan_nama || "Umum") + " — " + g.no_invoice,
       sub: g.rows.length + " barang · " + g.totalQty + " unit · " + fmtGram(g.totalGram) + (g.payment_method ? " · " + g.payment_method : ""),
-      note: "Laba kotor: " + fmtRp(g.labaKotor),
+      // Modal ikut ditampilkan supaya laba kotor bisa dicek langsung tanpa
+      // membuka detail — inilah angka yang dulu diam-diam memakai harga emas
+      // hari barang diinput, bukan hari transaksi.
+      note: "Modal: " + fmtRp(g.modal) + " · Laba kotor: " + fmtRp(g.labaKotor) +
+        (g.modalPerkiraan ? " (modal perkiraan)" : ""),
       nilai: g.total,
       nilaiLabel: "Nilai Jual",
       isDebit: false,
@@ -2176,7 +2189,10 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         {
                           label: "Laba Kotor Penjualan Emas",
                           value: labaKotorPenjualan,
-                          detail: `${jumlahTransaksiPenjualan} transaksi &bull; Nilai jual: ${fmtRp(nilaiPenjualan)} &bull; Modal (HPP): ${fmtRp(hppPenjualan)}`,
+                          detail: `${jumlahTransaksiPenjualan} transaksi &bull; Nilai jual: ${fmtRp(nilaiPenjualan)} &bull; Modal (HPP): ${fmtRp(hppPenjualan)}` +
+                            (invoiceModalPerkiraan > 0
+                              ? ` &bull; <span style="color:#B45309">${invoiceModalPerkiraan} transaksi modalnya masih perkiraan</span>`
+                              : ""),
                         },
                         {
                           label: "Pendapatan Jasa Servis",
@@ -2299,12 +2315,15 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
                         {
                           label: "Pembelian Stok dari Supplier",
                           value: nilaiMasukReguler,
-                          detail: `${stokMasukReguler.length} item &bull; ${fmtGram(gramMasukReguler)} total`,
+                          // Blok ini dirender sbg teks biasa (bukan dangerouslySetInnerHTML
+                          // seperti kartu Keuntungan Usaha), jadi entity "&bull;" akan
+                          // tampil apa adanya — pakai karakter "·" langsung.
+                          detail: `${stokMasukReguler.length} item · ${fmtGram(gramMasukReguler)} total`,
                         },
                         {
                           label: "Pembelian Buyback Emas Rosok",
                           value: nilaiMasukRosok,
-                          detail: `${stokMasukRosok.length} item &bull; ${fmtGram(gramMasukRosok)} total &bull; untung terealisasi saat terjual`,
+                          detail: `${stokMasukRosok.length} item · ${fmtGram(gramMasukRosok)} total · untung terealisasi saat terjual`,
                         },
                       ].map((item) => (
                         <div key={item.label} className="px-5 py-4 flex items-center justify-between border-b border-gray-50 last:border-0">

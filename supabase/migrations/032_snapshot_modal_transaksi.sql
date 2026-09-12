@@ -113,3 +113,39 @@ where k.id = calc.id;
 -- where k.no_invoice is not null and k.status_baru = 'Terjual'
 --   and k.harga_modal is null
 -- order by k.created_at desc;
+
+-- ── 5. RINGKASAN HASIL ────────────────────────────────────────────────────
+-- SELECT biasa (tidak mengubah apa pun) — inilah hasil yang tampil di SQL
+-- Editor setelah seluruh skrip ini dijalankan. Laba kotor di bawah harus cocok
+-- dengan yang tampil di halaman Keuangan setelah aplikasi di-deploy.
+--
+-- Dihitung PER INVOICE dulu, persis seperti halaman Keuangan: ongkos dijumlah
+-- per baris, sedangkan diskon levelnya invoice (nilainya diulang di tiap baris
+-- invoice yang sama) jadi dipakai max(), bukan sum() yang akan menggandakan.
+--   netto jual  = subtotal + ongkos − diskon
+--   laba kotor  = netto jual − modal
+with per_invoice as (
+  select
+    k.no_invoice,
+    min(k.created_at)                                   as created_at,
+    sum(coalesce(k.harga_satuan, 0) * k.jumlah_keluar)  as subtotal,
+    sum(coalesce(k.ongkos, 0))                          as ongkos,
+    max(coalesce(k.diskon, 0))                          as diskon,
+    sum(coalesce(k.harga_modal, i.harga_beli, 0) * k.jumlah_keluar) as modal,
+    count(*) filter (where k.harga_modal is null)       as baris_perkiraan
+  from public.inventori_keluar k
+  left join public.inventori i on i.id = k.inventori_id
+  where k.no_invoice is not null
+    and k.status_baru = 'Terjual'
+  group by k.no_invoice
+)
+select
+  to_char(created_at, 'YYYY-MM')                      as bulan,
+  count(*)                                            as transaksi,
+  count(*) filter (where baris_perkiraan > 0)         as transaksi_modal_perkiraan,
+  sum(subtotal + ongkos - diskon)                     as nilai_jual_netto,
+  sum(modal)                                          as modal_hpp,
+  sum(subtotal + ongkos - diskon - modal)             as laba_kotor
+from per_invoice
+group by 1
+order by 1 desc;
