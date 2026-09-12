@@ -9,6 +9,7 @@ import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 import { printClean } from "@/lib/print";
 import StorageImage from "@/components/StorageImage";
 import { hitungHasil } from "@/lib/hutangPiutang";
+import { hitungModalPerUnit, patokanModal24K, type HargaEmasKarat } from "@/lib/hargaEmas";
 import { matchesBarcodeScan } from "@/lib/csv";
 import { AutocompleteField } from "@/components/AutocompleteField";
 import DateField from "@/components/DateField";
@@ -64,6 +65,10 @@ interface DraftRow {
   codeText: string;
   nameText: string;
   hargaJual: number;
+  /** Modal (HPP) per satuan pada harga emas HARI INI — dibekukan bareng harga
+   * jual saat transaksi disimpan, supaya laba kotor sepatokan. Lihat
+   * `hargaModalLive`. */
+  hargaModal: number | null;
   ongkos: number;
   qty: number;
 }
@@ -83,7 +88,7 @@ function genNoInvoice(): string {
 let rowSeq = 0;
 function makeRow(): DraftRow {
   rowSeq += 1;
-  return { id: `row-${rowSeq}`, item: null, codeText: "", nameText: "", hargaJual: 0, ongkos: 0, qty: 1 };
+  return { id: `row-${rowSeq}`, item: null, codeText: "", nameText: "", hargaJual: 0, hargaModal: null, ongkos: 0, qty: 1 };
 }
 
 /* ─── No. telepon disimpan sebagai nomor lokal (tanpa 0 / 62 di depan) ───
@@ -437,6 +442,8 @@ function POSContent() {
   const [riwayat, setRiwayat] = useState<RiwayatTransaksi[]>([]);
   const [loadingRiwayat, setLoadingRiwayat] = useState(true);
   const [hargaEmas24Jual, setHargaEmas24Jual] = useState<number | null>(null);
+  /** Patokan 24K utk MODAL hari ini (kolom harga_beli, cadangan harga_jual). */
+  const [hargaEmas24Modal, setHargaEmas24Modal] = useState<number | null>(null);
   const [selectedRiwayat, setSelectedRiwayat] = useState<RiwayatTransaksi | null>(null);
   const [printRiwayat, setPrintRiwayat] = useState<RiwayatTransaksi | null>(null);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -448,6 +455,15 @@ function POSContent() {
     if (!hargaEmas24Jual) return item.harga_jual;
     const hasil = hitungHasil(item.berat_gram, item.persen_jual);
     return Math.round(hasil * hargaEmas24Jual);
+  }
+
+  /* ── Modal (HPP) barang ini, dihitung dengan harga emas 24K HARI INI juga —
+     wajib sepatokan dengan hargaJualLive di atas. Kolom `inventori.harga_beli`
+     tidak dipakai langsung karena isinya harga saat barang DIINPUT: memakainya
+     membuat setiap kenaikan harga emas selama barang mengendap di etalase
+     terhitung sebagai laba kotor (lihat migration 032). ── */
+  function hargaModalLive(item: InvItem): number {
+    return hitungModalPerUnit(item.berat_gram, item.persen_modal, hargaEmas24Modal, item.harga_beli);
   }
 
   /* ── Load inventori tersedia + daftar pelanggan ── */
@@ -492,12 +508,16 @@ function POSContent() {
     const todayStrIso = new Date().toISOString().split("T")[0];
     supabase
       .from("harga_emas")
-      .select("harga_jual")
+      .select("harga_beli, harga_jual")
       .eq("tanggal", todayStrIso)
       .eq("karat", 24)
       .eq("label", "")
       .maybeSingle()
-      .then(({ data }) => setHargaEmas24Jual(data?.harga_jual ?? null));
+      .then(({ data }) => {
+        const harga = (data as HargaEmasKarat | null) ?? null;
+        setHargaEmas24Jual(harga?.harga_jual ?? null);
+        setHargaEmas24Modal(patokanModal24K(harga));
+      });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Scan barcode di halaman penjualan -> isi baris keranjang dgn barang hasil scan utk diedit,
@@ -547,6 +567,7 @@ function POSContent() {
       codeText: item.id_item,
       nameText: item.nama_produk,
       hargaJual: hargaJualLive(item),
+      hargaModal: hargaModalLive(item),
       ongkos: 0,
       qty: 1,
     });
@@ -704,6 +725,7 @@ function POSContent() {
         kadar: r.item.kadar,
         beratGram: r.item.berat_gram,
         hargaJual: r.hargaJual,
+        hargaModal: r.hargaModal ?? hargaModalLive(r.item),
         ongkos: r.ongkos,
         qty: r.qty,
       })),

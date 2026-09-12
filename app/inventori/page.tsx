@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { kodeForJenis, buildSeqCounters, nextIdItem, nextIdItemAtomic, KODE_JENIS_SEED, matchesBarcodeScan, STATUS_OPTIONS } from "@/lib/csv";
 import { generateNoHutang, hitungHasil, hitungHasilAkhir } from "@/lib/hutangPiutang";
+import { hitungHargaDariPersentase, type HargaEmasKarat } from "@/lib/hargaEmas";
 import { KADAR_OPTIONS } from "@/lib/gadai";
 import { AddJenisModal } from "@/components/AddJenisModal";
 import StorageImage from "@/components/StorageImage";
@@ -96,19 +97,8 @@ const STATUS_BADGE: Record<string, string> = {
   "Hilang":           "bg-red-100 text-red-700",
 };
 
-/** Harga emas per gram untuk satu karat tertentu, hari ini, dari halaman Dashboard. */
-interface HargaEmasKarat {
-  harga_beli: number;
-  harga_jual: number;
-}
-
-/**
- * Harga (Rp) = Berat x Persentase x Harga emas 24K hari itu — SELALU patokan 24K,
- * berapa pun karat barangnya (bukan harga per karat barang itu sendiri).
- */
-function hitungHargaDariPersentase(beratGram: number, persentase: number, hargaEmas24K: number): number {
-  return Math.round(hitungHasil(beratGram, persentase) * hargaEmas24K);
-}
+/* `HargaEmasKarat` & `hitungHargaDariPersentase` sekarang tinggal di
+   @/lib/hargaEmas — dipakai bareng Kasir supaya harga jual & modal satu rumus. */
 
 /* ─── Input persentase harga (%) ─── */
 function PercentInput({

@@ -223,12 +223,28 @@ interface KeluarRow {
   // penjualan di laporan cocok 100% dengan Riwayat Kasir, bukan harga katalog.
   no_invoice: string | null;
   harga_satuan: number;   // harga jual per unit yang benar-benar ditransaksikan
+  /** Modal (HPP) per unit yang dibekukan saat transaksi, pakai harga emas
+   * tanggal transaksi itu — sepatokan dengan harga_satuan. Null = baris lama
+   * yang tidak bisa direkonstruksi migration 032; jatuh ke harga_beli katalog. */
+  harga_modal: number | null;
   ongkos: number;
   diskon: number;         // level invoice (sama di semua baris invoice yang sama)
   ppn_amount: number;     // level invoice
   total_transaksi: number; // level invoice — total akhir yang dibayar pelanggan
   pelanggan_nama: string | null;
   payment_method: string | null;
+}
+
+/** Modal (HPP) per unit untuk satu baris penjualan.
+ *
+ * Utamakan `harga_modal` — snapshot yang dibekukan saat transaksi memakai harga
+ * emas tanggal itu, jadi sepatokan dengan `harga_satuan`. Kolom `harga_beli`
+ * (join live ke inventori) cuma cadangan untuk baris lama: isinya harga saat
+ * barang DIINPUT, sehingga kenaikan harga emas selama barang mengendap di
+ * etalase ikut terhitung sebagai laba, dan nilainya bisa berubah belakangan
+ * kalau barangnya diedit di Inventori. Lihat migration 032. */
+function modalPerUnit(k: KeluarRow): number {
+  return k.harga_modal ?? k.harga_beli ?? 0;
 }
 
 /** Satu invoice POS = kelompok baris inventori_keluar dengan no_invoice sama.
@@ -246,7 +262,7 @@ interface InvoiceGroup {
   diskon: number;     // level invoice
   ppn: number;        // level invoice
   total: number;      // total_transaksi (yang dibayar pelanggan)
-  modal: number;      // Σ harga_beli × qty (HPP)
+  modal: number;      // Σ modalPerUnit × qty (HPP, snapshot harga emas hari transaksi)
   labaKotor: number;  // (subtotal + ongkos − diskon) − modal
 }
 
@@ -684,6 +700,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
             harga_beli: (inv?.harga_beli as number) ?? 0,
             no_invoice: ((k as Record<string, unknown>).no_invoice as string) ?? null,
             harga_satuan: ((k as Record<string, unknown>).harga_satuan as number) ?? 0,
+            harga_modal: ((k as Record<string, unknown>).harga_modal as number | null) ?? null,
             ongkos: ((k as Record<string, unknown>).ongkos as number) ?? 0,
             diskon: ((k as Record<string, unknown>).diskon as number) ?? 0,
             ppn_amount: ((k as Record<string, unknown>).ppn_amount as number) ?? 0,
@@ -796,7 +813,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
       g.totalGram += k.berat_gram * k.jumlah_keluar;
       g.subtotal += (k.harga_satuan || 0) * k.jumlah_keluar;
       g.ongkos += k.ongkos || 0;
-      g.modal += (k.harga_beli || 0) * k.jumlah_keluar;
+      g.modal += modalPerUnit(k) * k.jumlah_keluar;
     }
     for (const g of map.values()) {
       // Laba kotor = (barang + ongkos − diskon) − modal. PPN tidak dihitung untung
@@ -917,7 +934,7 @@ function KeuanganContent({ onLock, onOpenChangePin }: {
   const kadarKeysKeluar = sortKadarDesc(Object.keys(gramKeluarPerKadar));
 
   // Laba kotor penjualan per karat = (harga jual − modal) × qty (basis margin).
-  const labaKotorPerKadar = sumByKadar(keluarTerjual, (k) => k.kadar, (k) => ((k.harga_satuan || 0) - (k.harga_beli || 0)) * k.jumlah_keluar);
+  const labaKotorPerKadar = sumByKadar(keluarTerjual, (k) => k.kadar, (k) => ((k.harga_satuan || 0) - modalPerUnit(k)) * k.jumlah_keluar);
   const pendapatanServisPerKadar = sumByKadar(servisSelesai, (s) => s.kadar, (s) => s.estimasi_biaya);
   const pendapatanGadaiPerKadar = sumByKadar(gadaiLunas, (g) => g.kadar, (g) => hitungTotalBunga(g.nilai_pinjaman, g.bunga_persen, g.jangka_waktu_bulan));
 

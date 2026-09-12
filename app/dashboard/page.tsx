@@ -7,6 +7,11 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAllRows } from "@/lib/supabase/fetchAllRows";
 
+/** Status yang berarti barangnya sudah benar-benar pergi dari toko — sisanya (Tersedia,
+ * Retur, Dalam Servis, Tidak Laku, Mati Laku) masih fisik ada di toko walau belum tentu
+ * siap dijual, jadi tetap dihitung sebagai "barang di inventory" di Dashboard. */
+const STATUS_BARANG_PERGI = ["Terjual", "Habis Dijual", "Hilang"];
+
 /* ─── Types ─── */
 interface HargaEmas {
   id?: string;
@@ -28,7 +33,9 @@ interface InventoriRow {
   tanggal_masuk: string;
 }
 interface Stats {
+  /** Keping fisik — jumlah dijumlahkan lintas baris. */
   totalItem: number;
+  /** Ragam kategori barang (Cincin, Kalung, Gelang, …) — BUKAN jumlah baris. */
   totalJenis: number;
   hutangBelumLunasCount: number;
   piutangBelumLunasCount: number;
@@ -443,9 +450,16 @@ export default function DashboardPage() {
       }
       // "all": fromDate stays null
 
+      // Dashboard hanya menampilkan barang yang MASIH FISIK ADA DI TOKO: baris yang
+      // sudah habis terjual (jumlah = 0) atau berstatus Terjual/Habis Dijual/Hilang
+      // tidak ikut muncul. Retur & Dalam Servis tetap dihitung — barangnya masih di
+      // toko, cuma belum tentu siap dijual (beda dengan kasir yang hanya menyaring
+      // "Tersedia", lihat app/pos/page.tsx).
       let invQuery = supabase
         .from("inventori")
         .select("id,id_item,nama_produk,kategori,kadar,berat_gram,jumlah,status_laporan,tanggal_masuk")
+        .notIn("status_inventori", STATUS_BARANG_PERGI)
+        .gt("jumlah", 0)
         .order("tanggal_masuk", { ascending: false })
         .limit(100);
       if (fromDate) {
@@ -456,16 +470,15 @@ export default function DashboardPage() {
         // Stats selalu dari SEMUA data, tidak terpengaruh filter tanggal.
         // .range() dipakai supaya tidak kepotong diam-diam di batas default
         // Supabase Max Rows (1000 baris) begitu inventori sudah cukup besar.
-        // Filternya disamakan dengan definisi "stok yang benar-benar ada" di kasir
-        // (app/pos/page.tsx): baris yang sudah habis terjual (jumlah = 0) atau yang
-        // statusnya bukan "Tersedia" (Hilang/Retur/Dalam Servis/…) tidak ikut dihitung.
-        // Tanpa ini, "Total Entri Barang" hanya bisa naik & tidak pernah turun karena
-        // baris yang sudah terjual habis pun masih ikut tercacah.
-        fetchAllRows<{ id: string; jumlah: number }>((from, to) =>
+        // Sama seperti invQuery di atas: baris yang jumlahnya sudah 0 atau berstatus
+        // Terjual/Habis Dijual/Hilang (barangnya sudah benar-benar pergi dari toko)
+        // tidak ikut dihitung. Tanpa ini, statistik hanya bisa naik & tidak pernah
+        // turun karena baris yang sudah terjual habis pun masih ikut tercacah.
+        fetchAllRows<{ id: string; jumlah: number; kategori: string | null }>((from, to) =>
           supabase
             .from("inventori")
-            .select("id,jumlah")
-            .eq("status_inventori", "Tersedia")
+            .select("id,jumlah,kategori")
+            .notIn("status_inventori", STATUS_BARANG_PERGI)
             .gt("jumlah", 0)
             .range(from, to),
         ),
@@ -485,9 +498,14 @@ export default function DashboardPage() {
       ]);
 
       const allData = statsData;
+      // Ragam jenis barang = kategori unik (Cincin, Kalung, …), dicocokkan tanpa peduli
+      // besar-kecil huruf supaya "Cincin" & "cincin" tidak terhitung dua jenis.
+      const jenisUnik = new Set(
+        allData.map((r) => (r.kategori ?? "").trim().toLowerCase()).filter(Boolean),
+      );
       setStats({
         totalItem:   allData.reduce((s, r) => s + (r.jumlah ?? 0), 0),
-        totalJenis:  allData.length,
+        totalJenis:  jenisUnik.size,
         hutangBelumLunasCount:  hutangRes.length,
         piutangBelumLunasCount: piutangRes.length,
       });
@@ -603,11 +621,11 @@ export default function DashboardPage() {
                 <svg viewBox="0 0 24 24" fill="none" className="w-7 h-7"><rect x="4" y="4" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="13" y="4" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="4" y="13" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/><rect x="13" y="13" width="7" height="7" rx="1.5" stroke="#C99A36" strokeWidth="2"/></svg>
               </div>
               <div>
-                <p className="text-gray-500 text-base font-medium mb-1">Total Entri Barang</p>
+                <p className="text-gray-500 text-base font-medium mb-1">Total Jenis Barang</p>
                 {loading
                   ? <div className="h-9 w-20 bg-gray-200 animate-pulse rounded" />
                   : <p className="text-3xl font-bold leading-none" style={{ color: "#C99A36" }}>
-                      {fmt(stats.totalJenis)} <span className="text-base text-gray-500 font-medium">entri</span>
+                      {fmt(stats.totalJenis)} <span className="text-base text-gray-500 font-medium">jenis</span>
                     </p>
                 }
               </div>

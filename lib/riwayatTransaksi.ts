@@ -16,6 +16,9 @@ export interface RiwayatItemDetail {
   beratGram: number;
   qty: number;
   hargaSatuan: number;
+  /** Modal (HPP) per satuan yang dibekukan saat transaksi — null utk baris lama
+   * yang belum sempat di-snapshot (lihat migration 032). */
+  hargaModal: number | null;
   ongkos: number;
   gambarUrl?: string;
 }
@@ -47,6 +50,7 @@ export type RiwayatRow = {
   berat_gram: number | null;
   jumlah_keluar: number | null;
   harga_satuan: number | null;
+  harga_modal: number | null;
   ongkos: number | null;
   diskon: number | null;
   ppn_persen: number | null;
@@ -62,7 +66,7 @@ export type RiwayatRow = {
 };
 
 export const RIWAYAT_SELECT =
-  "id, inventori_id, id_item, nama_produk, kadar, berat_gram, jumlah_keluar, harga_satuan, ongkos, diskon, ppn_persen, ppn_amount, total_transaksi, no_invoice, pelanggan_nama, pelanggan_hp, payment_method, catatan, created_at, inventori:inventori_id(gambar_url)";
+  "id, inventori_id, id_item, nama_produk, kadar, berat_gram, jumlah_keluar, harga_satuan, harga_modal, ongkos, diskon, ppn_persen, ppn_amount, total_transaksi, no_invoice, pelanggan_nama, pelanggan_hp, payment_method, catatan, created_at, inventori:inventori_id(gambar_url)";
 
 export const fmtRp = (n: number) => "Rp " + Math.round(n || 0).toLocaleString("id-ID");
 export const fmtGram = (n: number) => (n || 0).toFixed(2) + " gr";
@@ -162,6 +166,7 @@ export function groupRiwayatRows(rows: RiwayatRow[]): RiwayatTransaksi[] {
       beratGram: row.berat_gram || 0,
       qty,
       hargaSatuan,
+      hargaModal: row.harga_modal ?? null,
       ongkos,
       gambarUrl: inventoriRel?.gambar_url || undefined,
     });
@@ -193,6 +198,11 @@ export interface InventoriKeluarInsertRow {
   kadar: string;
   beratGram: number;
   hargaJual: number;
+  /** Modal (HPP) per satuan pada harga emas hari transaksi — dibekukan bersama
+   * `hargaJual` supaya laba kotor di laporan Keuangan sepatokan & tidak berubah
+   * lagi setelah transaksi tersimpan. Null kalau harga emas 24K tidak tersedia
+   * (laporan jatuh ke `inventori.harga_beli` seperti perilaku lama). */
+  hargaModal: number | null;
   ongkos: number;
   qty: number;
 }
@@ -235,6 +245,7 @@ export function buildInventoriKeluarInserts(
     kadar: r.kadar,
     berat_gram: r.beratGram,
     harga_satuan: r.hargaJual,
+    harga_modal: r.hargaModal,
     ongkos: r.ongkos,
     diskon: meta.diskon,
     ppn_persen: meta.ppnEnabled ? meta.ppnPercent : 0,

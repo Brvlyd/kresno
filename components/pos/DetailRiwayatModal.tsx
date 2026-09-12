@@ -20,6 +20,10 @@ export interface PosStockItem {
   berat_gram: number;
   jumlah: number;
   harga_jual: number;
+  /** Modal katalog — dipakai sbg snapshot modal kalau barang BARU ditambahkan ke
+   * invoice lama yang sedang diedit (harga emas tanggal invoice itu tidak dimuat
+   * di sini). Opsional supaya pemanggil lama tetap cocok secara struktural. */
+  harga_beli?: number;
   gambar_url?: string;
 }
 
@@ -33,6 +37,10 @@ interface EditCartRow {
   kadar: string;
   beratGram: number;
   hargaJual: number;
+  /** Snapshot modal per satuan milik baris ini — dibawa apa adanya dari baris
+   * aslinya supaya laba kotor invoice lama tidak ikut berubah gara-gara invoice
+   * ini disimpan ulang (alur simpan menghapus lalu insert ulang semua barisnya). */
+  hargaModal: number | null;
   ongkos: number;
   qty: number;
 }
@@ -139,6 +147,7 @@ export function DetailRiwayatModal({
         kadar: it.kadar,
         beratGram: it.beratGram,
         hargaJual: it.hargaSatuan,
+        hargaModal: it.hargaModal,
         ongkos: it.ongkos,
         qty: it.qty,
       }))
@@ -173,6 +182,7 @@ export function DetailRiwayatModal({
         kadar: item.kadar,
         beratGram: item.berat_gram,
         hargaJual: item.harga_jual,
+        hargaModal: item.harga_beli ?? null,
         ongkos: 0,
         qty: 1,
       },
@@ -298,6 +308,7 @@ export function DetailRiwayatModal({
         kadar: row.kadar,
         beratGram: row.beratGram,
         hargaJual: row.hargaJual,
+        hargaModal: row.hargaModal,
         ongkos: row.ongkos,
         qty: row.qty,
       })),

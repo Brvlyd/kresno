@@ -45,7 +45,7 @@ export default function RiwayatTransaksiPage() {
     const data = await fetchAllRows<PosStockItem>((from, to) =>
       supabase
         .from("inventori")
-        .select("id, id_item, nama_produk, kadar, berat_gram, jumlah, harga_jual, gambar_url")
+        .select("id, id_item, nama_produk, kadar, berat_gram, jumlah, harga_jual, harga_beli, gambar_url")
         .eq("status_inventori", "Tersedia")
         .gt("jumlah", 0)
         .order("nama_produk")

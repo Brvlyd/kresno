@@ -112,7 +112,6 @@ function LoginForm() {
             className="min-w-[160px] h-14 rounded-2xl flex items-center justify-center text-xl font-bold transition-all shadow-md active:scale-95 disabled:opacity-60"
             style={{ backgroundColor: "#FFFBE9", color: "#6F5333", border: "2px solid #C4A35A" }}
           >
-            Masuk
           </button>
 
           {/* Reset Password */}
